@@ -1,0 +1,27 @@
+<!doctype linuxdoc system[
+<!ENTITY preamble SYSTEM "preamble.sgml">
+<!ENTITY introduction SYSTEM "introduction.sgml">
+]>
+<!-- This is the User Manual for MythTV -->
+
+<article>
+
+<title>The MythTV HOWTO</title>
+<author>Robert Kulagowski, <url url="mailto:rkulagow@rocketmail.com"
+name="mailto:rkulagow@rocketmail.com"></author>
+<date>2011-01-04, v0.25pre</date>
+<abstract>
+Initially, installation of MythTV seems like a huge task.  There are lots
+of dependencies, and various distributions seem to do the same thing
+different ways.  This document will attempt to give general installation
+instructions, as well as including distribution-specific instructions where
+necessary.
+</abstract>
+
+<toc>
+
+&preamble;
+&introduction;
+
+</article>
+

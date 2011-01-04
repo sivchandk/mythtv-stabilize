@@ -1,0 +1,243 @@
+<sect>First things first.
+<p><figure loc="here">
+<eps file="stop.eps" height="1cm">
+<img src="stop.png">
+<caption>
+<bf>NOTE</bf>: Please note that I, Robert Kulagowski, am <em>NOT</em> the
+author/programmer of the MythTV application!  I cannot give you
+personalized installation support.  If you are having issues installing
+MythTV you should examine the archives, or post your question to the
+MythTV-users mailing list.  If you send me "Does MythTV work with 'X'"?
+messages - I will simply instruct you to ask your question on the
+mythtv-users mailing list.
+</caption>
+</figure>
+<sect1>What is MythTV?
+<p>MythTV is a GPL licensed suite of programs that allow you to build the
+mythical home media convergence box on your own using Open Source software
+and operating systems.  MythTV is known to work on Linux and Mac OS X
+(PowerPC and Intel).  A version of MythTV which runs on Windows is under
+development, but not recommended for beginners at this time.
+
+
+MythTV has a number of capabilities.  The television portion allows you to
+do the following:
+<itemize>
+<item>You may pause, fast-forward and rewind live Television.
+<item>You may install multiple video capture cards to record more than one
+program at a time.
+<item>You can have multiple servers (called "backends"), each with multiple
+capture cards in them.  All scheduling is performed by the Master backend,
+which arbitrates which recording will be performed by each device.  All
+recording requests are managed by the Master backend, so you can schedule a
+recording from any client.
+<item>You can have multiple clients (called "frontends" in MythTV parlance),
+each with a common view of all available programs.  Any client can watch any
+program that was recorded by any of the servers, assuming that they have the
+hardware capabilities to view the content; a low-powered frontend will not
+be able to watch HDTV, for example.  Clients can be diskless and controlled
+entirely by a remote control.
+<item>You may use any combination of standard analog capture card, MPEG-2,
+MJPEG, DVB, HDTV, USB and firewire capture devices.  With appropriate
+hardware, MythTV can control set top boxes, often found in digital cable and
+satellite TV systems.
+<item>Program Guide Data in North America is downloaded from
+schedulesdirect.org, a non-profit organization which has licensed data from
+Tribune Media Services.  This service provides almost two weeks of
+scheduling information. Program Guide Data in other countries is obtained
+using XMLTV.  MythTV uses this information to create a schedule that
+maximizes the number of programs that can be recorded if you don't have
+enough tuners.
+<item>MythTV implements a UPNP server, so a UPNP client should automatically
+see content from your MythTV system.
+</itemize>
+Other modules in MythTV include:
+<itemize>
+<item>MythArchive, a tool to create DVDs
+<item>MythBrowser, a web browser
+<item>MythGallery, a photo-viewing application
+<item>MythGame
+<item>MythMusic, a music playing / ripping application
+<item>MythNetVision, an internet video browser and viewer
+<item>MythNews, a RSS news grabber
+<item>MythVideo, DVD ripper and a media-viewer for content not created within MythTV
+<item>MythWeather
+<item>MythWeb, which allows you to control your MythTV system using a web
+browser.  With MythWeb, you can schedule and delete recordings, change
+keybindings and more.  With proper security, you may even schedule a program
+over the Internet and have it immediately acted on by the Master backend.
+</itemize>
+<sect1>QuickStart
+<p>Custom mini-distributions are available to make it easier to install
+MythTV.  A mini-distribution removes many of the "general purpose"
+workstation / server software packages that may be installed by default if
+you use one of the big-name OS packages.
+
+See <url url="http://mysettopbox.tv" name="http://mysettopbox.tv"> if you'd
+like to install a custom version of Arch Linux optimized for MythTV.
+
+See <url url="http://www.minimyth.org" name="http://www.minimyth.org"> for a
+small MythTV distribution which can be booted over a network.
+
+See <url url="http://www.mythbuntu.org/" name="http://www.mythbuntu.org/">
+for a distribution using a customized Ubuntu.
+
+See <url url="http://www.mythdora.com/" name="http://www.mythdora.com/"> for
+a distribution using a customized Fedora Core.
+
+There is a MythTV wiki at <url url="http://wiki.mythtv.org"
+name="http://wiki.mythtv.org">.
+
+<sect1>Upgrading from previous versions
+<p>The upgrade from previous versions should be transparent.  Any changes to
+the database structure should be applied automatically.
+
+It is <em>strongly</em> recommended that you back up your database before
+installing a new version of MythTV.
+
+See <ref id="backupdb" name="Saving or Restoring the database"> for instructions.
+
+<sect1>How to obtain this document / PDF versions of this document <label id="how_to_obtain">
+<p>This HOWTO document is maintained at the primary MythTV website: <url
+url="http://www.mythtv.org" name="http://www.mythtv.org"> by Robert
+Kulagowski <url url="mailto:rkulagow@rocketmail.com">.
+
+This document is available as a single-page HTML document at <url
+url="http://www.mythtv.org/docs/mythtv-HOWTO-singlehtml.html"
+name="http://www.mythtv.org/docs/mythtv-HOWTO-singlehtml.html"> or as a PDF
+at <url url="http://www.mythtv.org/docs/mythtv-HOWTO.pdf"
+name="http://www.mythtv.org/docs/mythtv-HOWTO.pdf">.
+
+This HOWTO is for MythTV v0.24
+
+Release notes for this version may be found in the MythTV Wiki at <url
+url="http://www.mythtv.org/wiki/Release_Notes_-_0.24"
+name="http://www.mythtv.org/wiki/Release_Notes_-_0.24">
+
+<sect1>Books about MythTV
+<p>If you would like to purchase a book specifically about MythTV:
+
+<itemize>
+<item>Hacking MythTV, ISBN 978-0470037874 by Wilson, Tittel, Wright and Korelc
+<item>Practical MythTV: Building a PVR and Media Center PC, ISBN 978-1590597798 by Smith and Still
+</itemize>
+
+Note that these books cover earlier versions of MythTV.
+
+<sect1>Document conventions
+<p>The following conventions are used throughout this document.<newline>
+<bf>boldface</bf> - used for program names.<newline>
+<tt>typewriter</tt> - used for program paths.<newline>
+<em>emphasis</em> - Pay attention here.<newline>
+
+<figure loc="here">
+<eps file="warning.eps" height="1cm">
+<img src="warning.png">
+<caption>
+Pay more attention.
+</caption>
+</figure>
+
+<figure loc="here">
+<eps file="stop.eps" height="1cm">
+<img src="stop.png">
+<caption>
+Ignore at your own peril.
+</caption>
+</figure>
+
+<figure loc="here">
+<eps file="add.eps" height="1cm">
+<img src="add.png">
+<caption>
+Feature that has been added to SVN (subversion, a revision control system)
+but is not available in the current release.
+</caption>
+</figure>
+
+<sect1>Mailing lists / getting help
+<p>It's recommended that you join the user list at <url
+url="http://www.mythtv.org/mailman/listinfo/mythtv-users"
+name="http://www.mythtv.org/mailman/listinfo/mythtv-users">.  The developer
+list is at <url url="http://mythtv.org/cgi-bin/mailman/listinfo/mythtv-dev"
+name="http://mythtv.org/cgi-bin/mailman/listinfo/mythtv-dev">.  Please keep
+the developer list strictly for development-related issues.
+
+Searchable archives for the lists are available at <url
+url="http://www.gossamer-threads.com/lists/mythtv/"
+name="http://www.gossamer-threads.com/lists/mythtv/">.
+
+<sect1>IRC
+<p>There are two IRC channels dedicated to MythTV which can be found on
+irc.freenode.net
+<itemize>
+<item>mythtv
+<item>mythtv-users
+</itemize>
+
+The <tt>mythtv</tt> channel is where the developers discuss code.  It is
+<em>not</em> a user-support channel.  Please don't ask non-development
+related questions there.
+
+<figure loc="here">
+<eps file="stop.eps" height="1cm">
+<img src="stop.png">
+<caption>
+Really.  Even if there's no one in the mythtv-users IRC group or everyone
+seems to be ignoring you.
+</caption>
+</figure>
+
+<sect1>Bug database
+<p>If you feel you need to contribute to a bug database, use the MythTV bug
+ticketing system at <url url="http://svn.mythtv.org/trac"
+name="http://svn.mythtv.org/trac">.
+
+Good entries will contain the following:
+<enum>
+<item>Qt version
+<item>Linux distribution
+<item>gcc version
+<item>the last entry in config.log to detail how you compiled
+<item>MythTV version numbers (<em>e.g.</em>from mythfrontend --version)
+<item>Hardware
+<item>How you are able to reproduce the bug
+</enum>
+
+See the instructions on how to debug in <ref id="debugging" name="Section 22">.
+
+The bug database is not a chat room, so restrict your entries to what is
+relevant.  It's also not a repository of feature requests; a feature request
+without an accompanying patch file to implement that feature will be quickly
+closed.  There is a feature wishlist on the wiki at <url
+url="http://www.mythtv.org/wiki/Feature_Wishlist"
+name="http://www.mythtv.org/wiki/Feature_Wishlist">.  There is no
+guarantee that anything on the wishlist will ever get code written to
+implement it.
+
+If a developer closes out your bug, it's likely you didn't provide enough
+information.  Don't re-open a bug without providing additional information.
+
+<sect1>Contributing to this document
+<p>Contributions to the HOWTO are welcome, especially if you find a
+grammatical or spelling error, or if the wording of something is just plain
+confusing.
+
+If you'd like to make a new contribution, create a ticket at <url
+url="http://svn.mythtv.org/trac" name="http://svn.mythtv.org/trac"> and
+click "New Ticket".  The type should be set to "patch" and the owner set to
+"rkulagow" to ensure that I see your contribution.
+
+Please send it as either SGML or as plain text. <em>NO HTML</em>.  The
+source used to create the HOWTO is in SGML / Linuxdoc.  Do not be afraid of
+SGML!  A quick look at the source of this HOWTO will show that it is not
+difficult, because there aren't that many tags to worry about, so at least
+<em>try</em> to submit as SGML. See the Linuxdoc HOWTO at <url
+url="http://www.tldp.org/HOWTO/Howtos-with-LinuxDoc.html"
+name="http://www.tldp.org/HOWTO/Howtos-with-LinuxDoc.html"> for information
+on the linuxdoc format itself, or look at the <tt>mythtv-HOWTO.sgml</tt>
+file as an example.
+
+To create the actual patch, run <bf>diff -u origfilename newfile >
+doc.patch</bf> and attach your contribution to the trac ticket.
+

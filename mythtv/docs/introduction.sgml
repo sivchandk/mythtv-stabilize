@@ -1,0 +1,441 @@
+<sect>Introduction.
+<p>This HOWTO document will focus on manually building MythTV in a North
+American environment. If you have installation instructions for a different
+region or Linux distribution, please send them to the author so that it can
+be included in other versions of this document.
+
+<sect>Checking prerequisites.
+<p>You must ensure that any firewalls (either hardware, or a software
+firewall installed by your distribution) will not block access to the ports
+that will be used by the MythTV clients and servers on the "inside" LAN.
+The ports for MySQL (TCP port 3306) and mythbackend (TCP ports 6543 and
+6544) must be open.  It is <em>strongly</em> recommended that you do
+<em>not</em> expose the MythTV and MySQL ports to the Internet or your
+"Outside" LAN.
+
+<sect1>Hardware
+<p>Hardware selection is a complex topic, one this HOWTO will only discuss
+briefly and in general terms. The following subsections offer some general
+guidance but stop short of offering specific recommendations.
+
+For a good MythTV experience, you must understand that MythTV exercises your
+hardware more than a typical desktop. Encoder cards generate DMA across the
+PCI bus.  The CPU is busy encoding / decoding video. Hard drives are
+constantly reading and writing data. Building a MythTV system on older /
+"spare" hardware may be an exercise in frustration and can waste many hours
+of valuable time.
+
+If you have specific questions about the suitability of specific hardware
+choices, you can consult the archives of the mythtv-users mailing list at
+<url url="http://www.gossamer-threads.com/lists/mythtv/"
+name="http://www.gossamer-threads.com/lists/mythtv/"> or
+post a question to the list.
+<sect2>CPU Type and Speed
+<p>Selection of CPU type and speed is one of the trickiest elements of
+hardware selection, mainly because there are so many tradeoffs which can be
+made.  For example, if you have plenty of CPU, you can use higher bitrates
+or capture sizes, etc.
+
+<sect2>Software / CPU-based encoding.
+<p>
+MythTV has two modes of operation for capturing video.  First, it can
+function as a software video encoder, which means that it can use a fairly
+generic "dumb" video capture card to get frames of video, encodes them using
+the CPU on your motherboard and writes them to disk.  High-end video capture
+cards and devices like the TiVo and ReplayTV have dedicated encoder chips
+which use specialized hardware to convert the video stream to the MPEG-2
+format without using the motherboard CPU.  The main CPU has the
+responsibility of running the Operating System and reading and writing the
+encoded frames to the disk.  These tasks have fairly low CPU requirements
+compared to encoding video, which is why a device like a Series 1 TiVo can
+run with only 16MB of RAM and a 54MHz CPU.
+
+That being said, due to the digital conversion in the United States, there
+are fewer sources of NTSC analog video, and cheap silicon has
+made it easier to include MPEG-2 encoders into hardware capture cards.  In
+addition, the sale of "analog-only" cards has been severely curtailed in the
+United States, and one vendor received a fine for failing to include
+notification that their device was analog-only.  <url
+url="http://hraunfoss.fcc.gov/edocs_public/attachmatch/DA-08-493A1.txt"
+name="http://hraunfoss.fcc.gov/edocs_public/attachmatch/DA-08-493A1.txt">
+
+There are many variables that go into the question: "How fast a CPU do I
+need to run MythTV"?  Obviously, the faster your CPU, the better your
+experience will be with MythTV.  If you are using the software MPEG-4
+encoder and performing the "Watch TV" function, where the CPU is both
+encoding and decoding video simultaneously to allow Pause, Fast Forward and
+Rewind functions for live TV requires more CPU then just encoding or
+decoding.  MythTV also supports multiple encoder cards in a single PC,
+thereby increasing the CPU requirements if you plan on simultaneously
+encoding multiple programs.  As a general guideline, plan on 1GHz per
+encoder if you are doing software-based encoding, less if you are using a
+hardware-based encoder.
+
+Here are a few data points:
+<itemize>
+<item>A PIII/733MHz system can encode one video stream using the MPEG-4
+codec using 480x480 capture resolution.  This does not allow for live TV
+watching, but does allow for encoding video and then watching it later.
+<item>A developer states that his AMD1800+ system can <bf>almost</bf>
+encode two MPEG-4 video streams and watch one program simultaneously.
+<item>A PIII/800MHz system with 512MB RAM can encode one video
+stream using the RTjpeg codec with 480x480 capture resolution and play it back
+simultaneously, thereby allowing live TV watching.
+<item>A dual Celeron/450MHz is able to view a 480x480 MPEG-4/3300kbps file
+created on a different system with 30% CPU usage.
+<item>A P4 2.4GHz machine can encode two 3300Kbps 480x480 MPEG-4 files and
+simultaneously serve content to a remote frontend.
+</itemize>
+
+<sect2>Hardware based encoding.
+<p>
+The second mode of operation is where MythTV is paired with a hardware-based
+video encoder, in which case MythTV will primarily be I/O bound.  There are
+several examples of such devices, like the Hauppauge
+WinTV-PVR-150/250/350/500 series, the Hauppauge HD-PVR (H.264 High-Def
+capture using Component inputs), or the Silicon Dust HDHomerun.  In this mode,
+because the video encoding is being done by a dedicated video processor (the
+Hauppauge encoders), or the device is simply writing the data to disk (the
+HDHR and other digital devices, such as DVB cards) the host CPU requirements
+are quite low.  See the <ref id="video_capture_device" name="Video Capture
+Device"> section for details.
+
+Primary development in MythTV has transitioned to supporting MPEG-2 capture
+devices, H.264 and HDTV, so if given the option, go with the hardware encoder or
+choose a ATSC capture device.  Because of the transition to digital
+broadcast in the United States, most television stations are now
+digital-only.  There are still analog stations in the U.S., but a majority
+are low-powered.  Canada still has analog broadcasts.
+
+Analog encoding or hardware MPEG-2 encoding may still be required if you are
+trying to capture standard definition video sources, such as set-top-boxes.
+
+<sect2>Memory
+<p>A MythTV host that is both a backend and a frontend and using software
+encoding with a single capture card should run adequately in 512MB of RAM.
+Additional RAM above 512MB will not necessarily increase performance, but
+may be useful if you are running multiple encoders.
+
+<sect2>Hard Disk(s)
+<p>Encoded video takes up a lot of hard disk space. The exact amount depends
+on the encoding scheme, the size of the raw images and the frames per
+second, but typical values for MythTV range from 700 megabytes/hour for
+MPEG-4, 2 GB/hour for MPEG-2 and RTjpeg and 7 GB/hour for ATSC HDTV.
+
+Writing video to disk is sensitive to timing issues; RTjpeg requires less
+CPU with the tradeoff being larger files and needing to write to the disk
+faster.  MPEG-4 requires more CPU, but the files are smaller.  At the
+default resolution, MPEG-2 creates the largest files of all with almost no
+CPU impact.
+
+<sect2>Filesystems
+<p>MythTV creates large files, many in excess of 4GB.  You <em>must</em>
+use a 64 or 128 bit filesystem. These will allow you to create large files.
+Filesystems known to have problems with large files are FAT (all versions),
+and ReiserFS (versions 3 and 4).
+
+Because MythTV creates very large files, a filesystem that does well at
+deleting them is important.  Numerous benchmarks show that XFS and JFS do
+very well at this task.  You are <em>strongly</em> encouraged to consider
+one of these for your MythTV filesystem.  JFS is the absolute best at
+deletion, so you may want to try it if XFS gives you problems.  MythTV
+incorporates a "slow delete" feature, which progressively shrinks the file
+rather than attempting to delete it all at once, so if you're more
+comfortable with a filesystem such as ext3 (whose delete performance for
+large files isn't that good) you may use it rather than one of the
+known-good high-performance file systems.  There are other ramifications to
+using XFS and JFS - neither offer the opportunity to shrink a filesystem;
+they may only be expanded.
+
+<figure loc="here">
+<eps file="stop.eps" height="1cm">
+<img src="stop.png">
+<caption><bf>NOTE</bf>:  You <em>must not</em> use ReiserFS v3 for
+your recordings. You will get corrupted recordings if you do.
+</caption>
+</figure>
+
+Because of the size of the MythTV files, it may be useful to plan for future
+expansion right from the beginning.  If your case and power supply have the
+capacity for additional hard drives, read through the <ref
+id="advancedpartitionformatting" name="Advanced Partition Formatting">
+sections for some pointers.
+
+<label id="video_capture_device">
+<sect2>Video Capture Device
+<p>In order to capture video, MythTV will need one or more video capture
+devices with Linux drivers.  There are a number of classes of hardware
+available for capturing video.
+<sect3>Frame Grabbers.
+<p>This class of card is the simplest and is usually the cheapest.  There is no
+on-board encoding of the analog video; hardware known as a Digital-Analog
+Converter (DAC) takes the video and presents it to the computer in an
+essentially raw digital form.
+
+For a list of video capture cards known to work with Linux, please see
+<tt>/usr/src/linux/Documentation/video4linux/bttv</tt> for a partial
+listing; even if your specific card is not listed, it may be that the vendor
+is actually using a standard reference design and placing their own name on
+it.  See the video4linux mailing list (<url
+url="http://listman.redhat.com/mailman/listinfo/video4linux-list"
+name="http://listman.redhat.com/mailman/listinfo/video4linux-list">) for
+more information and for specific hardware questions.
+
+The most common inexpensive cards available use the Bt848, Bt878 or CX2388x
+series of video capture chips; examples are the "Hauppauge WinTV Go" card and
+the "AverTV Desktop PVR" card, both of which use the bttv kernel module.
+
+After you have installed a suitable capture device, you can check that
+the kernel sees it with <tt>lspci</tt>. Look for an entry labeled "Multimedia
+video controller". To get more detailed information about the card, use
+<tt>lspci -v</tt> or <tt>lspci -vv</tt>.  Ensure that your system is loading
+the bttv modules by typing:
+<tscreen><verb>
+# lsmod |grep bttv
+</verb></tscreen>
+
+You want to see the <tt>bttv</tt> module listed.
+
+<sect3>Hardware MPEG-2 encoders.
+<p>While inexpensive video-capture cards simply capture raw frames, leaving
+encoding to software, some higher-end cards incorporate hardware-based
+encoding.  Using either a G200 MJPEG encoder card, or a MPEG-2 encoder card
+supported by the IvyTV project <url url="http://ivtvdriver.org/"
+name="http://ivtvdriver.org"> such as the Hauppauge PVR-150/250/350/500,
+Avermedia M179, Hauppauge "Freestyle" or Yuan M600 cards will allow you to
+use dedicated hardware encoders rather than your CPU.  Using the on-board
+MPEG-2 encoder greatly reduces the CPU requirements for encoding.
+
+<bf>NOTE</bf>:  Motherboards with the Via chipset are notoriously bad with
+DMA and have caused numerous issues with ivtv, including hard locks.  See
+the ivtv website <url url="http://ivtvdriver.org" name="http://ivtvdriver.org">
+for the latest information on what works and what doesn't.
+
+Here are some data points for encoding:
+<itemize>
+<item>A Celeron 450 uses 2% CPU for encoding a 480x480 16Mbps MPEG-2 stream.
+</itemize>
+
+Here are some data points for decoding:
+
+<itemize>
+<item>An Athlon 1800XP can decode a 720x480 8Mbps MPEG-2 file using 10% CPU
+<item>An Athlon 1GHz can decode a 720x480 16Mbps MPEG-2 file using 30-50%
+CPU, can decode a 480x480 16Mbps MPEG-2 using 30% CPU and approximately 30%
+for Live TV at 416x480.
+</itemize>
+
+<sect3>DVB capture cards.
+<p>DVB is a video standard primarily found in Europe (where it comes in
+DVB-C, DVB-T and DVB-S and -S2 varieties for Cable, Terrestrial and
+Satellite) and is also used as the programming interface for HDTV capture
+cards in Linux.  To see if your DVB card is supported, see the list of cards
+in the "Supported Hardware" section of the DVB Wiki at <url
+url="http://www.linuxtv.org/wiki/index.php/Main_Page"
+name="http://www.linuxtv.org/wiki/index.php/Main_Page"> for more
+information.
+
+In the United States, you may use a card such as the TwinHan to obtain
+unencrypted Free-To-Air satellite channels.  See <url
+url="http://www.lyngsat.com/" name="http://www.lyngsat.com/"> for the types
+of content which are available.
+
+<sect3>HDTV.
+<p>There are a number of HDTV cards with Linux drivers which are known to
+operate in the United States; a complete list of cards with DVB drivers can
+be found at <url url="http://www.linuxtv.org/"
+name="http://www.linuxtv.org/"> Some cards support capture of unencrypted
+digital cable TV (utilizing QAM64 or QAM256), others will only work with
+Over The Air signals captured with an antenna (with 8VSB).
+
+<em>None</em> of the capture devices listed above
+perform any encoding; they merely allow your computer to save a copy of a
+HDTV stream which has already been converted to MPEG-2 at the broadcast
+facility.
+
+<sect3>Hauppauge HD PVR
+<p>Hauppuage makes a device called the HD PVR, which accepts component HDTV
+signals and TOSLINK / SPDIF audio and performs a real-time encode into
+H.264.  See <url
+url="http://www.hauppauge.com/site/products/data_hdpvr.html"
+name="http://www.hauppauge.com/site/products/data_hdpvr.html"> for
+additional information.
+
+<sect2>Playback of HDTV using CPU
+<p>To playback HDTV content, plan on a powerful CPU if your video card does not
+provide support for offloading video decode. (See below for a description of VDPAU)
+
+"How powerful?" depends on a number of factors, such as the capture
+resolution, whether the video is progressive or interlaced, and whether your
+display card has hardware-assist support for Linux.
+
+The Simple Answer: Once you are in the 3.2 Ghz P4-class of CPU you should have
+no issues with viewing HDTV.
+
+The Complicated Answer:
+
+For 720p content (1280x720), a 2.4GHz P4 should be sufficient.
+
+For 1920x1080i->1920x1080p with the better deinterlacing methods done in
+real time a 2.4GHz CPU is taxed, but should work if you use "Bob and Weave"
+deinterlacing, or if you have an NVIDIA card with video decode acceleration.
+
+<sect2>Playback of HDTV using VDPAU
+<p>NVIDIA now incorporates MPEG-2 and H.264 decode acceleration in their
+binary driver; this is now officially supported in MythTV 0.22 or later.  Use of
+VDPAU offloads the decompression and deinterlacing of video to the video GPU
+rather than the CPU of the frontend, so the CPU requirements are drastically
+lowered.  A fanless frontend using an Intel Atom CPU running a single-core
+at 1.6Ghz is sufficient to decode and deinterlace MPEG-2 and H.264 if it has
+VDPAU supported video.
+
+<sect3>Firewire.
+<p>You may use the Firewire output of the Motorola DCT6200 or the SA3250.
+If your provider uses 5C encryption on a particular channel, you won't be
+able to get any content.  Many users have resorted to using Firewire to
+change channels on their set-top-box and capture the High Def video using
+the Component output fed into a Hauppauge HD PVR.
+
+<sect3>DBoxII or other devices running Neutrino
+<p>You may use the Ethernet port of an DBoxII or a similar device to capture
+MPEG-2. Your set top box has to be running the Neutrino GUI.
+
+<sect3>USB Capture Devices.
+<p>The Plextor ConvertX PVR devices are supported through Linux drivers
+available from <url url="http://go7007.imploder.org/"
+name="http://go7007.imploder.org/">.  MythTV uses the Plextor to capture
+hardware encoded MPEG-4, so the host CPU requirements are low.
+
+Hauppauge WinTV-PVR-USB2 and variants are supported by the Linux Kernel as
+of 2.6.18.  Additional information is available at <url
+url="http://www.isely.net/pvrusb2/" name="http://www.isely.net/pvrusb2/">).
+
+<sect3>IP Recorder (RTSP, RTS, UDP)
+<p>MPEG-2, MPEG-4 and H.264 stream recording is supported using the IPTV
+recorder in MythTV.  This recorder expects the channels to be supplied as a
+m3u playlist.  If your DSL/Fiber provider supplies television service, but
+does not provide a m3u playlist for the channels, you can construct one for
+your own use.  You do not need to download it from the same server as the
+streams themselves, and it can also be read from a file if this is more
+convenient.
+
+<bf>NOTE</bf>: Some DSL providers only allow you to use one recorder at a
+time, so you may need to limit yourself to one recorder in MythTV and turn
+off any set top box the cable provider sold or rented to you with your
+service. This limitation is independent of the bandwidth you have purchased.
+
+<sect2>Sound card
+<p>The system needs a sound card or an on-board equivalent on the motherboard
+to play back and in some cases, to record sound. Any sound card that can be
+operated by the ALSA (Advanced Linux Sound Architecture) kernel modules will
+work with MythTV.  However, some cards and drivers will provide better
+quality or compatibility than others.
+
+<figure loc="here">
+<eps file="warning" height="1cm">
+<img src="warning.png">
+<caption><bf>NOTE</bf>:  Analog video capture cards are the only ones which
+require a sound card for capturing audio.  DVB, HDTV, and other hardware
+encoder cards all provide a combined audio / video stream.  If you're not
+using a V4L analog device, you may skip this section.
+</caption>
+</figure>
+
+The usual practice for capturing the audio associated with the video is to
+run a cable from an audio output on the video capture card to the Line input
+on a sound card. However, some video capture cards provide on-board audio
+capabilities that work with the kernel <tt>btaudio</tt> module instead,
+thereby eliminating the need for a cable.  This is useful if you will be
+using multiple capture cards in a single chassis, since each capture card
+will not need its own sound card.  Note that a separate sound card is still
+required for playback when using <tt>btaudio</tt>, and that often the audio
+recorded in this way will be mono only.  See the <ref id="btaudio"
+name="btaudio"> section for more information.
+
+<figure loc="here">
+<eps file="stop.eps" height="1cm">
+<img src="stop.png">
+<caption><bf>NOTE</bf>:  Plugging a Line-level device into the Mic input is
+not recommended.  Line-level devices have higher voltages and can damage the
+sound card.  In addition, even if it doesn't break your card, you will be
+getting Mono sound.  See the Linux MP3 HOWTO at <url
+url="http://www.tldp.org/HOWTO/MP3-HOWTO.html"
+name="http://www.tldp.org/HOWTO/MP3-HOWTO.html"> for additional information.
+</caption>
+</figure>
+
+<sect2>Video Display Card
+<p>MythTV will work with just about any video card.  However, it is highly
+recommended that you use a card which supports XVideo (XV) extensions. If
+your card does not support XV, color conversion and scaling will be
+performed by your CPU rather than the video card.  This is very CPU
+and memory intensive and will often result in dropped frames and a
+corresponding degradation of quality.  Check the X documentation
+for details if you are uncertain about your preferred card.  You may
+also run <tt>xvinfo</tt>; look for your video card to be listed as one
+of the adapters.
+
+<!-- Updated information  from "Ray Olszewski" <ray@comarre.com> -->
+
+If you want to use MythTV with a standard television, you will need a
+physical connection from your video card to your TV set, which can either be
+a TV-out port on the card itself or an external adapter that converts the
+VGA signal to an appropriate video signal. "Appropriate" depends on a number
+of factors, such as video standard (NTSC vs. PAL), the type of input
+connection (Composite vs. SVideo), etc.
+
+Note that with some video cards and X drivers, XVideo extensions are
+only supported on the VGA output, and not on the TV output.
+
+<sect2>Cards with TV-out
+<p>This section deals with a number of cards that are known to have
+TV-out ports.  The list is unlikely to be complete, so if you know of
+others, please post a message to the mythtv-users mailing list so the
+information can be included in future versions of the HOWTO. The list is
+organized by manufacturer.
+
+Reports here are based on what users of the cards have posted on the
+mythtv-users mailing list, so if you need configuration details, please
+search the archives at <url
+url="http://www.gossamer-threads.com/lists/mythtv/"
+name="http://www.gossamer-threads.com/lists/mythtv/"> using
+the card name in your search string.
+
+<sect3>NVIDIA
+<p>Some NVIDIA cards with TV-out can be run using the standard nv driver in
+X, combined with the userspace application <bf>nvtv</bf> to control the TV-out
+port. See <url url="http://sourceforge.net/projects/nv-tv-out/"
+name="http://sourceforge.net/projects/nv-tv-out/"> for details.  Recent
+versions of the NVIDIA driver have better support for overscan and other
+features useful with TV-Out, so the <bf>nvtv</bf> application may not be
+required.
+
+Some NVIDIA cards can be run with a proprietary NVIDIA X driver made
+available by NVIDIA. See <url url="http://www.nvidia.com/object/unix.html"
+name="http://www.nvidia.com/object/unix.html"> for more information.
+
+<bf>NOTE</bf>:  It's strongly recommended that you use the proprietary
+NVIDIA drivers; they have excellent support for XvMC and ship with a good
+configuration utility.  XvMC provides MPEG-2 hardware acceleration, which is
+important if you want to display HDTV.  VDPAU is another new feature and it
+provides an API for offloading MPEG-2 and H.264 to the GPU.
+
+<sect2>External Adapters
+<p>External adapters convert standard VGA output to a form suitable for
+display on a television. The output format varies by region, since
+different countries have different TV standards. People on the mythtv-users
+list have mentioned these adapters:
+
+<itemize>
+<item>AITech Web Cable Plus, powered by external transformer or takes power
+from PS/2 keyboard connector, support resolutions up to 1024x768, outputs
+composite and SVideo, provides position adjustment.
+<item>Averkey lite, powered by a USB port, has Composite, SVideo, YPbPr
+outputs; pan, brightness, overscan/underscan controls; supports up to
+1024x768 outputs; and supports PAL and NTSC.
+<item>ADS TV Elite XGA
+<item>AverKey iMicro (comments are generally favorable)
+<item>AITech Web Cable (comments are generally unfavorable, different than
+the "Plus" version above)
+<item>TVIEW Gold (mentioned once, favorably)
+</itemize>
