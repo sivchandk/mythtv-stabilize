@@ -362,8 +362,8 @@ die(){
     echolog "$@"
     cat <<EOF
 
-If you think configure made a mistake, make sure you are using the latest
-version from SVN.  If the latest version fails, report the problem to the
+If you think configure made a mistake, make sure that you are using the latest
+version of MythTV from git.  If the latest version fails, report the problem to the
 mythtv-dev@mythtv.org mailing list or IRC #mythtv on irc.freenode.net
 EOF
     if disabled logging; then
@@ -678,6 +678,15 @@ add_extralibs(){
 check_cmd(){
     log "$@"
     "$@" >> $logfile 2>&1
+}
+
+check_python(){
+    log check_python
+    check_cmd $python <<EOF
+import sys
+if sys.version_info < (2,6):
+    sys.exit(1)
+EOF
 }
 
 check_py_lib(){
@@ -2611,8 +2620,8 @@ enable $arch
 # if no tune setting and we know cpu class look at $processor
 if enabled proc_opt_old; then
 # first try to tune based on processor info
-# Intel i7 processors (EMT64T capable)
-   if expr "$processor" : ".*Intel(R).*Core(TM) i7 CPU.*" > /dev/null ; then
+# Intel i3, i5, i7 processors (EMT64T capable)
+   if expr "$processor" : ".*Intel(R).*Core(TM) i[357] CPU.*" > /dev/null ; then
        cpu="core2"
 # EM64T era Intel Xeon
    elif expr "$processor" : ".*Intel(R) Xeon(R) CPU.*51[1-6][08]" > /dev/null ; then
@@ -4185,6 +4194,7 @@ fi
 
 # Check for python dependencies
 if enabled bindings_python; then
+    check_python         || disable_bindings_python "Python 2.6"
     check_py_lib MySQLdb || disable_bindings_python "MySQLdb"
     check_py_lib lxml    || disable_bindings_python "lxml"
 fi

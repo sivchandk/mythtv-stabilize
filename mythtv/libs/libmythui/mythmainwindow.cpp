@@ -157,24 +157,26 @@ class MythMainWindowPrivate
         mainStack(NULL),
 
         painter(NULL),
-
-#ifdef USE_OPENGL_PAINTER
         render(NULL),
-#endif
 
         AllowInput(true),
 
+        gesture(MythGesture()),
         gestureTimer(NULL),
+        hideMouseTimer(NULL),
 
         paintwin(NULL),
 
         oldpaintwin(NULL),
         oldpainter(NULL),
+        oldrender(NULL),
 
         m_drawDisabledDepth(0),
         m_drawEnabled(true),
 
-        m_themeBase(NULL)
+        m_themeBase(NULL),
+
+        m_udpListener(NULL)
     {
     }
 
@@ -227,10 +229,8 @@ class MythMainWindowPrivate
     MythScreenStack *mainStack;
 
     MythPainter *painter;
+    MythRender  *render;
 
-#ifdef USE_OPENGL_PAINTER
-    MythRenderOpenGL *render;
-#endif
 
     bool AllowInput;
 
@@ -247,6 +247,7 @@ class MythMainWindowPrivate
 
     QWidget *oldpaintwin;
     MythPainter *oldpainter;
+    MythRender *oldrender;
 
     QMutex m_drawDisableLock;
     QMutex m_setDrawEnabledLock;
@@ -419,6 +420,7 @@ MythMainWindow::MythMainWindow(const bool useDB)
     d->paintwin = NULL;
     d->oldpainter = NULL;
     d->oldpaintwin = NULL;
+    d->oldrender = NULL;
 
     //Init();
 
@@ -545,6 +547,11 @@ MythPainter *MythMainWindow::GetCurrentPainter(void)
 QWidget *MythMainWindow::GetPaintWindow(void)
 {
     return d->paintwin;
+}
+
+MythRender *MythMainWindow::GetRenderDevice()
+{
+    return d->render;
 }
 
 void MythMainWindow::AddScreenStack(MythScreenStack *stack, bool main)
@@ -923,6 +930,12 @@ void MythMainWindow::Init(void)
         d->painter = NULL;
     }
 
+    if (d->render)
+    {
+        d->oldrender = d->render;
+        d->render = NULL;
+    }
+
     QString painter = GetMythDB()->GetSetting("ThemePainter", "qt");
 #ifdef USE_OPENGL_PAINTER
     if (painter == "opengl")
@@ -931,8 +944,9 @@ void MythMainWindow::Init(void)
         d->painter = new MythOpenGLPainter();
         QGLFormat fmt;
         fmt.setDepth(false);
-        d->render  = new MythRenderOpenGL(fmt);
-        d->paintwin = new MythPainterWindowGL(this, d, d->render);
+        d->render = new MythRenderOpenGL(fmt);
+        MythRenderOpenGL *gl = dynamic_cast<MythRenderOpenGL*>(d->render);
+        d->paintwin = new MythPainterWindowGL(this, d, gl);
         QGLWidget *qgl = dynamic_cast<QGLWidget *>(d->paintwin);
         if (qgl && !qgl->isValid())
         {
@@ -942,9 +956,10 @@ void MythMainWindow::Init(void)
             d->painter = NULL;
             delete d->paintwin;
             d->paintwin = NULL;
+            d->render = NULL; // deleted by the painterwindow
         }
         else
-            d->render->Init();
+            gl->Init();
     }
     else
 #endif
@@ -1140,6 +1155,10 @@ void MythMainWindow::ReinitDone(void)
 
     delete d->oldpaintwin;
     d->oldpaintwin = NULL;
+
+    // For OpenGL contexts (at least), deleting the painter window also
+    // deletes the render context
+    d->oldrender = NULL;
 
     d->paintwin->move(0, 0);
     d->paintwin->setFixedSize(size());

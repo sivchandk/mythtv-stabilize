@@ -37,12 +37,12 @@ static const QString kDefaultVertexShader =
 
 static const QString kDefaultFragmentShader =
 "GLSL_DEFINES"
-"uniform sampler2D s_texture0;\n"
+"uniform GLSL_SAMPLER s_texture0;\n"
 "varying vec4 v_color;\n"
 "varying vec2 v_texcoord0;\n"
 "void main(void)\n"
 "{\n"
-"    gl_FragColor = texture2D(s_texture0, v_texcoord0) * v_color;\n"
+"    gl_FragColor = GLSL_TEXTURE(s_texture0, v_texcoord0) * v_color;\n"
 "}\n";
 
 static const QString kSimpleVertexShader =
@@ -66,7 +66,7 @@ static inline int __glCheck__(const QString &loc, const char* fileName, int n)
 {
     int error = glGetError();
     if (error)
-    { 
+    {
         VERBOSE(VB_IMPORTANT, QString("%1: %2 @ %3, %4")
             .arg(loc).arg((const char*)gluErrorString(error))
             .arg(fileName).arg(n));
@@ -275,7 +275,7 @@ void MythRenderOpenGL::Flush(bool use_fence)
     {
         glFlush();
     }
-    
+
     doneCurrent();
 }
 
@@ -1790,7 +1790,7 @@ void MythRenderOpenGL::DeleteDefaultShaders(void)
     }
 }
 
-uint MythRenderOpenGL::CreateShader(int type, const QString source)
+uint MythRenderOpenGL::CreateShader(int type, const QString &source)
 {
     uint result = m_glCreateShaderObject(type);
     QByteArray src = source.toAscii();
@@ -1860,14 +1860,18 @@ void MythRenderOpenGL::OptimiseShaderSource(QString &source)
 {
     QString version = "#version 120\n";
     QString extensions = "";
+    QString sampler = "sampler2D";
+    QString texture = "texture2D";
 
-    if (m_exts_used & kGLExtRect)
+    if ((m_exts_used & kGLExtRect) && source.contains("GLSL_SAMPLER"))
     {
         extensions += "#extension GL_ARB_texture_rectangle : enable\n";
-        source.replace("sampler2D", "sampler2DRect");
-        source.replace("texture2D", "texture2DRect");
+        sampler += "Rect";
+        texture += "Rect";
     }
 
+    source.replace("GLSL_SAMPLER", sampler);
+    source.replace("GLSL_TEXTURE", texture);
     source.replace("GLSL_DEFINES", version + extensions);
 
     VERBOSE(VB_EXTRA, "\n" + source);
@@ -2092,6 +2096,8 @@ uint MythRenderOpenGL::GetBufferSize(QSize size, uint fmt, uint type)
             bpp = 4;
             break;
         case GL_YCBCR_MESA:
+        case GL_YCBCR_422_APPLE:
+        case GL_RGB_422_APPLE:
             bpp = 2;
             break;
         default:
