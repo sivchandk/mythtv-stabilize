@@ -36,7 +36,7 @@ MythSocket::MythSocket(int socket, MythSocketCBs *cb)
     : MSocketDevice(MSocketDevice::Stream),            m_cb(cb),
       m_useReadyReadCallback(true),
       m_state(Idle),         m_addr(),                 m_port(0),
-      m_ref_count(0),        m_notifyread(false)
+      m_ref_count(0),        m_notifyread(false),      m_validated(false)
 {
     VERBOSE(VB_SOCKET, LOC + "new socket");
     if (socket > -1)

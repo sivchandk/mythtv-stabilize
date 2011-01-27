@@ -47,6 +47,9 @@ class MPUBLIC MythSocket : public MSocketDevice
     void useReadyReadCallback(bool useReadyReadCallback = true)
         { m_useReadyReadCallback = useReadyReadCallback; }
 
+    void setValidated(void) { m_validated = true; }
+    bool isValidated(void) { return m_validated; }
+
     qint64 readBlock(char *data, quint64 len);
     qint64 writeBlock(const char *data, quint64 len);
 
@@ -81,6 +84,7 @@ class MPUBLIC MythSocket : public MSocketDevice
     QHostAddress    m_addr;
     quint16         m_port;
     int             m_ref_count;
+    bool            m_validated;
 
     bool            m_notifyread;
     QMutex          m_ref_lock;

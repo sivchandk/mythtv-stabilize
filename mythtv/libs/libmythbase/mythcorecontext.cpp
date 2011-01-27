@@ -929,6 +929,9 @@ bool MythCoreContext::CheckProtoVersion(MythSocket *socket, uint timeout_ms,
     if (!socket)
         return false;
 
+    if (socket->isValidated())
+        return true;
+
     QStringList strlist(QString("MYTH_PROTO_VERSION %1 %2")
                         .arg(MYTH_PROTO_VERSION).arg(MYTH_PROTO_TOKEN));
     socket->writeStringList(strlist);
@@ -964,6 +967,7 @@ bool MythCoreContext::CheckProtoVersion(MythSocket *socket, uint timeout_ms,
     {
         VERBOSE(VB_IMPORTANT, QString("Using protocol version %1")
                                .arg(MYTH_PROTO_VERSION));
+        socket->setValidated();
         return true;
     }
 
