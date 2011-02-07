@@ -1,5 +1,5 @@
 INCLUDEPATH += ../.. ../../libs/ ../../libs/libmyth ../../libs/libmyth/audio
-INCLUDEPATH +=  ../../libs/libmythtv ../../external/FFmpeg
+INCLUDEPATH +=  ../../libs/libmythtv ../../external/FFmpeg ../../libs/libmythprotoserver
 INCLUDEPATH += ../../libs/libmythupnp ../../libs/libmythui ../../libs/libmythmetadata
 INCLUDEPATH += ../../libs/libmythlivemedia ../../libs/libmythbase ../../libmythhdhomerun
 INCLUDEPATH += ../../libs/libmythdvdnav ../../libs/libmythbluray ../../libs/libmythsamplerate
@@ -14,6 +14,7 @@ LIBS += -L../../libs/libmythbase
 LIBS += -L../../libs/libmythui
 LIBS += -L../../libs/libmythupnp
 LIBS += -L../../libs/libmythmetadata
+LIBS += -L../../libs/libmythprotoserver
 
 LIBS += -lmythtv-$$LIBVERSION
 LIBS += -lmythswscale
@@ -26,6 +27,7 @@ LIBS += -lmythbase-$$LIBVERSION
 LIBS += -lmythui-$$LIBVERSION
 LIBS += -lmyth-$$LIBVERSION
 LIBS += -lmythmetadata-$$LIBVERSION
+LIBS += -lmythprotoserver-$$LIBVERSION
 
 using_live:LIBS += -L../../libs/libmythlivemedia -lmythlivemedia-$$LIBVERSION
 using_mheg:LIBS += -L../../libs/libmythfreemheg -lmythfreemheg-$$LIBVERSION
@@ -46,12 +48,13 @@ POST_TARGETDEPS += ../../external/FFmpeg/libavformat/$$avLibName(avformat)
 POST_TARGETDEPS += ../../external/FFmpeg/libswscale/$$avLibName(swscale)
 POST_TARGETDEPS += ../../libs/libmythupnp/libmythupnp-$${MYTH_SHLIB_EXT}
 POST_TARGETDEPS += ../../libs/libmythbase/libmythbase-$${MYTH_SHLIB_EXT}
+POST_TARGETDEPS += ../../libs/libmythprotoserver/libmythprotoserver-$${MYTH_SHLIB_EXT}
 using_live: POST_TARGETDEPS += ../../libs/libmythlivemedia/libmythlivemedia-$${MYTH_SHLIB_EXT}
 using_hdhomerun: POST_TARGETDEPS += ../../libs/libmythhdhomerun/libmythhdhomerun-$${MYTH_SHLIB_EXT}
 
 DEPENDPATH += ../.. ../../libs ../../libs/libmyth ../../libs/libmyth/audio
 DEPENDPATH +=  ../../libs/libmythtv ../../external/FFmpeg
-DEPENDPATH += ../../libs/libmythupnp ../../libs/libmythui
+DEPENDPATH += ../../libs/libmythupnp ../../libs/libmythui ../../libs/libmythprotoserver
 DEPENDPATH += ../../libs/libmythlivemedia ../../libmythbase ../../libmythhdhomerun
 
 using_opengl:CONFIG += opengl
