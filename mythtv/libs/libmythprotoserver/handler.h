@@ -9,6 +9,7 @@
 
 // MythTV
 #include "mythsocket.h"
+#include "mythcorecontext.h"
 
 class MainServer;
 

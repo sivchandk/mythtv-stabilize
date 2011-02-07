@@ -60,7 +60,8 @@ class MainServer : public QObject, public MythSocketCBs
     bool DeleteHandlerSock(MythSocket *sock, QString type);
     int  DeleteHandlerSock(MythSocket *sock, bool force=true);
 
-    int GetExitCode() const { return m_exitCode; }
+    void customEvent(QEvent *event);
+    int  GetExitCode() const { return m_exitCode; }
 
   private slots:
     void newConnection(MythSocket *);
