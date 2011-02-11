@@ -4,6 +4,7 @@ using namespace std;
 #include <QReadWriteLock>
 #include <QMap>
 #include <QList>
+#include <QTimer>
 #include <QWaitCondition>
 
 // MythTV
@@ -31,17 +32,21 @@ class MainServer : public QObject, public MythSocketCBs
 {
     Q_OBJECT
   public:
-    MainServer(int port);
+    MainServer(bool connect_to_master, int port);
    ~MainServer();
 
     bool      registerHandler(ProtoHandler *handler);
     bool    unregisterHandler(QString &name);
-    void unregisterAllHandler();
+    void unregisterAllHandler(void);
 
     void readyRead(MythSocket *socket);
     void connectionClosed(MythSocket *socket);
     void connectionFailed(MythSocket *socket) { (void)socket; }
     void connected(MythSocket *socket) { (void)socket; }
+
+    void masterConnect(void);
+    void masterDisconnect(void);
+    bool isMaster(void) { return m_isMaster; }
 
     void ProcessRequest(MythSocket *sock);
     void MarkUnused(ProcessRequestThread *prt);
@@ -53,7 +58,9 @@ class MainServer : public QObject, public MythSocketCBs
     ProtoSocketHandler *GetHandlerSock(QString hostname);
     ProtoSocketHandler *GetHandlerSock(MythSocket *sock, QString type);
     ProtoSocketHandler *GetHandlerSock(MythSocket *sock);
+
     SockHandlerList    *GetSockHandlerList(MythSocket *sock);
+    SockHandlerList    *GetSockHandlerList(QString type);
 
     bool    AddHandlerSock(ProtoSocketHandler *sock);
     bool DeleteHandlerSock(ProtoSocketHandler *sock);
@@ -61,7 +68,13 @@ class MainServer : public QObject, public MythSocketCBs
     int  DeleteHandlerSock(MythSocket *sock, bool force=true);
 
     void customEvent(QEvent *event);
+    void BroadcastEvent(MythEvent *me);
+    void BroadcastSystemEvent(MythEvent *me);
+
     int  GetExitCode() const { return m_exitCode; }
+
+  protected slots:
+    void masterReconnect(void);
 
   private slots:
     void newConnection(MythSocket *);
@@ -80,11 +93,18 @@ class MainServer : public QObject, public MythSocketCBs
     MythDeque<ProcessRequestThread *> m_threadPool;
 
     int m_exitCode;
+    static const uint kMasterServerReconnectTimeout;
+
+    QTimer *m_masterServerReconnect;
+    bool    m_isMaster;
 
     void ProcessRequestWork(MythSocket *sock);
     void HandleVersion(MythSocket *sock, const QStringList &slist);
     void HandleAnnounce(MythSocket *sock, QStringList &commands,
                                           QStringList &slist);
     void HandleDone(MythSocket *sock);
+    void HandleMessage(ProtoSocketHandler *sock, QStringList &slist);
+    void HandleBackendMessage(ProtoSocketHandler *sock, QStringList &slist);
+
     void SetExitCode(int exitCode, bool closeApplication);
 };

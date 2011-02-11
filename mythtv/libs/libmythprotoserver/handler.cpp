@@ -17,7 +17,7 @@ ProtoSocketHandler::ProtoSocketHandler(MainServer *parent, MythSocket *sock,
     m_parent(parent),
     m_sock(sock),
     m_hostname(hostname),
-    m_refCount(0)
+    m_refCount(1)
 {
     m_sock->UpRef();
 }
@@ -40,7 +40,8 @@ void ProtoSocketHandler::UpRef(void)
 {
     QMutexLocker locker(&m_refLock);
     m_refCount++;
-    VERBOSE(VB_SOCKET, QString("ProtoSocketHandler(): UpRef -> %1").arg(m_refCount));
+    VERBOSE(VB_SOCKET, QString("%1::UpRef -> %2")
+                        .arg(GetLoc()).arg(m_refCount));
 }
 
 bool ProtoSocketHandler::DownRef(void)
@@ -48,10 +49,12 @@ bool ProtoSocketHandler::DownRef(void)
     QMutexLocker locker(&m_refLock);
 
     m_refCount--;
-    VERBOSE(VB_SOCKET, QString("ProtoSocketHandler(): DownRef -> %1").arg(m_refCount));
+    VERBOSE(VB_SOCKET, QString("%1::DownRef -> %2")
+                        .arg(GetLoc()).arg(m_refCount));
     if (m_refCount < 0)
     {
-//        m_parent->DeletePBS(this);
+        VERBOSE(VB_SOCKET, QString("%1: Deleting...").arg(m_refCount));
+        m_parent->DeleteHandlerSock(this);
         return true;
     }
     return false;
@@ -79,8 +82,15 @@ bool ProtoSocketHandler::wantsOnlySystemEvents(void) const
     return (m_eventsMode == kPBSEvents_SystemOnly);
 }
 
+bool ProtoSocketHandler::SendStringList(QStringList &strlist, bool lock)
+{
+    if (lock) m_sock->Lock();
+    bool res = m_sock->writeStringList(strlist);
+    if (lock) m_sock->Unlock();
+    return res;
+}
 
-bool ProtoSocketHandler::SendReceiveStringlist(QStringList &strlist,
+bool ProtoSocketHandler::SendReceiveStringList(QStringList &strlist,
                                                uint min_reply_length)
 {
     bool ok = false;
@@ -118,15 +128,17 @@ bool ProtoSocketHandler::SendReceiveStringlist(QStringList &strlist,
 
     if (!ok)
     {
-        VERBOSE(VB_IMPORTANT,
-                "PlaybackSock::SendReceiveStringList(): No response.");
+        VERBOSE(VB_IMPORTANT, 
+                QString("%1::SendReceiveStringList: No response")
+                .arg(GetLoc()));
         return false;
     }
 
     if (min_reply_length && ((uint)strlist.size() < min_reply_length))
     {
         VERBOSE(VB_IMPORTANT,
-                "PlaybackSock::SendReceiveStringList(): Response too short");
+                QString("%1::SendReceiveStringList: Response too short")
+                .arg(GetLoc()));
         return false;
     }
 

@@ -16,45 +16,52 @@
 class MPUBLIC MythEvent : public QEvent
 {
   public:
-    MythEvent(int t) : QEvent((QEvent::Type)t)
+    MythEvent(int t) : QEvent((QEvent::Type)t), m_originLocal(true)
     { }
 
     // lmessage is passed by value for thread safety reasons per DanielK
-    MythEvent(int t, const QString lmessage) : QEvent((QEvent::Type)t)
-    {
-        message = lmessage;
-        extradata.append( "empty" );
-    }
-
-    // lmessage is passed by value for thread safety reasons per DanielK
-    MythEvent(int t, const QString lmessage, const QStringList &lextradata)
+    MythEvent(int t, const QString lmessage, bool local=true)
            : QEvent((QEvent::Type)t)
     {
         message = lmessage;
-        extradata = lextradata;
+        extradata.append( "empty" );
+        m_originLocal = local;
     }
 
     // lmessage is passed by value for thread safety reasons per DanielK
-    MythEvent(const QString lmessage) : QEvent(MythEventMessage)
+    MythEvent(int t, const QString lmessage, const QStringList &lextradata,
+              bool local=true) : QEvent((QEvent::Type)t)
+    {
+        message = lmessage;
+        extradata = lextradata;
+        m_originLocal = local;
+    }
+
+    // lmessage is passed by value for thread safety reasons per DanielK
+    MythEvent(const QString lmessage, bool local=true)
+           : QEvent(MythEventMessage)
     {
         message = lmessage;
         extradata.append( "empty" );
+        m_originLocal = local;
     }
 
     // lmessage is passed by value for thread safety reasons per DanielK
-    MythEvent(const QString lmessage, const QStringList &lextradata)
-           : QEvent((QEvent::Type)MythEventMessage)
+    MythEvent(const QString lmessage, const QStringList &lextradata,
+              bool local=true) : QEvent((QEvent::Type)MythEventMessage)
     {
         message = lmessage;
         extradata = lextradata;
+        m_originLocal = local;
     }
 
     // lmessage is passed by value for thread safety reasons per DanielK
-    MythEvent(const QString lmessage, const QString lextradata)
-           : QEvent((QEvent::Type)MythEventMessage)
+    MythEvent(const QString lmessage, const QString lextradata,
+              bool local=true) : QEvent((QEvent::Type)MythEventMessage)
     {
         message = lmessage;
         extradata.append( lextradata );
+        m_originLocal = local;
     }
 
 
@@ -65,8 +72,11 @@ class MPUBLIC MythEvent : public QEvent
     const QStringList& ExtraDataList() const { return extradata; }
     int ExtraDataCount() const { return extradata.size(); }
 
+    void   LocalOrigin(bool local)    { m_originLocal = local; }
+    bool isLocalOrigin(void)          { return m_originLocal; }
+
     virtual MythEvent *clone() const
-    { return new MythEvent(message, extradata); }
+    { return new MythEvent(message, extradata, m_originLocal); }
 
     static Type MythEventMessage;
     static Type MythUserMessage;
@@ -84,6 +94,7 @@ class MPUBLIC MythEvent : public QEvent
   private:
     QString message;
     QStringList extradata;
+    bool    m_originLocal;
 };
 
 class MPUBLIC ExternalKeycodeEvent : public QEvent

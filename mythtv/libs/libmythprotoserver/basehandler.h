@@ -33,6 +33,9 @@ class BaseSocketHandler : public ProtoSocketHandler
                 
     QString getType(void)         const { return QString("BASE"); }
     void Shutdown(void);
+  protected:
+    QString GetLoc(void)    { return QString("BaseSocketHandler(%1)")
+                                                .arg(GetID());}
   private:
 
 };

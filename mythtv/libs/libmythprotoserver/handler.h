@@ -35,8 +35,8 @@ class ProtoHandler : public QObject
                         QStringList &commands, QStringList &slist)
                                                   { return false; }
 
-    virtual bool HandleDisconnect(MainServer *ms, MythSocket *socket)
-                                                  { return false; }
+    virtual void MasterConnected(MainServer *ms)    {}
+    virtual void MasterDisconnected(MainServer *ms) {}
 };
 
 class ProtoSocketHandler : public QObject
@@ -74,15 +74,15 @@ class ProtoSocketHandler : public QObject
     void SetBlockShutdown(bool block)   { m_blockshutdown = block; }
     bool getBlockShutdown(void)   const { return m_blockshutdown; }
 
-    bool SendStringList(QStringList &strlist)
-                                { return m_sock->writeStringList(strlist); }
+    void Lock(void)                     { m_sock->Lock(); }
+    void Unlock(void)                   { m_sock->Unlock(); }
+    bool SendStringList(QStringList &strlist, bool lock = false);
+    bool SendReceiveStringList(QStringList &strlist,
+                               uint min_reply_length = 0);
 
     virtual void Shutdown(void)         {};
 
   protected:
-    bool SendReceiveStringlist(QStringList &strlist,
-                               uint min_reply_length = 0);
-
     MainServer *m_parent;
     MythSocket *m_sock;
 
@@ -96,6 +96,21 @@ class ProtoSocketHandler : public QObject
 
     int         m_refCount;
     QMutex      m_refLock;
+
+    QString GetID(void)             { return QString("%1:%2")
+                                                .arg((quint64)this, 0, 16)
+                                                .arg(m_sock->socket()); }
+    virtual QString GetLoc(void)    { return QString("ProtoSocketHandler(%1)")
+                                                .arg(GetID());}
+};
+
+class UpstreamSocketHandler : public ProtoSocketHandler
+{
+  public:
+    UpstreamSocketHandler(MainServer *parent, MythSocket *sock,
+                        QString hostname) :
+            ProtoSocketHandler(parent, sock, hostname) {}
+    QString getType(void)         const { return QString("UPSTREAM"); }
 };
 
 #endif

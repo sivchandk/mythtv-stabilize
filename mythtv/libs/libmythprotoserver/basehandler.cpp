@@ -42,7 +42,6 @@ bool BaseProtoHandler::HandleAnnounce(MainServer *ms, MythSocket *socket,
     }
 
     sock = new BaseSocketHandler(ms, socket, hostname);
-    sock->UpRef();
     sock->SetEventsMode(eventsMode);
     ms->AddHandlerSock(sock);
 

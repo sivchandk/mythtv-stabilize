@@ -9,6 +9,7 @@ using namespace std;
 #include <QWaitCondition>
 #include <QThread>
 #include <QEvent>
+#include <QTimer>
 #include <QCoreApplication>
 
 // MythTV
@@ -34,6 +35,8 @@ using namespace std;
 #define LOC      QString("MainServer: ")
 #define LOC_WARN QString("MainServer, Warning: ")
 #define LOC_ERR  QString("MainServer, Error: ")
+
+const uint MainServer::kMasterServerReconnectTimeout = 1000;
 
 class ProcessRequestThread : public QThread
 {
@@ -99,9 +102,12 @@ class ProcessRequestThread : public QThread
  *
  *  \param port     Integer port for server to listen on
  */
-MainServer::MainServer(int port) : m_mythserver(NULL),
-       m_sockHandlerLock(QReadWriteLock::Recursive),
-       m_exitCode(BACKEND_EXIT_OK)
+MainServer::MainServer(bool isMaster, int port) :
+        m_mythserver(NULL),
+        m_sockHandlerLock(QReadWriteLock::Recursive),
+        m_exitCode(BACKEND_EXIT_OK),
+        m_masterServerReconnect(NULL),
+        m_isMaster(isMaster)
 {
     for (int i = 0; i < PRT_STARTUP_THREAD_COUNT; i++)
     {
@@ -127,9 +133,13 @@ MainServer::MainServer(int port) : m_mythserver(NULL),
                         SLOT(newConnection(MythSocket *)));
 
     gCoreContext->addListener(this);
+    gCoreContext->SetBackend(true);
 
     BaseProtoHandler *handler = new BaseProtoHandler();
     registerHandler(dynamic_cast<ProtoHandler*>(handler));
+
+    if (!isMaster)
+        masterConnect();
 }
 
 /** \fn MainServer::~MainServer()
@@ -150,7 +160,184 @@ MainServer::~MainServer()
 
 void MainServer::customEvent(QEvent *e)
 {
+    if ((MythEvent::Type)(e->type()) == MythEvent::MythEventMessage)
+    {
+        MythEvent *me = (MythEvent *)e;
 
+        QString message = me->Message();
+
+        if (message == "CLEAR_SETTINGS_CACHE")
+        {
+            gCoreContext->ClearSettingsCache();
+            BroadcastEvent(me);
+        }
+        else if (message.startsWith("SYSTEM_EVENT "))
+            BroadcastSystemEvent(me);
+        else if (message == "LOCAL_RECONNECT_TO_MASTER")
+            masterReconnect();
+    }
+}
+
+void MainServer::BroadcastEvent(MythEvent *me)
+{
+    SockHandlerList socklist;
+    ProtoSocketHandler *sock;
+    QStringList message;
+
+    // only broadcast messages which originate locally
+    if (!me->isLocalOrigin())
+        return;
+
+    if (!isMaster())
+    {
+        // because i cant figure out how to prevent it from endlessly looping
+        message << "MESSAGE";
+        SockHandlerList *slist = GetSockHandlerList(QString("UPSTREAM"));
+        if (slist == NULL)
+        {
+            VERBOSE(VB_IMPORTANT, "MainServer::BroadcastEvent : could "
+                                  "not find master backend");
+            return;
+        }
+
+        sock = slist->first();
+        delete slist;
+        
+        sock->UpRef();
+        socklist << sock;
+    }
+    else
+    {
+        QReadLocker rlock(&m_sockHandlerLock);
+        SockMap::const_iterator i = m_sockHandlerMap.begin();
+        while (i != m_sockHandlerMap.end())
+        {
+            socketentry *entry = *i;
+            SockHandlerMap::const_iterator j = entry->handlers.begin();
+            while (j != entry->handlers.end())
+            {
+                sock = j.value();
+                if (sock->wantsNonSystemEvents())
+                {
+                    sock->UpRef();
+                    socklist << sock;
+                    sock = NULL;
+                    break;
+                }
+                sock = NULL;
+                j++;
+            }
+            i++;
+        }
+    }
+
+    message << me->Message()
+            << me->ExtraDataList();
+
+    while (!socklist.isEmpty())
+    {
+        sock = socklist.takeFirst();
+        if(isMaster())
+            sock->SendStringList(message);
+        else
+        {
+            sock->SendReceiveStringList(message);
+            if (message.first() != "OK")
+                VERBOSE(VB_IMPORTANT, "MainServer::BroadcastEvent failed");
+        }
+        sock->DownRef();
+    }
+}
+
+void MainServer::BroadcastSystemEvent(MythEvent *me)
+{
+    SockHandlerList socklist;
+    ProtoSocketHandler *sock;
+    QStringList hostlist(gCoreContext->GetHostName());
+    QStringList message;
+
+    // only broadcast messages which originate locally
+    if (!me->isLocalOrigin())
+        return;
+
+    if (!isMaster())
+    {
+        // because i cant figure out how to prevent it from endlessly looping
+        message << "MESSAGE";
+        SockHandlerList *slist = GetSockHandlerList(QString("UPSTREAM"));
+        if (slist == NULL)
+        {
+            VERBOSE(VB_IMPORTANT, "MainServer::BroadcastSystemEvent : could "
+                                  "not find master backend");
+            return;
+        }
+
+        sock = slist->first();
+        delete slist;
+        
+        sock->UpRef();
+        socklist << sock;
+    }
+    else
+    {
+        message << "BACKEND_MESSAGE";
+        QReadLocker rlock(&m_sockHandlerLock);
+        SockMap::const_iterator i = m_sockHandlerMap.begin();
+        while (i != m_sockHandlerMap.end())
+        {
+            socketentry *entry = *i;
+            if (hostlist.contains(entry->hostname))
+                continue;
+
+            SockHandlerMap::const_iterator j = entry->handlers.begin();
+            while (j != entry->handlers.end())
+            {
+                sock = j.value();
+
+                if (!sock->wantsSystemEvents())
+                {
+                    // system events not wanted
+                    j++;
+                    continue;
+                }
+
+                if (sock->wantsNonSystemEvents())
+                {
+                    // normal behavior, send once per host
+                    // if only system events are wanted, send regardless
+                    if (hostlist.contains(entry->hostname))
+                    {
+                        j++;
+                        continue;
+                    }
+                    hostlist << entry->hostname;
+                }
+
+                sock->UpRef();
+                socklist << sock;
+                sock = NULL;
+                j++;
+            }
+            i++;
+        }
+    }
+
+    message << me->Message()
+            << me->ExtraDataList();
+
+    while (!socklist.isEmpty())
+    {
+        sock = socklist.takeFirst();
+        if (isMaster())
+            sock->SendStringList(message);
+        else
+        {
+            sock->SendReceiveStringList(message);
+            if (message.first() != "OK")
+                VERBOSE(VB_IMPORTANT, "MainServer::BroadcastSystemEvent failed");
+        }
+        sock->DownRef();
+    }
 }
 
 // add a new named command handler
@@ -220,14 +407,150 @@ void MainServer::connectionClosed(MythSocket *socket)
     if (slist == NULL)
         return;
 
-    SockHandlerList::const_iterator i = slist->begin();
-    while (i != slist->end())
+    ProtoSocketHandler *handler = slist->first();
+    if (handler->getType() == "UPSTREAM")
     {
-        (*i)->Shutdown();
-        (*i)->DownRef();
-        i++;
+        handler->DownRef();
+        m_masterServerReconnect->start(kMasterServerReconnectTimeout);
     }
+    else
+    {
+        SockHandlerList::const_iterator i = slist->begin();
+        while (i != slist->end())
+        {
+            handler = *i;
+            handler->Shutdown();
+            handler->DownRef();
+            i++;
+        }
+    }
+
     delete slist;
+}
+
+void MainServer::masterConnect(void)
+{
+    SockHandlerList *slist = GetSockHandlerList(QString("UPSTREAM"));
+    if (slist != NULL)
+    {
+        delete slist;
+        return;
+    }
+
+    if (m_masterServerReconnect == NULL)
+    {
+        m_masterServerReconnect = new QTimer(this);
+        m_masterServerReconnect->setSingleShot(true);
+        connect(m_masterServerReconnect, SIGNAL(timeout()), this,
+                SLOT(masterReconnect()));
+    }
+
+    MythSocket *masterServer = new MythSocket();
+    QString address = gCoreContext->GetSetting("MasterServerIP", "127.0.0.1");
+    int port = gCoreContext->GetNumSetting("MasterServerPort", 6543);
+
+    VERBOSE(VB_IMPORTANT, QString("Connecting to master server: %1:%2")
+                           .arg(address).arg(port));
+
+    if (!masterServer->connect(address, port))
+    {
+        VERBOSE(VB_IMPORTANT, "Connection to master server timed out.");
+        masterServer->DownRef();
+        m_masterServerReconnect->start(kMasterServerReconnectTimeout);
+        return;
+    }
+
+    if (masterServer->state() != MythSocket::Connected)
+    {
+        VERBOSE(VB_IMPORTANT, "Could not connect to master server.");
+        masterServer->DownRef();
+        m_masterServerReconnect->start(kMasterServerReconnectTimeout);
+        return;
+    }
+
+    if (!gCoreContext->CheckProtoVersion(masterServer))
+    {
+        masterServer->DownRef();
+        m_masterServerReconnect->start(kMasterServerReconnectTimeout);
+        return;
+    }
+
+    VERBOSE(VB_IMPORTANT, "Connected successfully");
+
+    QString hostname = gCoreContext->GetHostName();
+    UpstreamSocketHandler *ps = new UpstreamSocketHandler(this,
+                                        masterServer, hostname);
+
+    QStringList strlist( QString("ANN Monitor %1 %2")
+                            .arg(gCoreContext->GetHostName())
+                            .arg(true));
+    if (!ps->SendReceiveStringList(strlist) ||
+        strlist.empty() || strlist[0] == "ERROR")
+    {
+        ps->DownRef();
+        ps = NULL;
+        if (strlist.empty())
+        {
+            VERBOSE(VB_IMPORTANT, LOC_ERR +
+                    "Failed to open master server socket, timeout");
+        }
+        else
+        {
+            VERBOSE(VB_IMPORTANT, LOC_ERR +
+                    "Failed to open master server socket" +
+                    ((strlist.size() >= 2) ?
+                     QString(", error was %1").arg(strlist[1]) :
+                     QString(", remote error")));
+        }
+        m_masterServerReconnect->start(kMasterServerReconnectTimeout);
+        return;
+    }
+
+    AddHandlerSock(ps);
+    masterServer->setCallbacks(this);
+    masterServer->DownRef();
+    masterServer = NULL;
+    ps->DownRef();
+    ps = NULL;
+
+    {
+        QReadLocker rlock(&m_handlerLock);
+        HandlerMap::const_iterator i = m_handlerMap.begin();
+        while (i != m_handlerMap.end())
+        {
+            (i.value())->MasterConnected(this);
+            i++;
+        }
+    }
+}
+
+void MainServer::masterDisconnect(void)
+{
+    SockHandlerList *slist = GetSockHandlerList(QString("UPSTREAM"));
+    if (slist == NULL)
+        return;
+    ProtoSocketHandler *ps = slist->first();
+    delete slist;
+    slist = NULL;
+
+    delete m_masterServerReconnect;
+    m_masterServerReconnect = NULL;
+
+    DeleteHandlerSock(ps);
+    {
+        QReadLocker rlock(&m_handlerLock);
+        HandlerMap::const_iterator i = m_handlerMap.begin();
+        while (i != m_handlerMap.end())
+        {
+            (i.value())->MasterDisconnected(this);
+            i++;
+        }
+    }
+}
+
+void MainServer::masterReconnect(void)
+{
+    masterConnect();
 }
 
 void MainServer::readyRead(MythSocket *sock)
@@ -317,6 +640,8 @@ bool MainServer::AddHandlerSock(ProtoSocketHandler *sock)
         return false;
     }
 
+    VERBOSE(VB_SOCKET, QString("MainServer: Adding socket handler (%1)")
+                            .arg(sock->getType()));
     entry->handlers.insert(type, sock);
     sock->UpRef();
     return true;
@@ -449,14 +774,18 @@ ProtoSocketHandler *MainServer::GetHandlerSock(MythSocket *sock)
     ProtoSocketHandler *handler = NULL;
 
     if (!(m_sockHandlerMap.contains(sock)))
+    {
         return handler;
+    }
     socketentry *entry = m_sockHandlerMap[sock];
 
-    if (!(entry->handlers.isEmpty()))
+    if (entry->handlers.isEmpty())
+    {
         return handler;
+    }
 
     SockHandlerMap::const_iterator i = entry->handlers.begin();
-    return (++i).value();
+    return i.value();
 }
 
 SockHandlerList *MainServer::GetSockHandlerList(MythSocket *sock)
@@ -475,6 +804,36 @@ SockHandlerList *MainServer::GetSockHandlerList(MythSocket *sock)
     {
         slist->append(i.value());
         i++;
+    }
+
+    return slist;
+}
+
+SockHandlerList *MainServer::GetSockHandlerList(QString type)
+{
+    QReadLocker rlock(&m_sockHandlerLock);
+    SockHandlerList *slist = new SockHandlerList();
+
+    SockMap::const_iterator i = m_sockHandlerMap.begin();
+    SockHandlerMap::const_iterator j;
+
+    while (i != m_sockHandlerMap.end())
+    {
+        socketentry *entry = i.value();
+        j = entry->handlers.begin();
+        while (j != entry->handlers.end())
+        {
+            if (j.key() == type)
+                slist->append(j.value());
+            j++;
+        }
+        i++;
+    }
+
+    if (slist->isEmpty())
+    {
+        delete slist;
+        slist = NULL;
     }
 
     return slist;
@@ -544,20 +903,11 @@ void MainServer::ProcessRequestWork(MythSocket *sock)
         handled = true;
     }
 
-    // commands that require a validated socket
-    else if (command == "BACKEND_MESSAGE")
-    {
-        QString message = listline[1];
-        QStringList extra( listline[2] );
-        for (int i = 3; i < listline.size(); i++)
-            extra << listline[i];
-        MythEvent me(message, extra);
-        gCoreContext->dispatch(me);
-        handled = true;
-    }
+    // commands below here require a validated connection
     else if (command == "ANN")
     {
         // loop through registered handlers until one handles the announce
+        QReadLocker rlock(&m_handlerLock);
         HandlerMap::iterator i = m_handlerMap.begin();
         while (i != m_handlerMap.end())
         {
@@ -571,16 +921,47 @@ void MainServer::ProcessRequestWork(MythSocket *sock)
     }
     else
     {
-        // loop through registered handlers until one handles the command
-        HandlerMap::iterator i = m_handlerMap.begin();
-        while (i != m_handlerMap.end())
+        // commands below here require an announced connection
+        ProtoSocketHandler *ps = GetHandlerSock(sock);
+        if (ps == NULL)
         {
-            handled = (i.value())->HandleCommand(this, sock, tokens,
-                                                 listline);
-            i++;
+            VERBOSE(VB_IMPORTANT, QString("Got '%1' on unannounced connection.")
+                                    .arg(command));
+            QStringList sl; sl << "ERROR"
+                               << "Command sent before announce";
+            sock->writeStringList( sl );
+            handled = true;
+        }
+        else
+        {
+            ps->UpRef();
 
-            if (handled)
-                break;
+            if (command == "MESSAGE")
+            {
+                HandleMessage(ps, listline);
+                handled = true;
+            }
+            else if (command == "BACKEND_MESSAGE")
+            {
+                HandleBackendMessage(ps, listline);
+                handled = true;
+            }
+            else
+            {
+                // loop through registered handlers until one handles the command
+                QReadLocker rlock(&m_handlerLock);
+                HandlerMap::iterator i = m_handlerMap.begin();
+                while (i != m_handlerMap.end())
+                {
+                    handled = (i.value())->HandleCommand(this, sock, tokens,
+                                                          listline);
+                    i++;
+
+                    if (handled)
+                        break;
+                }
+            }
+            ps->DownRef();
         }
     }
 
@@ -653,9 +1034,51 @@ void MainServer::HandleVersion(MythSocket *socket, const QStringList &slist)
 void MainServer::HandleDone(MythSocket *socket)
 {
     socket->close();
-    DeleteHandlerSock(socket);
+//    DeleteHandlerSock(socket);
 }
 
+void MainServer::HandleMessage(ProtoSocketHandler *sock,
+                               QStringList &listline)
+{
+    QStringList sl;
+    if (listline.size() < 2)
+    {
+        sl << "ERROR" << "no message in command";
+        sock->SendStringList(sl);
+        return;
+    }
+
+    QString message = listline[1];
+    QStringList extra;
+    for (int i = 2; i < listline.size(); i++)
+        extra << listline[i];
+
+    if (extra.empty())
+    {
+        MythEvent me(message);
+        gCoreContext->dispatch(me);
+    }
+    else
+    {
+        MythEvent me(message, extra);
+        gCoreContext->dispatch(me);
+    }
+
+    sl << "OK";
+    sock->SendStringList(sl);
+}
+
+void MainServer::HandleBackendMessage(ProtoSocketHandler *sock,
+                                      QStringList &listline)
+{
+    QString message = listline[1];
+    QStringList extra;
+    for (int i = 2; i < listline.size(); i++)
+        extra << listline[i];
+    MythEvent me(message, extra);
+    me.LocalOrigin(false);
+    gCoreContext->dispatch(me);
+}
 
 void MainServer::SetExitCode(int exitCode, bool closeApplication)
 {

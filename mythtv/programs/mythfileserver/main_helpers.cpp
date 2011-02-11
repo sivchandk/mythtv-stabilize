@@ -381,7 +381,7 @@ int run_fileserver(const MythCommandLineParser &cmdline)
     VERBOSE(VB_IMPORTANT, QString("Enabled verbose msgs: %1")
             .arg(verboseString));
 
-    MainServer *mainServer = new MainServer(port);
+    MainServer *mainServer = new MainServer(false, port);
 
     int exitCode = mainServer->GetExitCode();
     if (exitCode != BACKEND_EXIT_OK)
