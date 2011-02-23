@@ -1,10 +1,11 @@
-include ( ../mythconfig.mak )
-include ( ../settings.pro )
-include (../programs-libs.pro)
+include ( ../../mythconfig.mak )
+include ( ../../settings.pro )
+include ( ../../programs-libs.pro )
+
 QT += network sql xml
 
 TEMPLATE = lib
-CONFIG += plugin thread
+CONFIG += plugin thread warn_on debug
 TARGET = mythsmolt
 target.path = $${LIBDIR}/mythtv/plugins
 INSTALLS += target
@@ -26,6 +27,14 @@ INSTALLS += uifiles
 HEADERS += smoltlog.h
 SOURCES += main.cpp smoltlog.cpp
 
+DEFINES += MPLUGIN_API
+
+use_hidesyms {
+    QMAKE_CXXFLAGS += -fvisibility=hidden
+}
+
 macx {
     QMAKE_LFLAGS += -flat_namespace -undefined suppress
 }
+
+include ( ../../libs-targetfix.pro )
