@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mythuitheme>
+      <window name="smoltviewer">
+
+        <textarea name="pagetitle" from="basetextarea">
+            <area>30,10,570,40</area>
+            <font>baselarge</font>
+            <value>Hardware Profile</value>
+        </textarea>
+
+        <shape name="logbackground" from="basebackground">
+            <area>20,55,760,395</area>
+        </shape>
+
+        <buttonlist name="loglist" from="basebuttonlist">
+            <area>35,70,730,370</area>
+        </buttonlist>
+
+        <shape name="itembackground" from="basebackground">
+            <area>20,460,760,80</area>
+        </shape>
+
+        <textarea name="logitem_text" from="basetextarea">
+            <area>35,465,730,80</area>
+            <value></value>
+            <multiline>yes</multiline>
+        </textarea>
+
+        <button name="submit_button" from="basebutton">
+            <position>35,550</position>
+            <value>Submit</value>
+        </button>
+
+        <button name="update_button" from="basebutton">
+            <position>320,550</position>
+             <value>Reload</value>
+        </button>
+
+        <button name="exit_button" from="basebutton">
+            <position>610,550</position>
+            <value>Exit</value>
+        </button>
+
+    </window>
+</mythuitheme>
+

@@ -1,0 +1,3 @@
+
+LIBVERSION = 0.24
+
