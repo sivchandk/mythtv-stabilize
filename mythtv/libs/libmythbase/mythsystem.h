@@ -69,6 +69,9 @@ class MBASE_PUBLIC MythSystem : public QObject
         void USR2()   { Signal(SIGUSR2); };
         void Signal(int sig);
 
+        bool nice(int val);
+        bool ioprio(int val);
+
         void JumpAbort(void);
 
         bool isBackground()  { return GetSetting("RunInBackground"); };
@@ -133,6 +136,9 @@ class MBASE_PUBLIC MythSystemPrivate : public QObject
         virtual void Term(bool force=false) = 0;
         virtual void Signal(int sig) = 0;
         virtual void JumpAbort(void) = 0;
+
+        virtual bool nice(int val)      { return false; }
+        virtual bool ioprio(int val)    { return false; }
 
     protected:
         MythSystem *m_parent;

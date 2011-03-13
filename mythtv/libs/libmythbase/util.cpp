@@ -1158,12 +1158,16 @@ bool IsPulseAudioRunning(void)
 
 bool myth_nice(int val)
 {
+    /* NOTE: this call may be used in conjunction with MythSystem on forked
+     * processes, and it is not safe to use VERBOSE or QString.  It causes
+     * occasional locking issues that can cause deadlocked child processes. */
     errno = 0;
     int ret = nice(val);
 
     if ((-1 == ret) && (0 != errno) && (val >= 0))
     {
-        VERBOSE(VB_IMPORTANT, "Failed to nice process" + ENO);
+        cerr << "Failed to nice process"
+             << ENO;
         return false;
     }
 
@@ -1234,6 +1238,9 @@ enum { IOPRIO_WHO_PROCESS = 1, IOPRIO_WHO_PGRP, IOPRIO_WHO_USER, };
 
 bool myth_ioprio(int val)
 {
+    /* NOTE: this call may be used in conjunction with MythSystem on forked
+     * processes, and it is not safe to use VERBOSE or QString.  It causes
+     * occasional locking issues that can cause deadlocked child processes. */
     int new_ioclass = (val < 0) ? IOPRIO_CLASS_RT :
         (val > 7) ? IOPRIO_CLASS_IDLE : IOPRIO_CLASS_BE;
     int new_iodata = (new_ioclass == IOPRIO_CLASS_BE) ? val : 0;

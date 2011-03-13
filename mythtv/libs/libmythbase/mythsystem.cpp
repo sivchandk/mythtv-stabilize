@@ -228,6 +228,42 @@ void MythSystem::Signal( int sig )
     d->Signal(sig);
 }
 
+bool MythSystem::nice(int val)
+{
+    if( m_status != GENERIC_EXIT_START )
+    {
+        VERBOSE(VB_SYSTEM, "Process priority must be set before start of "
+                           "child process");
+        return false;
+    }
+
+    if( !d )
+    {
+        m_status = GENERIC_EXIT_NO_HANDLER;
+        return false;
+    }
+
+    return d->nice(val);
+}
+
+bool MythSystem::ioprio(int val)
+{
+    if( m_status != GENERIC_EXIT_START )
+    {
+        VERBOSE(VB_SYSTEM, "IO priority must be set before start of "
+                           "child process");
+        return false;
+    }
+
+    if( !d )
+    {
+        m_status = GENERIC_EXIT_NO_HANDLER;
+        return false;
+    }
+
+    return d->ioprio(val);
+}
+
 
 void MythSystem::ProcessFlags(uint flags)
 {
