@@ -4,14 +4,14 @@
 #define LOC_ERR QString("OpenGL1 Error: ")
 
 MythRenderOpenGL1::MythRenderOpenGL1(const QGLFormat& format, QPaintDevice* device)
-  : MythRenderOpenGL(format, device)
+  : MythRenderOpenGL(format, device, kRenderOpenGL1)
 {
     ResetVars();
     ResetProcs();
 }
 
 MythRenderOpenGL1::MythRenderOpenGL1(const QGLFormat& format)
-  : MythRenderOpenGL(format)
+  : MythRenderOpenGL(format, kRenderOpenGL1)
 {
     ResetVars();
     ResetProcs();
@@ -19,6 +19,8 @@ MythRenderOpenGL1::MythRenderOpenGL1(const QGLFormat& format)
 
 MythRenderOpenGL1::~MythRenderOpenGL1()
 {
+    if (!isValid())
+        return;
     makeCurrent();
     DeleteOpenGLResources();
     doneCurrent();

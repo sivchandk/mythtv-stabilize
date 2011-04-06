@@ -267,7 +267,10 @@ void cleanup(void)
     }
 
     signal(SIGHUP, SIG_DFL);
+
+#ifndef _MSC_VER
     signal(SIGUSR1, SIG_DFL);
+#endif
 }
 
 int log_rotate(int report_error)
@@ -669,10 +672,6 @@ int run_backend(const MythCommandLineParser &cmdline)
         return GENERIC_EXIT_DB_OUTOFDATE;
     }
 
-    ///////////////////////////////////////////
-
-    g_pUPnp = new MediaServer(ismaster, !cmdline.IsUPnPEnabled() );
-
     if (!ismaster)
     {
         int ret = connect_to_master();
@@ -743,16 +742,30 @@ int run_backend(const MythCommandLineParser &cmdline)
         housekeeping = new HouseKeeper(true, ismaster, NULL);
     }
 
+    // ----------------------------------------------------------------------
+    //
+    // ----------------------------------------------------------------------
+
+    if (g_pUPnp == NULL)
+    {
+        g_pUPnp = new MediaServer();
+
+        g_pUPnp->Init(ismaster, !cmdline.IsUPnPEnabled());
+    }
+
+    // ----------------------------------------------------------------------
     // Setup status server
+    // ----------------------------------------------------------------------
+
     HttpStatus *httpStatus = NULL;
     HttpServer *pHS = g_pUPnp->GetHttpServer();
+
     if (pHS)
     {
         VERBOSE(VB_IMPORTANT, "Main::Registering HttpStatus Extension");
 
-        httpStatus = new HttpStatus(&tvList, sched, expirer, ismaster);
-        if (httpStatus)
-            pHS->RegisterExtension(httpStatus);
+        pHS->RegisterExtension( new HttpStatus( &tvList, sched, 
+                                                expirer, ismaster ));
     }
 
     VERBOSE(VB_IMPORTANT, QString("Enabled verbose msgs: %1")
@@ -798,6 +811,8 @@ int run_backend(const MythCommandLineParser &cmdline)
 
     delete sysEventHandler;
     delete socketManager;
+
+    cleanup();
 
     return exitCode;
 }

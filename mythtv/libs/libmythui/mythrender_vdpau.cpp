@@ -1,6 +1,7 @@
 #include "math.h"
 
 #include <QSize>
+#include <QThread>
 
 #include "mythverbose.h"
 #include "mythrender_vdpau.h"
@@ -158,11 +159,14 @@ class VDPAUOutputSurface : public VDPAUResource
 class VDPAUVideoSurface : public VDPAUResource
 {
   public:
-    VDPAUVideoSurface() {}
+    VDPAUVideoSurface()
+    {
+        memset(&m_render, 0, sizeof(struct vdpau_render_state));
+    }
     VDPAUVideoSurface(uint id, QSize size, VdpChromaType type)
       : VDPAUResource(id, size), m_type(type), m_needs_reset(false)
     {
-        m_owner = pthread_self();
+        m_owner = QThread::currentThread();
         memset(&m_render, 0, sizeof(struct vdpau_render_state));
         m_render.surface = m_id;
     }
@@ -177,7 +181,7 @@ class VDPAUVideoSurface : public VDPAUResource
     VdpChromaType      m_type;
     vdpau_render_state m_render;
     bool               m_needs_reset;
-    pthread_t          m_owner;
+    QThread*           m_owner;
 };
 
 class VDPAUBitmapSurface : public VDPAUResource
@@ -250,7 +254,7 @@ bool MythRenderVDPAU::gVDPAUMPEG4Accel     = false;
 uint MythRenderVDPAU::gVDPAUBestScaling    = 0;
 
 MythRenderVDPAU::MythRenderVDPAU()
-  : m_preempted(false), m_recreating(false),
+  : MythRender(kRenderVDPAU), m_preempted(false), m_recreating(false),
     m_recreated(false), m_reset_video_surfaces(false),
     m_render_lock(QMutex::Recursive), m_decode_lock(QMutex::Recursive),
     m_display(NULL), m_window(0), m_device(0), m_surface(0),
@@ -422,7 +426,7 @@ void MythRenderVDPAU::WaitForFlip(void)
     CHECK_ST
 }
 
-void MythRenderVDPAU::Flip(int delay)
+void MythRenderVDPAU::Flip(void)
 {
     if (!m_flipReady || !m_display)
         return;
@@ -440,15 +444,7 @@ void MythRenderVDPAU::Flip(int delay)
     }
 
     INIT_ST
-    VdpTime now = 0;
-    if (delay > 0 && vdp_presentation_queue_get_time)
-    {
-        vdp_st = vdp_presentation_queue_get_time(m_flipQueue, &now);
-        CHECK_ST
-        now += delay * 1000;
-    }
-
-    vdp_st = vdp_presentation_queue_display(m_flipQueue, surface, m_rect.x1, m_rect.y1, now);
+    vdp_st = vdp_presentation_queue_display(m_flipQueue, surface, m_rect.x1, m_rect.y1, 0);
     CHECK_ST
     SyncDisplay();
 }
@@ -1291,11 +1287,12 @@ bool MythRenderVDPAU::DrawBitmap(uint id, uint target,
     return ok;
 }
 
-QSize MythRenderVDPAU::GetBitmapSize(uint id)
+int MythRenderVDPAU::GetBitmapSize(uint id)
 {
     if (!m_bitmapSurfaces.contains(id))
-        return QSize();
-    return m_bitmapSurfaces[id].m_size;
+        return 0;
+    QSize sz = m_bitmapSurfaces[id].m_size;
+    return sz.width() * sz.height() * 4;
 }
 
 void* MythRenderVDPAU::GetRender(uint id)
@@ -1354,7 +1351,7 @@ void MythRenderVDPAU::ChangeVideoSurfaceOwner(uint id)
     if (!m_videoSurfaces.contains(id))
         return;
 
-    m_videoSurfaces[id].m_owner = pthread_self();
+    m_videoSurfaces[id].m_owner = QThread::currentThread();
 }
 
 void MythRenderVDPAU::Decode(uint id, struct vdpau_render_state *render)
@@ -1932,7 +1929,7 @@ void MythRenderVDPAU::ResetVideoSurfaces(void)
     LOCK_ALL
 
     bool ok = true;
-    pthread_t this_thread = pthread_self();
+    QThread *this_thread = QThread::currentThread();
     QHash<uint, VDPAUVideoSurface>::iterator it;
     int surfaces_owned = 0;
 
@@ -1957,7 +1954,7 @@ void MythRenderVDPAU::ResetVideoSurfaces(void)
 
     VERBOSE(VB_IMPORTANT, LOC +
         QString("Attempting to reset %1 video surfaces owned by this thread %2")
-            .arg(surfaces_owned).arg(this_thread));
+            .arg(surfaces_owned).arg((long long)this_thread));
 
     // update old surfaces to map old vdpvideosurface to new vdpvideosurface
     QHash<uint, uint>::iterator old;

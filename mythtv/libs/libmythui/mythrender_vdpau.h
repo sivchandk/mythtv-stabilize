@@ -68,7 +68,7 @@ class MUI_PUBLIC MythRenderVDPAU : public MythRender
     bool WasPreempted(void);
     bool SetColorKey(uint color);
     void WaitForFlip(void);
-    void Flip(int delay = 0);
+    void Flip(void);
     void SyncDisplay(void);
     void DrawDisplayRect(const QRect &rect, bool use_colorkey = false);
     void MoveResizeWin(QRect &rect);
@@ -117,7 +117,7 @@ class MUI_PUBLIC MythRenderVDPAU : public MythRender
                     const QRect *dst, int alpha = 0, int red = 0,
                     int blue = 0, int green = 0, bool blend = false);
 
-    QSize GetBitmapSize(uint id);
+    int   GetBitmapSize(uint id);
     void* GetRender(uint id);
     uint  GetSurfaceOwner(VdpVideoSurface surface);
     void  ClearVideoSurface(uint id);

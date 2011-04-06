@@ -20,8 +20,9 @@ class MythGLShaderObject;
 class MUI_PUBLIC MythRenderOpenGL2 : public MythRenderOpenGL
 {
   public:
-    MythRenderOpenGL2(const QGLFormat& format, QPaintDevice* device);
-    MythRenderOpenGL2(const QGLFormat& format);
+    MythRenderOpenGL2(const QGLFormat& format, QPaintDevice* device,
+                      RenderType type = kRenderOpenGL2);
+    MythRenderOpenGL2(const QGLFormat& format, RenderType type = kRenderOpenGL2);
     virtual ~MythRenderOpenGL2();
 
     virtual uint CreateShaderObject(const QString &vert, const QString &frag);
@@ -53,6 +54,8 @@ class MUI_PUBLIC MythRenderOpenGL2 : public MythRenderOpenGL
     virtual void DeleteOpenGLResources(void);
     virtual void SetMatrixView(void);
 
+    void SetScaling(int horizontal, int vertical);
+    void SetRotation(int degrees);
     void CreateDefaultShaders(void);
     void DeleteDefaultShaders(void);
     uint CreateShader(int type, const QString &source);
@@ -67,6 +70,8 @@ class MUI_PUBLIC MythRenderOpenGL2 : public MythRenderOpenGL
     // State
     uint  m_active_obj;
     float m_projection[4][4];
+    float m_scale[4][4];
+    float m_rotate[4][4];
     float m_parameters[4][4];
     QString m_qualifiers;
 

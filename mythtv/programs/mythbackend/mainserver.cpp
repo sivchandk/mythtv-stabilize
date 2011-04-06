@@ -233,7 +233,7 @@ bool MainServer::HandleQuery(MythSocket *sock, QStringList &tokens,
     }
     else if (command == "QUERY_FILE_EXISTS")
     {
-        if (listline.size() < 3)
+        if (listline.size() < 2)
             VERBOSE(VB_IMPORTANT, "Bad QUERY_FILE_EXISTS command");
         else
             HandleQueryFileExists(listline, pbs);
@@ -345,6 +345,14 @@ bool MainServer::HandleQuery(MythSocket *sock, QStringList &tokens,
             VERBOSE(VB_IMPORTANT, "Bad QUERY_RECORDER");
         else
             HandleRecorderQuery(listline, tokens, pbs);
+    }
+    else if (command == "QUERY_RECORDING_DEVICE")
+    {
+        // TODO
+    }
+    else if (command == "QUERY_RECORDING_DEVICES")
+    {
+        // TODO
     }
     else if (command == "SET_NEXT_LIVETV_DIR")
     {
