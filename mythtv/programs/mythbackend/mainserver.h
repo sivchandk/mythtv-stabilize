@@ -25,9 +25,7 @@ using namespace std;
 #undef DeleteFile
 #endif
 
-class ProcessRequestThread;
 class QUrl;
-class MythServer;
 class VideoScanner;
 class QTimer;
 
@@ -66,15 +64,14 @@ class TruncateThread : public QThread
     DeleteStruct *m_parent;
 };
 
-class MainServer : public QObject, public MythSocketCBs
+class MainServer : public SocketRequestHandler
 {
     Q_OBJECT
 
     friend class DeleteThread;
     friend class TruncateThread;
   public:
-    MainServer(bool master, int port,
-               QMap<int, EncoderLink *> *tvList,
+    MainServer(bool master, QMap<int, EncoderLink *> *tvList,
                Scheduler *sched, AutoExpire *expirer);
 
    ~MainServer();
@@ -84,13 +81,7 @@ class MainServer : public QObject, public MythSocketCBs
     bool isClientConnected();
     void ShutSlaveBackendsDown(QString &haltcmd);
 
-    void ProcessRequest(MythSocket *sock);
     void MarkUnused(ProcessRequestThread *prt);
-
-    void readyRead(MythSocket *socket);
-    void connectionClosed(MythSocket *socket);
-    void connectionFailed(MythSocket *socket) { (void)socket; }
-    void connected(MythSocket *socket) { (void)socket; }
 
     void DeletePBS(PlaybackSock *pbs);
 
@@ -101,21 +92,23 @@ class MainServer : public QObject, public MythSocketCBs
 
     int GetExitCode() const { return m_exitCode; }
 
+    bool HandleAnnounce(MythSocket *socket, QStringList &commands,
+                        QStringList &slist);
+    bool HandleQuery(MythSocket *socket, QStringList &commands,
+                     QStringList &slist);
+    void SetParent(MythSocketManager *parent);
+
   protected slots:
     void reconnectTimeout(void);
     void deferredDeleteSlot(void);
     void autoexpireUpdate(void);
     void finishVideoScan(bool changed);
 
-  private slots:
-    void newConnection(MythSocket *);
-
   private:
 
     void ProcessRequestWork(MythSocket *sock);
     void HandleAnnounce(QStringList &slist, QStringList commands,
                         MythSocket *socket);
-    void HandleDone(MythSocket *socket);
 
     void HandleIsActiveBackendQuery(QStringList &slist, PlaybackSock *pbs);
     bool HandleDeleteFile(QStringList &slist, PlaybackSock *pbs);
@@ -237,7 +230,6 @@ class MainServer : public QObject, public MythSocketCBs
 
     QMap<int, EncoderLink *> *encoderList;
 
-    MythServer *mythserver;
     VideoScanner *videoscanner;
 
     QReadWriteLock sockListLock;

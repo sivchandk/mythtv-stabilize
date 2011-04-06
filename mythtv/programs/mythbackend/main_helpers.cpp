@@ -45,12 +45,12 @@
 #include "storagegroup.h"
 #include "programinfo.h"
 #include "dbcheck.h"
-#include "jobqueue.h"
 #include "previewgenerator.h"
 #include "mythcommandlineparser.h"
 #include "mythsystemevent.h"
 #include "main_helpers.h"
 #include "backendcontext.h"
+#include "jobscheduler.h"
 
 #include "mediaserver.h"
 #include "httpstatus.h"
@@ -743,9 +743,6 @@ int run_backend(const MythCommandLineParser &cmdline)
         housekeeping = new HouseKeeper(true, ismaster, NULL);
     }
 
-    if (cmdline.IsJobQueueEnabled())
-        jobqueue = new JobQueue(ismaster);
-
     // Setup status server
     HttpStatus *httpStatus = NULL;
     HttpServer *pHS = g_pUPnp->GetHttpServer();
@@ -761,17 +758,21 @@ int run_backend(const MythCommandLineParser &cmdline)
     VERBOSE(VB_IMPORTANT, QString("Enabled verbose msgs: %1")
             .arg(verboseString));
 
-    MainServer *mainServer = new MainServer(
-        ismaster, port, &tvList, sched, expirer);
-
-    int exitCode = mainServer->GetExitCode();
-    if (exitCode != GENERIC_EXIT_OK)
+    MythSocketManager *socketManager = new MythSocketManager();
+    if (!socketManager->Listen(port))
     {
         VERBOSE(VB_IMPORTANT, "Backend exiting, MainServer initialization "
-                "error.");
-        delete mainServer;
-        return exitCode;
+                              "error.");
+        delete socketManager;
+        return GENERIC_EXIT_SOCKET_ERROR;
     }
+
+    MainServer *mainServer = new MainServer(ismaster, &tvList,
+                                            sched, expirer);
+    socketManager->RegisterHandler(mainServer);
+
+    if (ismaster)
+        socketManager->RegisterHandler(new JobScheduler());
 
     if (httpStatus && mainServer)
         httpStatus->SetMainServer(mainServer);
@@ -783,7 +784,7 @@ int run_backend(const MythCommandLineParser &cmdline)
 
     ///////////////////////////////
     ///////////////////////////////
-    exitCode = qApp->exec();
+    int exitCode = qApp->exec();
     ///////////////////////////////
     ///////////////////////////////
 
@@ -796,7 +797,7 @@ int run_backend(const MythCommandLineParser &cmdline)
     gCoreContext->LogEntry("mythbackend", LP_INFO, "MythBackend exiting", "");
 
     delete sysEventHandler;
-    delete mainServer;
+    delete socketManager;
 
     return exitCode;
 }

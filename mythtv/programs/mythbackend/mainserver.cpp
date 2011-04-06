@@ -45,7 +45,6 @@ using namespace std;
 #include "decodeencode.h"
 #include "mythdb.h"
 #include "mainserver.h"
-#include "server.h"
 #include "scheduler.h"
 #include "backendutil.h"
 #include "programinfo.h"
@@ -120,65 +119,10 @@ int delete_file_immediately(const QString &filename,
 QMutex MainServer::truncate_and_close_lock;
 const uint MainServer::kMasterServerReconnectTimeout = 1000; //ms
 
-class ProcessRequestThread : public QThread
-{
-  public:
-    ProcessRequestThread(MainServer *ms) :
-        parent(ms), socket(NULL), threadlives(false) {}
 
-    void setup(MythSocket *sock)
-    {
-        QMutexLocker locker(&lock);
-        socket = sock;
-        socket->UpRef();
-        waitCond.wakeAll();
-    }
-
-    void killit(void)
-    {
-        QMutexLocker locker(&lock);
-        threadlives = false;
-        waitCond.wakeAll();
-    }
-
-    virtual void run(void)
-    {
-        QMutexLocker locker(&lock);
-        threadlives = true;
-        waitCond.wakeAll(); // Signal to creating thread
-
-        while (true)
-        {
-            waitCond.wait(locker.mutex());
-
-            if (!threadlives)
-                break;
-
-            if (!socket)
-                continue;
-
-            parent->ProcessRequest(socket);
-            socket->DownRef();
-            socket = NULL;
-            parent->MarkUnused(this);
-        }
-    }
-
-    QMutex lock;
-    QWaitCondition waitCond;
-
-  private:
-    MainServer *parent;
-
-    MythSocket *socket;
-
-    bool threadlives;
-};
-
-MainServer::MainServer(bool master, int port,
-                       QMap<int, EncoderLink *> *tvList,
+MainServer::MainServer(bool master, QMap<int, EncoderLink *> *tvList,
                        Scheduler *sched, AutoExpire *expirer) :
-    encoderList(tvList), mythserver(NULL), masterServerReconnect(NULL),
+    encoderList(tvList), masterServerReconnect(NULL),
     masterServer(NULL), ismaster(master), masterBackendOverride(false),
     m_sched(sched), m_expirer(expirer), deferredDeleteTimer(NULL),
     autoexpireUpdateTimer(NULL), m_exitCode(GENERIC_EXIT_OK)
@@ -187,40 +131,9 @@ MainServer::MainServer(bool master, int port,
         PreviewGenerator::kLocalAndRemote, ~0, 0);
     PreviewGeneratorQueue::AddListener(this);
 
-    for (int i = 0; i < PRT_STARTUP_THREAD_COUNT; i++)
-    {
-        ProcessRequestThread *prt = new ProcessRequestThread(this);
-        prt->lock.lock();
-        prt->start();
-        prt->waitCond.wait(&prt->lock);
-        prt->lock.unlock();
-        threadPool.push_back(prt);
-    }
-
     masterBackendOverride = gCoreContext->GetNumSetting("MasterBackendOverride", 0);
 
-    mythserver = new MythServer();
-    if (!mythserver->listen(QHostAddress::Any, port))
-    {
-        VERBOSE(VB_IMPORTANT, QString("Failed to bind port %1. Exiting.")
-                .arg(port));
-        SetExitCode(GENERIC_EXIT_SOCKET_ERROR, false);
-        return;
-    }
-
-    connect(mythserver, SIGNAL(newConnect(MythSocket *)),
-            SLOT(newConnection(MythSocket *)));
-
     gCoreContext->addListener(this);
-
-    if (!ismaster)
-    {
-        masterServerReconnect = new QTimer(this);
-        masterServerReconnect->setSingleShot(true);
-        connect(masterServerReconnect, SIGNAL(timeout()), this,
-                SLOT(reconnectTimeout()));
-        masterServerReconnect->start(kMasterServerReconnectTimeout);
-    }
 
     deferredDeleteTimer = new QTimer(this);
     connect(deferredDeleteTimer, SIGNAL(timeout()), this,
@@ -244,13 +157,6 @@ MainServer::~MainServer()
 {
     PreviewGeneratorQueue::RemoveListener(this);
     PreviewGeneratorQueue::TeardownPreviewGeneratorQueue();
-
-    if (mythserver)
-    {
-        mythserver->disconnect();
-        mythserver->deleteLater();
-        mythserver = NULL;
-    }
 }
 
 void MainServer::autoexpireUpdate(void)
@@ -258,91 +164,10 @@ void MainServer::autoexpireUpdate(void)
     AutoExpire::Update(false);
 }
 
-void MainServer::newConnection(MythSocket *socket)
+bool MainServer::HandleQuery(MythSocket *sock, QStringList &tokens,
+                             QStringList &listline)
 {
-    socket->setCallbacks(this);
-}
-
-void MainServer::readyRead(MythSocket *sock)
-{
-    sockListLock.lockForRead();
-    PlaybackSock *testsock = GetPlaybackBySock(sock);
-    bool expecting_reply = testsock && testsock->isExpectingReply();
-    sockListLock.unlock();
-    if (expecting_reply)
-        return;
-
-    ProcessRequestThread *prt = NULL;
-    {
-        QMutexLocker locker(&threadPoolLock);
-
-        if (threadPool.empty())
-        {
-            VERBOSE(VB_GENERAL, "Waiting for a process request thread.. ");
-            threadPoolCond.wait(&threadPoolLock, PRT_TIMEOUT);
-        }
-
-        if (!threadPool.empty())
-        {
-            prt = threadPool.front();
-            threadPool.pop_front();
-        }
-        else
-        {
-            VERBOSE(VB_IMPORTANT, "Adding a new process request thread");
-            prt = new ProcessRequestThread(this);
-            prt->lock.lock();
-            prt->start();
-            prt->waitCond.wait(&prt->lock);
-            prt->lock.unlock();
-        }
-    }
-
-    prt->setup(sock);
-}
-
-void MainServer::ProcessRequest(MythSocket *sock)
-{
-    sock->Lock();
-
-    if (sock->bytesAvailable() > 0)
-    {
-        ProcessRequestWork(sock);
-    }
-
-    sock->Unlock();
-}
-
-void MainServer::ProcessRequestWork(MythSocket *sock)
-{
-    QStringList listline;
-    if (!sock->readStringList(listline))
-        return;
-
-    QString line = listline[0];
-
-    line = line.simplified();
-    QStringList tokens = line.split(' ', QString::SkipEmptyParts);
     QString command = tokens[0];
-    //cerr << "command='" << command << "'\n";
-    if (command == "MYTH_PROTO_VERSION")
-    {
-        if (tokens.size() < 2)
-            VERBOSE(VB_IMPORTANT, "Bad MYTH_PROTO_VERSION command");
-        else
-            HandleVersion(sock, tokens);
-        return;
-    }
-    else if (command == "ANN")
-    {
-        HandleAnnounce(listline, tokens, sock);
-        return;
-    }
-    else if (command == "DONE")
-    {
-        HandleDone(sock);
-        return;
-    }
 
     sockListLock.lockForRead();
     PlaybackSock *pbs = GetPlaybackBySock(sock);
@@ -350,7 +175,7 @@ void MainServer::ProcessRequestWork(MythSocket *sock)
     {
         sockListLock.unlock();
         VERBOSE(VB_IMPORTANT, "ProcessRequest unknown socket");
-        return;
+        return false;
     }
     pbs->UpRef();
     sockListLock.unlock();
@@ -729,13 +554,7 @@ void MainServer::ProcessRequestWork(MythSocket *sock)
 
     // Decrease refcount..
     pbs->DownRef();
-}
-
-void MainServer::MarkUnused(ProcessRequestThread *prt)
-{
-    QMutexLocker locker(&threadPoolLock);
-    threadPool.push_back(prt);
-    threadPoolCond.wakeAll();
+    return true;
 }
 
 void MainServer::customEvent(QEvent *e)
@@ -1164,56 +983,6 @@ void MainServer::customEvent(QEvent *e)
 
 /**
  * \addtogroup myth_network_protocol
- * \par        MYTH_PROTO_VERSION \e version \e token
- * Checks that \e version and \e token match the backend's version.
- * If it matches, the stringlist of "ACCEPT" \e "version" is returned.
- * If it does not, "REJECT" \e "version" is returned,
- * and the socket is closed (for this client)
- */
-void MainServer::HandleVersion(MythSocket *socket, const QStringList &slist)
-{
-    QStringList retlist;
-    QString version = slist[1];
-    if (version != MYTH_PROTO_VERSION)
-    {
-        VERBOSE(VB_GENERAL,
-                "MainServer::HandleVersion - Client speaks protocol version "
-                + version + " but we speak " + MYTH_PROTO_VERSION + '!');
-        retlist << "REJECT" << MYTH_PROTO_VERSION;
-        socket->writeStringList(retlist);
-        HandleDone(socket);
-        return;
-    }
-
-    if (slist.size() < 3)
-    {
-        VERBOSE(VB_GENERAL,
-                "MainServer::HandleVersion - Client did not pass protocol "
-                "token. Refusing connection!");
-        retlist << "REJECT" << MYTH_PROTO_VERSION;
-        socket->writeStringList(retlist);
-        HandleDone(socket);
-        return;
-    }
-
-    QString token = slist[2];
-    if (token != MYTH_PROTO_TOKEN)
-    {
-        VERBOSE(VB_GENERAL,
-                "MainServer::HandleVersion - Client sent incorrect protocol"
-                " token for protocol version. Refusing connection!");
-        retlist << "REJECT" << MYTH_PROTO_VERSION;
-        socket->writeStringList(retlist);
-        HandleDone(socket);
-        return;
-    }
-
-    retlist << "ACCEPT" << MYTH_PROTO_VERSION;
-    socket->writeStringList(retlist);
-}
-
-/**
- * \addtogroup myth_network_protocol
  * \par        ANN Playback \e host \e wantevents
  * Register \e host as a client, and prevent shutdown of the socket.
  *
@@ -1223,8 +992,8 @@ void MainServer::HandleVersion(MythSocket *socket, const QStringList &slist)
  * \par        ANN FileTransfer stringlist(\e hostname, \e filename)
  * \par        ANN FileTransfer stringlist(\e hostname, \e filename) \e useReadahead \e retries
  */
-void MainServer::HandleAnnounce(QStringList &slist, QStringList commands,
-                                MythSocket *socket)
+bool MainServer::HandleAnnounce(MythSocket *socket, QStringList &commands,
+                                QStringList &slist)
 {
     QStringList retlist( "OK" );
     QStringList errlist( "ERROR" );
@@ -1239,9 +1008,9 @@ void MainServer::HandleAnnounce(QStringList &slist, QStringList commands,
                 QString("Received malformed ANN%1 query")
                 .arg(info));
 
-        errlist << "malformed_ann_query";
-        socket->writeStringList(errlist);
-        return;
+//        errlist << "malformed_ann_query";
+//        socket->writeStringList(errlist);
+        return false;
     }
 
     sockListLock.lockForRead();
@@ -1257,7 +1026,7 @@ void MainServer::HandleAnnounce(QStringList &slist, QStringList commands,
                     .arg(commands[2]));
             socket->writeStringList(retlist);
             sockListLock.unlock();
-            return;
+            return true;
         }
     }
     sockListLock.unlock();
@@ -1272,7 +1041,7 @@ void MainServer::HandleAnnounce(QStringList &slist, QStringList commands,
 
             errlist << "malformed_ann_query";
             socket->writeStringList(errlist);
-            return;
+            return true;
         }
         // Monitor connections are same as Playback but they don't
         // block shutdowns. See the Scheduler event loop for more.
@@ -1302,7 +1071,7 @@ void MainServer::HandleAnnounce(QStringList &slist, QStringList commands,
                     .arg(commands[1]));
             errlist << "malformed_ann_query";
             socket->writeStringList(errlist);
-            return;
+            return true;
         }
 
         VERBOSE(VB_IMPORTANT, QString("adding: %1 as a slave backend server")
@@ -1368,7 +1137,7 @@ void MainServer::HandleAnnounce(QStringList &slist, QStringList commands,
             VERBOSE(VB_IMPORTANT, "Received malformed FileTransfer command");
             errlist << "malformed_filetransfer_command";
             socket->writeStringList(errlist);
-            return;
+            return true;
         }
 
         VERBOSE(VB_GENERAL, "MainServer::HandleAnnounce FileTransfer");
@@ -1408,7 +1177,7 @@ void MainServer::HandleAnnounce(QStringList &slist, QStringList commands,
                         "to write to in FileTransfer write command");
                 errlist << "filetransfer_directory_not_found";
                 socket->writeStringList(errlist);
-                return;
+                return true;
             }
 
             QString basename = qurl.path();
@@ -1419,7 +1188,7 @@ void MainServer::HandleAnnounce(QStringList &slist, QStringList commands,
                         .arg(qurl.toString()));
                 errlist << "filetransfer_filename_empty";
                 socket->writeStringList(errlist);
-                return;
+                return true;
             }
 
             if ((basename.contains("/../")) ||
@@ -1430,7 +1199,7 @@ void MainServer::HandleAnnounce(QStringList &slist, QStringList commands,
                         .arg(basename));
                 errlist << "filetransfer_filename_dangerous";
                 socket->writeStringList(errlist);
-                return;
+                return true;
             }
 
             filename = dir + "/" + basename;
@@ -1446,7 +1215,7 @@ void MainServer::HandleAnnounce(QStringList &slist, QStringList commands,
                     .arg(filename));
             errlist << "filetransfer_filename_is_a_directory";
             socket->writeStringList(errlist);
-            return;
+            return true;
         }
 
         if (writemode)
@@ -1463,7 +1232,7 @@ void MainServer::HandleAnnounce(QStringList &slist, QStringList commands,
                             .arg(filename));
                     errlist << "filetransfer_unable_to_create_subdirectory";
                     socket->writeStringList(errlist);
-                    return;
+                    return true;
                 }
             }
             ft = new FileTransfer(filename, socket, writemode);
@@ -1495,17 +1264,7 @@ void MainServer::HandleAnnounce(QStringList &slist, QStringList commands,
         }
     }
 
-    socket->writeStringList(retlist);
-}
-
-/**
- * \addtogroup myth_network_protocol
- * \par        DONE
- * Closes this client's socket.
- */
-void MainServer::HandleDone(MythSocket *socket)
-{
-    socket->close();
+    return false;
 }
 
 void MainServer::SendResponse(MythSocket *socket, QStringList &commands)
@@ -5512,6 +5271,9 @@ void MainServer::DeletePBS(PlaybackSock *sock)
     deferredDeleteList.push_back(dds);
 }
 
+/*
+ * FIXME
+ * this one is going to need some work restructuring
 void MainServer::connectionClosed(MythSocket *socket)
 {
     sockListLock.lockForWrite();
@@ -5641,7 +5403,7 @@ void MainServer::connectionClosed(MythSocket *socket)
     VERBOSE(VB_IMPORTANT, LOC_WARN +
             QString("Unknown socket closing MythSocket(0x%1)")
             .arg((uint64_t)socket,0,16));
-}
+}*/
 
 PlaybackSock *MainServer::GetSlaveByHostname(const QString &hostname)
 {
@@ -5896,6 +5658,26 @@ QString MainServer::LocalFilePath(const QUrl &url, const QString &wantgroup)
     return lpath;
 }
 
+void MainServer::SetParent(MythSocketManager *parent)
+{
+    m_parent = parent;
+
+    if (!ismaster)
+    {
+        if (masterServerReconnect != NULL)
+        {
+            delete masterServerReconnect;
+            masterServerReconnect = NULL;
+        }
+
+        masterServerReconnect = new QTimer(this);
+        masterServerReconnect->setSingleShot(true);
+        connect(masterServerReconnect, SIGNAL(timeout()),
+                this, SLOT(reconnectTimeout()));
+        masterServerReconnect->start(kMasterServerReconnectTimeout);
+    }
+}
+
 void MainServer::reconnectTimeout(void)
 {
     MythSocket *masterServerSock = new MythSocket();
@@ -5950,8 +5732,7 @@ void MainServer::reconnectTimeout(void)
         }
     }
 
-    if (!masterServerSock->writeStringList(strlist) ||
-        !masterServerSock->readStringList(strlist) ||
+    if (!masterServerSock->Announce(strlist) ||
         strlist.empty() || strlist[0] == "ERROR")
     {
         masterServerSock->DownRef();
@@ -5974,7 +5755,7 @@ void MainServer::reconnectTimeout(void)
         return;
     }
 
-    masterServerSock->setCallbacks(this);
+    m_parent->AddConnection(masterServerSock);
 
     masterServer = new PlaybackSock(this, masterServerSock, server,
                                     kPBSEvents_Normal);
