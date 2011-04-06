@@ -83,6 +83,9 @@ class MBASE_PUBLIC MythSystemUnix : public MythSystemPrivate
         virtual void Signal(int sig);
         virtual void JumpAbort(void);
 
+        virtual bool nice(int val);
+        virtual bool ioprio(int val);
+
         friend class MythSystemManager;
         friend class MythSystemSignalManager;
         friend class MythSystemIOHandler;
@@ -90,6 +93,9 @@ class MBASE_PUBLIC MythSystemUnix : public MythSystemPrivate
     private:
         pid_t       m_pid;
         time_t      m_timeout;
+
+        int         m_nice;
+        int         m_ioprio;
 
         int         m_stdpipe[3];
 };

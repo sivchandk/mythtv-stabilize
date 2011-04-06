@@ -1167,7 +1167,7 @@ bool myth_nice(int val)
     if ((-1 == ret) && (0 != errno) && (val >= 0))
     {
         cerr << "Failed to nice process"
-             << ENO;
+             << "\n\t\t\teno: " << strerror(errno) << "(" << errno << ")";
         return false;
     }
 

@@ -30,6 +30,7 @@
 #include "mythevent.h"
 #include "mythverbose.h"
 #include "exitcodes.h"
+#include "util.h"
 
 #define CLOSE(x) \
 if( (x) >= 0 ) { \
@@ -512,6 +513,9 @@ MythSystemUnix::MythSystemUnix(MythSystem *parent)
         writeThread = new MythSystemIOHandler(false);
         writeThread->start();
     }
+
+    m_nice = 0;
+    m_ioprio = 0;
 }
 
 // QBuffers may also need freeing
@@ -770,6 +774,13 @@ void MythSystemUnix::Fork(time_t timeout)
                  << strerror(errno) << endl;
         }
 
+        /* Set the nice and IO priority values in the child process if
+         * set to anything other than the default of zero */
+        if( m_nice != 0)
+            myth_nice(m_nice);
+        if( m_ioprio != 0 )
+            myth_ioprio(m_ioprio);
+
         /* run command */
         if( execv(command, cmdargs) < 0 )
         {
@@ -813,6 +824,18 @@ void MythSystemUnix::JumpAbort(void)
         manager->start();
     }
     manager->jumpAbort();
+}
+
+bool MythSystemUnix::nice(int val)
+{
+    m_nice = val;
+    return true;
+}
+
+bool MythSystemUnix::ioprio(int val)
+{
+    m_ioprio = val;
+    return true;
 }
 
 /*
