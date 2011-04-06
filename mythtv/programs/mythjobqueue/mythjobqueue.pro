@@ -2,7 +2,7 @@ include ( ../../settings.pro)
 include ( ../../version.pro)
 include ( ../programs-libs.pro)
 
-QT += sql
+QT += sql network xml
 CONFIG -= opengl
 
 TEMPLATE = app
@@ -13,4 +13,6 @@ INSTALLS = target
 QMAKE_CLEAN += $(TARGET)
 
 # Input
-SOURCES += main.cpp
+SOURCES += main.cpp jobinforun.cpp jobsocket.cpp clientsocket.cpp
+
+HEADERS += jobinforun.h jobsocket.h clientsocket.h

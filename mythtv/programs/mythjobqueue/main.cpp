@@ -18,15 +18,17 @@
 #include <QRegExp>
 #include <QDir>
 
+#include "mythsocketmanager.h"
 #include "exitcodes.h"
 #include "mythcontext.h"
-#include "jobqueue.h"
 #include "mythdbcon.h"
 #include "mythverbose.h"
 #include "mythversion.h"
 #include "mythcommandlineparser.h"
 #include "compat.h"
 #include "mythsystemevent.h"
+#include "jobsocket.h"
+#include "clientsocket.h"
 
 #define LOC      QString("MythJobQueue: ")
 #define LOC_WARN QString("MythJobQueue, Warning: ")
@@ -34,7 +36,6 @@
 
 using namespace std;
 
-JobQueue *jobqueue = NULL;
 QString   pidfile;
 QString   logfile  = QString::null;
 
@@ -320,7 +321,10 @@ int main(int argc, char *argv[])
         return GENERIC_EXIT_CONNECT_ERROR;
     }
 
-    jobqueue = new JobQueue(false);
+    MythSocketManager *sockmanager = new MythSocketManager();
+// set listen port
+    sockmanager->RegisterHandler(new ClientSocketHandler());
+    sockmanager->RegisterHandler(new JobSocketHandler());
 
     MythSystemEventHandler *sysEventHandler = new MythSystemEventHandler();
 
