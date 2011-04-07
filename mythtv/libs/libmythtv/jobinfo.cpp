@@ -40,29 +40,31 @@ using namespace std;
 
 
 JobInfo::JobInfo(int id) :
-    m_userJobIndex(-1)
+    m_userJobIndex(-1), m_jobid(id)
 {
-
+    QueryObject();
 }
 
 JobInfo::JobInfo(uint chanid, QDateTime &starttime, int jobType) :
     m_userJobIndex(-1)
 {
-
+    QueryObject(chanid, starttime, jobType);
 }
 
 JobInfo::JobInfo(ProgramInfo &pginfo, int jobType) :
     m_userJobIndex(-1)
 {
-
+    QueryObject(pginfo.GetChanID(), pginfo.GetRecordingStartTime(), jobType);
 }
 
 JobInfo::JobInfo(int jobType, uint chanid, const QDateTime &starttime,
                  QString args, QString comment, QString host,
                  int flags, int status, QDateTime schedruntime) :
-    m_userJobIndex(-1)
+    m_userJobIndex(-1), m_jobType(jobType), m_chanid(chanid),
+    m_starttime(starttime), m_args(args), m_comment(comment),
+    m_host(host), m_flags(flags), m_status(status),
+    m_schedruntime(schedruntime)
 {
-
 }
 
 JobInfo::JobInfo(const JobInfo &other) :
@@ -75,13 +77,13 @@ JobInfo::JobInfo(QStringList::const_iterator &it,
                  QStringList::const_iterator end) :
     m_userJobIndex(-1)
 {
-
+    FromStringList(it, end);
 }
 
 JobInfo::JobInfo(const QStringList &slist) :
     m_userJobIndex(-1)
 {
-
+    FromStringList(slist);
 }
 
 JobInfo::~JobInfo(void)
@@ -404,7 +406,7 @@ bool JobInfo::DownRef()
     int count = --m_refcount;
     m_reflock.unlock();
 
-    if (count < 0)
+    if (count <= 0)
     {
         delete this;
         return true;

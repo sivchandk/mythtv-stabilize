@@ -72,7 +72,7 @@ class MBASE_PUBLIC MythSocket : public MSocketDevice
             list, quickTimeout ? kShortTimeout : kLongTimeout);
     }
     bool writeStringList(QStringList &list);
-    bool SendReceiveStringList(QStringList &list, uint min_reply_length);
+    bool SendReceiveStringList(QStringList &list, uint min_reply_length = 0);
     bool readData(char *data, quint64 len);
     bool writeData(const char *data, quint64 len);
 
