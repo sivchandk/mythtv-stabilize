@@ -1,6 +1,7 @@
 
 #include <QDateTime>
 
+#include "mythsocket.h"
 #include "mythdb.h"
 #include "jobinfo.h"
 #include "jobinfodb.h"
@@ -210,5 +211,116 @@ bool JobInfoDB::Delete(int jobID)
     return ji.Delete();
 }
 
+bool JobInfoDB::Run(MythSocket *socket)
+{
+    if (m_status != JOB_QUEUED)
+    {
+        VERBOSE(VB_IMPORTANT, "Scheduler tried to start job "
+                              "not in queued state.");
+        return false;
+    }
 
+    SetHost(socket);
+
+    QStringList sl;
+    sl << "COMMAND_JOBQUEUE" << "RUN";
+    ToStringList(sl);
+
+    if (!socket->SendReceiveStringList(sl) ||
+        sl[0] == "ERROR")
+    {
+        VERBOSE(VB_IMPORTANT, "Scheduler failed to start job");
+        return false;
+    }
+
+    return true;
+}
+
+bool JobInfoDB::Pause(void)
+{
+    if (m_hostSocket == NULL ||
+        m_status != JOB_RUNNING)
+    {
+        return false;
+    }
+
+    QStringList sl;
+    sl << "COMMAND_JOBQUEUE" << "PAUSE";
+    ToStringList(sl);
+
+    if (!socket->SendReceiveStringList(sl) ||
+        sl[0] == "ERROR")
+    {
+        VERBOSE(VB_IMPORTANT, "Scheduler failed to pause job");
+        return false;
+    }
+
+    return true;
+}
+
+bool JobInfoDB::Resume(void)
+{
+    if (m_hostSocket == NULL ||
+        m_status != JOB_PAUSED)
+    {
+        return false;
+    }
+
+    QStringList sl;
+    sl << "COMMAND_JOBQUEUE" << "RESUME";
+    ToStringList(sl);
+
+    if (!socket->SendReceiveStringList(sl) ||
+        sl[0] == "ERROR")
+    {
+        VERBOSE(VB_IMPORTANT, "Scheduler failed to resume job");
+        return false;
+    }
+
+    return true;
+}
+
+bool JobInfoDB::Stop(void)
+{
+    if (m_hostSocket == NULL ||
+        m_status != JOB_RUNNING)
+    {
+        return false;
+    }
+
+    QStringList sl;
+    sl << "COMMAND_JOBQUEUE" << "STOP";
+    ToStringList(sl);
+
+    if (!socket->SendReceiveStringList(sl) ||
+        sl[0] == "ERROR")
+    {
+        VERBOSE(VB_IMPORTANT, "Scheduler failed to stop job");
+        return false;
+    }
+
+    return true;
+}
+
+bool JobInfoDB::Restart(void)
+{
+    if (m_hostSocket == NULL ||
+        m_status != JOB_RUNNING)
+    {
+        return false;
+    }
+
+    QStringList sl;
+    sl << "COMMAND_JOBQUEUE" << "RESTART";
+    ToStringList(sl);
+
+    if (!socket->SendReceiveStringList(sl) ||
+        sl[0] == "ERROR")
+    {
+        VERBOSE(VB_IMPORTANT, "Scheduler failed to restart job");
+        return false;
+    }
+
+    return true;
+}
 

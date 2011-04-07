@@ -36,6 +36,12 @@ class JobInfoDB : public JobInfo
 
     MythSocket *GetHost(void) { return m_hostSocket; }
     void        SetHost(MythSocket *socket) { m_hostSocket = socket; }
+
+    bool Run(MythSocket *socket);
+    bool Pause(void);
+    bool Resume(void);
+    bool Stop(void);
+    bool Restart(void);
   private:
     MythSocket *m_hostSocket;
 };

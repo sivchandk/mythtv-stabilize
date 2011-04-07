@@ -10,17 +10,103 @@
 #include "jobinfodb.h"
 #include "programinfo.h"
 
+JobQueueSocket::JobQueueSocket(QString hostname, MythSocket *socket) :
+    m_hostname(hostname), m_socket(socket), m_disconnected(false),
+    m_refCount(1)
+{
+}
+
+JobQueueSocket::~JobQueueSocket()
+{
+    // any jobs remaining in the local list at socket close should be marked
+    // as status unknown. if the jobqueue reconnects, the jobs can be recovered
+
+    QWriteLocker wlock(&m_jobLock);
+
+    JobList::iterator i;
+    for (i = m_jobList.begin(); i != m_jobList.end(); ++i)
+    {
+        (*i)->saveStatus(JOB_UNKNOWN);
+        (*i)->DownRef();
+    }
+
+    m_socket->DownRef();
+}
+
+void JobQueueSocket::UpRef(void)
+{
+    QMutexLocker locker(&m_refLock);
+    m_refCount++;
+}
+
+bool JobQueueSocket::DownRef(void)
+{
+    QMutexLocker locker(&m_refLock);
+    m_refCount--;
+    if (m_refCount <= 0)
+    {
+        delete this;
+        return true;
+    }
+    return false;
+}
+
+bool JobQueueSocket::AddJob(JobInfoDB *job)
+{
+    QWriteLocker wlock(&m_jobLock);
+    if (m_jobList.contains(job))
+        return false;
+
+    job->UpRef();
+    m_jobList.append(job);
+
+    return job->Run(m_socket);
+}
+
+void JobQueueSocket::DeleteJob(JobInfoDB *job)
+{
+    QWriteLocker wlock(&m_jobLock);
+    if (!m_jobList.contains(job))
+        return;
+
+    m_jobList.removeOne(job)
+    job->DownRef();
+}
+
+JobList *JobQueueSocket:getAssignedJobs(void)
+{
+    QReadLocker rlock(&m_jobLock);
+    JobList *list = new JobList(m_jobList);
+    return list;
+}
+
+int JobQueueSocket::getAssignedJobCount(void)
+{
+    QReadLocker rlock(&m_jobLock);
+    return m_jobList.count();
+}
+
 void JobScheduler::connectionClosed(MythSocket *socket)
 {
     // iterate through jobqueue list and close if socket matches connected queue
 }
 
-QStringList JobScheduler::GetConnectedQueues(void)
+JobHostList *JobScheduler::GetConnectedQueues(void)
 {
-    m_hostLock.lockForRead();
-    QStringList hosts = m_hostMap.keys();
-    m_hostLock.unlock();
+    QReadLock rlock(&m_hostLock);
+    JobHostList *hosts = new JobHostList(m_hostMap.values());
     return hosts;
+}
+
+MythSocket *GetQueueByHostname(QString hostname)
+{
+    QReadLock rlock(&m_hostLock);
+    MythSocket *socket = NULL;
+
+    if (m_hostMap.contains(hostname))
+        socket = m_hostMap[hostname];
+
+    return socket;
 }
 
 bool JobScheduler::HandleAnnounce(MythSocket *socket, QStringList &commands,
@@ -52,7 +138,8 @@ bool JobScheduler::HandleAnnounce(MythSocket *socket, QStringList &commands,
 
     {
         QWriteLocker wlock(&m_hostLock);
-        m_hostMap.insert(hostname, socket);
+        JobQueueSocket *jobsock = new JobQueueSocket(hostname, socket);
+        m_hostMap.insert(hostname, jobsock);
     }
 
     socket->setAnnounce(slist);
@@ -430,6 +517,8 @@ void JobSchedulerPrivate::run(void)
         VERBOSE(VB_GENERAL|VB_EXTRA, "Running job scheduler.");
         DoJobScheduling();
 
+        m_timer->start(60000);
+
         m_waitCond.wait(locker.mutex());
     }
 }
@@ -454,19 +543,66 @@ void JobSchedulerCF::DoJobScheduling(void)
         return;
     }
 
-    QStringList hosts = m_parent->GetConnectedQueues();
+    JobHostList *hosts = m_parent->GetConnectedQueues();
     if (hosts.empty())
     {
         VERBOSE(VB_GENERAL, "Jobs in queue cannot be run, "
                             "no jobqueue available.");
         delete jobs;
+        delete hosts;
         return;
     }
-/*
+
     int jobmax;
-    JobList::iterator jit;
-    for (jit = jobs->begin(); jit != jobs->end(); ++jit)
+    JobInfoDB::iterator job;
+
+    while (!jobs->isEmpty())
     {
-        
-    }*/
+        JobHostList::iterator host;
+        for (host = hosts->begin(); host != hosts->end(); ++host)
+        {
+            jobmax = gCoreContext->GetNumSettingOnHost(
+                  "JobQueueMaxSimultaneousJobs", (*host)->getHostname(), 1);
+            if (jobmax > (*host)->getAssignedJobCount())
+            {
+                // limit has been reached, remove from list and
+                // continue with next host
+                hosts->removeOne(*host);
+                continue;
+            }
+
+            for (job = jobs->begin(); job != jobs->end(); ++job)
+            {
+                //if (host can run job type)
+                //{
+                    // start job on host and remove from list
+                    // skip to next host, well come back to this one if jobs
+                    // are still left after going through all of them
+                    jobs->removeOne(*job);
+                    job->UpRef();
+                    (*host)->AddJob(*job);
+                    break;
+                //}
+            }
+
+            job = jobs->begin();
+            while (jobmax > (*host)->getAssignedJobCount() &&
+               job != jobs->end())
+        {
+            // host can accept new job
+            // TODO: check if host can run type
+            jobs->removeOne(*job);
+            job->UpRef();
+            (*host)->AddJob(*job);
+            job++;
+        }
+
+        if (jobs->isEmpty())
+            // no more jobs to allocate
+            break;
+    }
+    }
+
+    delete jobs;
+    delete hosts;
 }

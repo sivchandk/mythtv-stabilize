@@ -17,9 +17,44 @@ using namespace std;
 #include "programinfo.h"
 #include "jobinfodb.h"
 
+class JobQueueSocket;
 
-typedef QMap<QString, MythSocket*> HostMap;
+typedef QMap<QString, JobQueueSocket*> JobHostMap;
+typedef QList<JobQueueSocket*> JobHostList;
 typedef QList<JobInfoDB*> JobList;
+
+class JobQueueSocket : public QObject
+{
+  public:
+    JobQueueSocket(QString hostname, MythSocket *socket);
+   ~JobQueueSocket();
+
+    void UpRef(void);
+    bool DownRef(void);
+
+    void SetDisconnected(void) { m_disconnected = true; }
+    bool IsDisconnected(void)  { return m_disconnected; }
+
+    MythSocket *getSocket(void) const { return m_socket; }
+    QString getHostname(void)   const { return m_hostname; }
+
+    bool AddJob(JobInfoDB *job);
+    void DeleteJob(JobInfoDB *job);
+
+    JobList *getAssignedJobs(void);
+    int getAssignedJobCount(void);
+    
+  private:
+    QString         m_hostname;
+    MythSocket     *m_socket;
+    bool            m_disconnected;
+
+    QReadWriteLock  m_jobLock;
+    JobList         m_jobList;
+
+    QMutex          m_refLock;
+    int             m_refCount;
+};
 
 class JobScheduler : public SocketRequestHandler
 {
@@ -33,17 +68,17 @@ class JobScheduler : public SocketRequestHandler
                      QStringList &slist);
     void connectionClosed(MythSocket *socket);
 
-    bool        RestartScheduler(void);
-    QStringList GetConnectedQueues(void);
+    bool         RestartScheduler(void);
+    JobHostList *GetConnectedQueues(void);
+    MythSocket  *GetQueueByHostname(QString hostname);
 
+    JobList     *GetQueuedJobs(void);
+    JobList     *GetJobByProgram(uint chanid, QDateTime starttime);
+    JobList     *GetJobByProgram(ProgramInfo *pginfo);
 
-    JobList    *GetQueuedJobs(void);
-    JobList    *GetJobByProgram(uint chanid, QDateTime starttime);
-    JobList    *GetJobByProgram(ProgramInfo *pginfo);
-
-    JobInfoDB  *GetJobByID(int jobid);
-    JobInfoDB  *GetJobByProgram(uint chanid, QDateTime starttime, int jobType);
-    JobInfoDB  *GetJobByProgram(ProgramInfo *pginfo, int jobType);
+    JobInfoDB   *GetJobByID(int jobid);
+    JobInfoDB   *GetJobByProgram(uint chanid, QDateTime starttime, int jobType);
+    JobInfoDB   *GetJobByProgram(ProgramInfo *pginfo, int jobType);
 
   private:
     bool HandleGetInfo(MythSocket *socket, QStringList &commands);
@@ -57,7 +92,7 @@ class JobScheduler : public SocketRequestHandler
     JobList         m_jobList;
     QReadWriteLock  m_jobLock;
 
-    HostMap         m_hostMap;
+    JobHostMap      m_hostMap;
     QReadWriteLock  m_hostLock;
 };
 
