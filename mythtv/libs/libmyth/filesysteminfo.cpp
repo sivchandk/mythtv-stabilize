@@ -1,3 +1,19 @@
+#include <unistd.h>
+#include "compat.h"
+
+#ifdef linux
+#include <sys/vfs.h>
+#include <sys/sysinfo.h>
+#endif
+
+#if CONFIG_DARWIN
+#include <mach/mach.h>
+#endif
+
+#ifdef BSD
+#include <sys/param.h>
+#include <sys/mount.h>  // for struct statfs
+#endif
 
 using namespace std;
 
@@ -7,6 +23,7 @@ using namespace std;
 
 #include "decodeencode.h"
 #include "filesysteminfo.h"
+#include "mythcoreutil.h"
 
 // for serialization
 #define INT_TO_LIST(x)       do { list << QString::number(x); } while (0)
@@ -192,5 +209,37 @@ void FileSystemInfo::Consolidate(QList<FileSystemInfo> &disks,
                 it2 = it1;
             }
         }
+    }
+}
+
+void FileSystemInfo::PopulateDiskSpace(void)
+{
+    long long total = -1, used = -1;
+    getDiskSpace(getPath().toAscii().constData(), total, used);
+    setTotalSpace(total);
+    setUsedSpace(used);
+}
+
+void FileSystemInfo::PopulateFSProp(void)
+{
+    struct statfs statbuf;
+    memset(&statbuf, 0, sizeof(statbuf));
+
+    if (!statfs(getPath().toLocal8Bit().constData(), &statbuf))
+    {
+#if CONFIG_DARWIN
+        char *fstypename = statbuf.f_fstypename;
+        if ((!strcmp(fstypename, "nfs")) ||     // NFS|FTP
+            (!strcmp(fstypename, "afpfs")) ||   // AppleShare
+            (!strcmp(fstypename, "smbfs")))     // SMB
+                setLocal(false);
+#elif __linux__
+        long fstype = statbuf.f_type;
+        if ((fstype == 0x6969)  ||              // NFS
+            (fstype == 0x517B)  ||              // SMB
+            (fstype == (long)0xFF534D42))       // CIFS
+                setLocal(false);
+#endif
+        setBlockSize(statbuf.f_bsize);
     }
 }
