@@ -41,8 +41,8 @@ class FileTransferHandler : public SocketRequestHandler
                              QStringList &slist);
     void connectionClosed(MythSocket *socket);
 
-    QList<FileSystemInfo> QueryDiskSpace(void);
-    QList<FileSystemInfo> QueryAllDiskSpace(void);
+    QList<FileSystemInfo> QueryFileSystems(void);
+    QList<FileSystemInfo> QueryAllFileSystems(void);
 
   signals:
     void unlinkFailed(QString path);

@@ -575,7 +575,7 @@ bool FileTransferHandler::HandleQueryFreeSpace(MythSocket *socket)
 {
     QStringList res;
 
-    QList<FileSystemInfo> disks = QueryDiskSpace();
+    QList<FileSystemInfo> disks = QueryFileSystems();
     QList<FileSystemInfo>::const_iterator i;
     for (i = disks.begin(); i != disks.end(); ++i)
         i->ToStringList(res);
@@ -589,14 +589,14 @@ bool FileTransferHandler::HandleQueryFreeSpaceList(MythSocket *socket)
     QStringList res;
     QStringList hosts;
 
-    QList<FileSystemInfo> disks = QueryAllDiskSpace();
+    QList<FileSystemInfo> disks = QueryAllFileSystems();
     QList<FileSystemInfo>::const_iterator i;
     for (i = disks.begin(); i != disks.end(); ++i)
         if (!hosts.contains(i->getHostname()))
             hosts << i->getHostname();
 
     // TODO: get max bitrate from encoderlink
-    FileSystemInfo::Consolidate(disks, 14000);
+    FileSystemInfo::Consolidate(disks, true, 14000);
 
     long long total = 0;
     long long used = 0;
@@ -623,9 +623,9 @@ bool FileTransferHandler::HandleQueryFreeSpaceList(MythSocket *socket)
 bool FileTransferHandler::HandleQueryFreeSpaceSummary(MythSocket *socket)
 {
     QStringList res;
-    QList<FileSystemInfo> disks = QueryAllDiskSpace();
+    QList<FileSystemInfo> disks = QueryAllFileSystems();
     // TODO: get max bitrate from encoderlink
-    FileSystemInfo::Consolidate(disks, 14000);
+    FileSystemInfo::Consolidate(disks, true, 14000);
 
     QList<FileSystemInfo>::const_iterator i;
     long long total = 0;
@@ -641,7 +641,7 @@ bool FileTransferHandler::HandleQueryFreeSpaceSummary(MythSocket *socket)
     return true;
 }
 
-QList<FileSystemInfo> FileTransferHandler::QueryDiskSpace(void)
+QList<FileSystemInfo> FileTransferHandler::QueryFileSystems(void)
 {
     QStringList groups(StorageGroup::kSpecialGroups);
     groups.removeAll("LiveTV");
@@ -666,7 +666,7 @@ QList<FileSystemInfo> FileTransferHandler::QueryDiskSpace(void)
                            "GROUP BY dirname;");
             query.bindValue(":GROUP", "Default");
             if (!query.exec())
-                MythDB::DBError("BackendQueryDiskSpace", query);
+                MythDB::DBError("BackendQueryFileSystems", query);
         }
 
         QDir checkDir("");
@@ -712,9 +712,9 @@ QList<FileSystemInfo> FileTransferHandler::QueryDiskSpace(void)
     return disks;
 }
 
-QList<FileSystemInfo> FileTransferHandler::QueryAllDiskSpace(void)
+QList<FileSystemInfo> FileTransferHandler::QueryAllFileSystems(void)
 {
-    QList<FileSystemInfo> disks = QueryDiskSpace();
+    QList<FileSystemInfo> disks = QueryFileSystems();
 
     {
         QReadLocker rlock(&m_fsLock);
