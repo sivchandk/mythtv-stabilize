@@ -55,6 +55,7 @@ class MPUBLIC FileSystemInfo : public QObject
     bool        ToStringList(QStringList &slist) const;
 
     static const QList<FileSystemInfo> RemoteGetInfo(MythSocket *sock=NULL);
+    static void Consolidate(QList<FileSystemInfo> &disks, size_t fuzz=14000);
 
   private:
     bool        FromStringList(const QStringList &slist);

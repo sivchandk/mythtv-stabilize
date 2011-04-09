@@ -5,6 +5,7 @@ using namespace std;
 #include <QString>
 #include <QStringList>
 
+#include "decodeencode.h"
 #include "filesysteminfo.h"
 
 // for serialization
@@ -152,4 +153,44 @@ const QList<FileSystemInfo> FileSystemInfo::RemoteGetInfo(MythSocket *sock)
     }
 
     return fsInfos;
+}
+
+void FileSystemInfo::Consolidate(QList<FileSystemInfo> &disks,
+                                        size_t fuzz)
+{
+    int newid = 0;
+
+    QList<FileSystemInfo>::iterator it1, it2;
+    for (it1 = disks.begin(); it1 != disks.end(); ++it1)
+    {
+        if (it1->getFSysID() == -1)
+        {
+            it1->setFSysID(newid++);
+            it1->setPath(it1->getHostname().section(".", 0, 0)
+                                + ":" + it1->getPath());
+        }
+
+        for (it2 = it1+1; it2 != disks.end(); ++it2)
+        {
+            if (it2->getFSysID() != -1) // this should never happen
+                continue;
+
+            int bSize = max(32, max(it1->getBlockSize(), it2->getBlockSize())
+                                        / 1024);
+            if (absLongLong(it1->getTotalSpace() -
+                            it2->getTotalSpace()) <= bSize &&
+                (size_t)absLongLong(it1->getUsedSpace() -
+                                    it2->getUsedSpace()) <= fuzz)
+            {
+                if (!it1->getHostname().contains(it2->getHostname()))
+                    it1->setHostname(it1->getHostname()
+                                        + "," + it2->getHostname());
+                it1->setPath(it1->getPath() + ","
+                                + it2->getHostname().section(".", 0, 0) + ":"
+                                + it2->getPath());
+                disks.erase(it2);
+                it2 = it1;
+            }
+        }
+    }
 }
