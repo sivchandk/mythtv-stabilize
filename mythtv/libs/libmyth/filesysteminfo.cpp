@@ -173,7 +173,7 @@ const QList<FileSystemInfo> FileSystemInfo::RemoteGetInfo(MythSocket *sock)
 }
 
 void FileSystemInfo::Consolidate(QList<FileSystemInfo> &disks,
-                                        size_t fuzz)
+                                 bool merge, size_t fuzz)
 {
     int newid = 0;
 
@@ -183,13 +183,14 @@ void FileSystemInfo::Consolidate(QList<FileSystemInfo> &disks,
         if (it1->getFSysID() == -1)
         {
             it1->setFSysID(newid++);
-            it1->setPath(it1->getHostname().section(".", 0, 0)
+            if (merge)
+                it1->setPath(it1->getHostname().section(".", 0, 0)
                                 + ":" + it1->getPath());
         }
 
         for (it2 = it1+1; it2 != disks.end(); ++it2)
         {
-            if (it2->getFSysID() != -1) // this should never happen
+            if (it2->getFSysID() != -1) // disk has already been matched
                 continue;
 
             int bSize = max(32, max(it1->getBlockSize(), it2->getBlockSize())
@@ -199,14 +200,19 @@ void FileSystemInfo::Consolidate(QList<FileSystemInfo> &disks,
                 (size_t)absLongLong(it1->getUsedSpace() -
                                     it2->getUsedSpace()) <= fuzz)
             {
-                if (!it1->getHostname().contains(it2->getHostname()))
-                    it1->setHostname(it1->getHostname()
+                it2->setFSysID(it1->getFSysID());
+
+                if (merge)
+                {
+                    if (!it1->getHostname().contains(it2->getHostname()))
+                        it1->setHostname(it1->getHostname()
                                         + "," + it2->getHostname());
-                it1->setPath(it1->getPath() + ","
-                                + it2->getHostname().section(".", 0, 0) + ":"
-                                + it2->getPath());
-                disks.erase(it2);
-                it2 = it1;
+                    it1->setPath(it1->getPath() + ","
+                                 + it2->getHostname().section(".", 0, 0) + ":"
+                                 + it2->getPath());
+                    disks.erase(it2);
+                    it2 = it1;
+                }
             }
         }
     }
