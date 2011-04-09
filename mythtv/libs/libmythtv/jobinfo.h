@@ -85,6 +85,7 @@ enum JobTypes {
 
 class MTV_PUBLIC JobInfo : public QObject
 {
+    Q_OBJECT
   public:
     JobInfo(int id);
     JobInfo(const JobInfo &other);
@@ -203,7 +204,7 @@ class MTV_PUBLIC JobInfo : public QObject
     QString     m_comment;
     QDateTime   m_schedruntime;
 
-    bool        FromStringList(QStringList &slist);
+    bool        FromStringList(const QStringList &slist);
     bool        FromStringList(QStringList::const_iterator &it,
                                QStringList::const_iterator listend);
 

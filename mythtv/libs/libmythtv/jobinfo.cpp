@@ -40,7 +40,7 @@ using namespace std;
 
 
 JobInfo::JobInfo(int id) :
-    m_userJobIndex(-1), m_jobid(id)
+     m_jobid(id), m_userJobIndex(-1)
 {
     QueryObject();
 }
@@ -60,10 +60,9 @@ JobInfo::JobInfo(ProgramInfo &pginfo, int jobType) :
 JobInfo::JobInfo(int jobType, uint chanid, const QDateTime &starttime,
                  QString args, QString comment, QString host,
                  int flags, int status, QDateTime schedruntime) :
-    m_userJobIndex(-1), m_jobType(jobType), m_chanid(chanid),
-    m_starttime(starttime), m_args(args), m_comment(comment),
-    m_host(host), m_flags(flags), m_status(status),
-    m_schedruntime(schedruntime)
+    m_chanid(chanid), m_starttime(starttime), m_jobType(jobType),
+    m_flags(flags), m_status(status), m_hostname(host), m_args(args),
+    m_comment(comment), m_schedruntime(schedruntime), m_userJobIndex(-1)
 {
 }
 
@@ -177,7 +176,7 @@ bool JobInfo::ToStringList(QStringList &list) const
     return true;
 }
 
-bool JobInfo::FromStringList(QStringList &slist)
+bool JobInfo::FromStringList(const QStringList &slist)
 {
     QStringList::const_iterator it = slist.constBegin();
     return FromStringList(it, slist.constEnd());
