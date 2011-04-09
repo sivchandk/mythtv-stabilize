@@ -5,6 +5,7 @@
 using namespace std;
 
 #include <QStringList>
+#include "mythbaseexp.h"
 
 // This is necessary for GCC 3.3, which has llabs(long long)
 // // but not abs(long long) or std::llabs(long long)
