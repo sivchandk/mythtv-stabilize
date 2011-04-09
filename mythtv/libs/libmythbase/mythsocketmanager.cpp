@@ -314,7 +314,13 @@ void MythSocketManager::ProcessRequestWork(MythSocket *sock)
                 i++;
             }
 
-            if (!handled)
+            if (handled)
+            {
+                for (i = m_handlerMap.constBegin(); 
+                         i != m_handlerMap.constEnd(); ++i)
+                    (*i)->connectionAnnounced(sock, tokens, listline);
+            }
+            else
             {
                 listline.clear();
                 listline << "ERROR" << "unhandled announce";

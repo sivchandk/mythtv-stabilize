@@ -45,6 +45,8 @@ class SocketRequestHandler : public QObject
                                 QStringList &slist)
                     { return false; }
     virtual QString GetHandlerName(void)                { return "BASE"; }
+    virtual void connectionAnnounced(MythSocket *socket, QStringList &commands,
+                                QStringList &slist)     { (void)socket; }
     virtual void connectionClosed(MythSocket *socket)   { (void)socket; }
     virtual void SetParent(MythSocketManager *parent)   { m_parent = parent; }
 
