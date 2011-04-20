@@ -38,6 +38,10 @@ using namespace std;
     do { NEXT_STR(); (x).setTime_t(ts.toUInt()); } while (0)
 #define STR_FROM_LIST(x)     do { NEXT_STR(); (x) = ts; } while (0)
 
+JobInfo::JobInfo(void) :
+    m_inserttime(QDateTime::currentDateTime()), m_userJobIndex(-1)
+{
+}
 
 JobInfo::JobInfo(int id) :
      m_jobid(id), m_userJobIndex(-1)
@@ -51,7 +55,7 @@ JobInfo::JobInfo(uint chanid, QDateTime &starttime, int jobType) :
     QueryObject(chanid, starttime, jobType);
 }
 
-JobInfo::JobInfo(ProgramInfo &pginfo, int jobType) :
+JobInfo::JobInfo(const ProgramInfo &pginfo, int jobType) :
     m_userJobIndex(-1)
 {
     QueryObject(pginfo.GetChanID(), pginfo.GetRecordingStartTime(), jobType);
@@ -114,7 +118,7 @@ void JobInfo::clone(const JobInfo &other)
 
 void JobInfo::clear(void)
 {
-    m_jobid = 0;
+    m_jobid = -1;
     m_chanid = 0;
     m_starttime = QDateTime::currentDateTime();
     m_inserttime = m_starttime;
@@ -211,6 +215,7 @@ void JobInfo::setStatus(int status, QString comment)
     {
         setStatus(status);
         setComment(comment);
+        setStatusTime();
     }
 }
 
@@ -220,12 +225,19 @@ void JobInfo::saveStatus(int status, QString comment)
     {
         setStatus(status);
         setComment(comment);
+        setStatusTime();
         SaveObject();
     }
 }
 
 bool JobInfo::QueryObject(void)
 {
+    if (!isValid())
+    {
+        clear();
+        return false;
+    }
+
     QStringList sl(QString("QUERY_JOBQUEUE GET_INFO %s").arg(m_jobid));
     return SendExpectingInfo(sl, true);
 }
@@ -239,6 +251,9 @@ bool JobInfo::QueryObject(int chanid, QDateTime starttime, int jobType)
 
 bool JobInfo::SaveObject(void)
 {
+    if (!isValid())
+        return false;
+
     QStringList sl("QUERY_JOBQUEUE SEND_INFO");
     if (!ToStringList(sl))
         return false;

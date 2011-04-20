@@ -87,10 +87,11 @@ class MTV_PUBLIC JobInfo : public QObject
 {
     Q_OBJECT
   public:
+    JobInfo();
     JobInfo(int id);
     JobInfo(const JobInfo &other);
     JobInfo(uint chanid, QDateTime &starttime, int jobType);
-    JobInfo(ProgramInfo &pginfo, int jobType);
+    JobInfo(const ProgramInfo &pginfo, int jobType);
     JobInfo(int jobType, uint chanid, const QDateTime &starttime,
             QString args, QString comment, QString host,
             int flags, int status, QDateTime schedruntime);
@@ -104,6 +105,8 @@ class MTV_PUBLIC JobInfo : public QObject
     JobInfo &operator=(const JobInfo &other);
     virtual void clone(const JobInfo &other);
     void clear(void);
+
+    bool isValid(void)                const { return (m_jobid != -1); }
 
     // local information gets
     int         getJobID(void)        const { return m_jobid; }
