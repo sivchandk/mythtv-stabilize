@@ -33,7 +33,7 @@ using namespace std;
 #include "remoteutil.h"
 #include "remotefile.h"
 #include "tvremoteutil.h"
-#include "jobqueue.h"
+#include "jobinfo.h"
 #include "remoteencoder.h"
 #include "ringbuffer.h"
 #include "mythcommandlineparser.h"
@@ -94,7 +94,7 @@ int recorderNum = -1;
 bool dontSubmitCommbreakListToDB =  false;
 bool onlyDumpDBCommercialBreakList = false;
 
-int jobID = -1;
+JobInfo *commjob = NULL;
 int lastCmd = -1;
 
 static QMap<QString,SkipTypes> *init_skip_types();
@@ -205,10 +205,21 @@ static int QueueCommFlagJob(uint chanid, QString starttime)
         return GENERIC_EXIT_NO_RECORDING_DATA;
     }
 
-    bool result = JobQueue::QueueJob(
-        JOB_COMMFLAG, pginfo.GetChanID(), pginfo.GetRecordingStartTime());
+    JobInfo job(pginfo, JOB_COMMFLAG);
+    if (job.isValid())
+    {
+        if (!quiet)
+        {
+            QString tmp = QString("Job already exists for chanid %1 @ %2")
+                .arg(chanid).arg(starttime);
+            cerr << tmp.toLocal8Bit().constData() << endl;
+        }
+        return GENERIC_EXIT_DB_ERROR;
+    }
 
-    if (result)
+    job = JobInfo(JOB_COMMFLAG, chanid, recstartts, "", "", "", 0, 0,
+                  QDateTime::currentDateTime());
+    if (job.Queue())
     {
         if (!quiet)
         {
@@ -452,7 +463,10 @@ static void commDetectorBreathe()
     //while its busy to see if the user already told us to stop.
     qApp->processEvents();
 
-    if (jobID != -1)
+    //this no longer does anything, as the jobqueue itself is supposed to 
+    //handle all of this
+
+/*    if (jobID != -1)
     {
         int curCmd = JobQueue::GetJobCmd(jobID);
         if (curCmd == lastCmd)
@@ -481,15 +495,13 @@ static void commDetectorBreathe()
                 }
         }
     }
+*/
 }
 
 static void commDetectorStatusUpdate(const QString& status)
 {
-    if (jobID != -1)
-    {
-        JobQueue::ChangeJobStatus(jobID, JOB_RUNNING,  status);
-        JobQueue::ChangeJobComment(jobID,  status);
-    }
+    if (commjob)
+        commjob->saveComment(status);
 }
 
 static void commDetectorGotNewCommercialBreakList(void)
@@ -590,15 +602,16 @@ static int DoFlagCommercials(
 
     if (inJobQueue && useDB)
     {
-        jobID = JobQueue::GetJobID(
-            JOB_COMMFLAG,
-            program_info->GetChanID(), program_info->GetRecordingStartTime());
-
-        if (jobID != -1)
-            VERBOSE(VB_COMMFLAG,
-                QString("mythcommflag processing JobID %1").arg(jobID));
-        else
+        commjob = new JobInfo(*program_info, JOB_COMMFLAG);
+        if (!commjob->isValid())
+        {
+            delete commjob;
+            commjob = NULL;
             VERBOSE(VB_COMMFLAG, "mythcommflag: Unable to determine jobID");
+        }
+        else
+            VERBOSE(VB_COMMFLAG, QString("mythcommflag processing JobID %1")
+                        .arg(commjob->getJobID()));
     }
 
     if (useDB)
@@ -739,16 +752,19 @@ static int FlagCommercials(
         cerr << out.constData() << flush;
     }
 
-    if (!force && JobQueue::IsJobRunning(JOB_COMMFLAG, *program_info))
+
+    if (!force)
     {
-        if (!quiet)
+        JobInfo job = JobInfo(*program_info, JOB_COMMFLAG);
+        if (job.isValid())
         {
-            cerr << "IN USE\n";
-            cerr << "                        "
-                    "(the program is already being flagged elsewhere)\n";
+            if (!quiet)
+                cerr << "IN USE" << endl << "                        "
+                     << "(the program is already being flagged elsewhere)"
+                     << endl;
+            global_program_info = NULL;
+            return GENERIC_EXIT_IN_USE;
         }
-        global_program_info = NULL;
-        return GENERIC_EXIT_IN_USE;
     }
 
     QString filename = get_filename(program_info);
@@ -870,6 +886,11 @@ static int FlagCommercials(
         cfp->SetWatchingRecording(watchingRecording);
     }
 
+/*
+ * TODO
+ * Insert a new active jobqueue entry if running manually from the command line
+ * will need to replace this functionality... 
+ *
     int fakeJobID = -1;
     if (!inJobQueue && useDB)
     {
@@ -888,18 +909,21 @@ static int FlagCommercials(
     }
     else
         jobID = -1;
+*/
 
 
     breaksFound = DoFlagCommercials(
         program_info, showPercentage, fullSpeed, inJobQueue,
         cfp, commDetectMethod, outputfilename, useDB);
 
+/*
     if (fakeJobID >= 0)
     {
         jobID = -1;
         JobQueue::ChangeJobStatus(fakeJobID, JOB_FINISHED,
             QObject::tr("Finished, %n break(s) found.", "", breaksFound));
     }
+*/
 
     if (!quiet)
         cerr << breaksFound << "\n";
@@ -1322,8 +1346,9 @@ int main(int argc, char *argv[])
 
     if (jobID != -1)
     {
-        if (JobQueue::GetJobInfoFromID(
-                jobID, jobType, chanid, starttime))
+        QDateTime recstartts = myth_dt_from_string(starttime);
+        commjob = new JobInfo(chanid, recstartts, jobType);
+        if (commjob->isValid())
         {
             inJobQueue = true;
             force = true;
@@ -1401,7 +1426,16 @@ int main(int argc, char *argv[])
         int breaksFound = FlagCommercials(
             chanid, starttime, outputfilename, useDB);
 
-        return breaksFound; // exit(breaksFound);
+        if (breaksFound > 128)
+            return breaksFound;
+
+        // TODO:
+        // need to trigger a new preview generation, since the jobqueue
+        // will not automatically do so upon completion
+
+        commjob->saveStatus(JOB_FINISHED,
+                    QObject::tr("%n commercial break(s)", "", breaksFound));
+        return GENERIC_EXIT_OK;
     }
 
     // be nice to other programs since FlagCommercials() can consume 100% CPU
