@@ -23,6 +23,7 @@ using namespace std;
 class EncoderLink;
 class MainServer;
 class AutoExpire;
+class FileTransferHandler;
 
 typedef deque<RecordingInfo*> RecList;
 #define SORT_RECLIST(LIST, ORDER) \
@@ -81,6 +82,7 @@ class Scheduler : public QObject
     void PrintRec(const RecordingInfo *p, const char *prefix = NULL);
 
     void SetMainServer(MainServer *ms);
+    void SetFileServer(FileTransferHandler *fs);
 
     void SlaveConnected(RecordingList &slavelist);
     void SlaveDisconnected(uint cardid);
@@ -186,6 +188,7 @@ class Scheduler : public QObject
     ScheduleThread schedThread;
 
     MainServer *m_mainServer;
+    FileTransferHandler *m_fileServer;
 
     QMutex resetIdleTime_lock;
     bool resetIdleTime;

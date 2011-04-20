@@ -38,6 +38,7 @@ class Scheduler;
 class AutoExpire;
 class EncoderLink;
 class MainServer;
+class FileTransferHandler;
 
 class HttpStatus : public HttpServerExtension
 {
@@ -47,6 +48,7 @@ class HttpStatus : public HttpServerExtension
         QMap<int, EncoderLink *>    *m_pEncoders;
         AutoExpire                  *m_pExpirer;
         MainServer                  *m_pMainServer;
+        FileTransferHandler         *m_pFileServer;
         bool                         m_bIsMaster;
         int                          m_nPreRollSeconds;
         QMutex                       m_settingLock;
@@ -85,6 +87,8 @@ class HttpStatus : public HttpServerExtension
 
         void     SetMainServer(MainServer *mainServer)
                     { m_pMainServer = mainServer; }
+        void     SetFileServer(FileTransferHandler *fileServer)
+                    { m_pFileServer = fileServer; }
 
         virtual QStringList GetBasePaths();
         

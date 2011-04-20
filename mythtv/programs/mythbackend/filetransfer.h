@@ -13,6 +13,7 @@ using namespace std;
 
 // Qt headers
 #include <QMutex>
+#include <QThread>
 #include <QWaitCondition>
 
 // MythTV headers
@@ -28,8 +29,48 @@ class FileTransfer;
 typedef QMap<int, FileTransfer*> FileTransferMap;
 typedef QMap<QString, MythSocket*> FileServerMap;
 
+typedef struct deletestruct
+{
+    QString path;
+    int fd;
+    off_t size;
+} DeleteStruct;
+
+class DeleteThread : public QThread
+{
+    Q_OBJECT
+  public:
+    DeleteThread(void);
+    void run(void);
+    bool AddFile(QString path);
+
+  signals:
+    void fileUnlinked(QString path);
+    void unlinkFailed(QString path);
+
+  private slots:
+    void timeout(void) { m_run = false; }
+
+  private:
+    void ProcessNew(void);
+    void ProcessOld(void);
+
+    size_t               m_increment;
+    bool                 m_slow;
+    bool                 m_run;
+    QTimer               m_timer;
+    int                  m_timeout;
+
+    QStringList          m_newfiles;
+    QMutex               m_newlock;
+
+    QList<deletestruct*> m_files;
+};
+
+
 class FileTransferHandler : public SocketRequestHandler
 {
+    Q_OBJECT
   public:
     bool HandleAnnounce(MythSocket *socket, QStringList &commands,
                         QStringList &slist);
@@ -41,6 +82,8 @@ class FileTransferHandler : public SocketRequestHandler
                              QStringList &slist);
     void connectionClosed(MythSocket *socket);
 
+    bool DeleteFile(QString filename, QString storagegroup);
+
     QList<FileSystemInfo> QueryFileSystems(void);
     QList<FileSystemInfo> QueryAllFileSystems(void);
 
@@ -50,7 +93,7 @@ class FileTransferHandler : public SocketRequestHandler
 
   protected slots:
     void deleteThreadTerminated(void);
-    void deferredDeleteSlot(void);
+//    void deferredDeleteSlot(void);
 
   private:
     bool HandleQueryFreeSpace(MythSocket *socket);

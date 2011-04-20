@@ -39,6 +39,8 @@
 #include "mythsystem.h"
 #include "exitcodes.h"
 #include "jobqueue.h"
+#include "filetransfer.h"
+#include "filesysteminfo.h"
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -56,6 +58,7 @@ HttpStatus::HttpStatus( QMap<int, EncoderLink *> *tvList, Scheduler *sched,
     m_nPreRollSeconds = gCoreContext->GetNumSetting("RecordPreRoll", 0);
 
     m_pMainServer = NULL;
+    m_pFileServer = NULL;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -347,81 +350,73 @@ void HttpStatus::FillStatusXML( QDomDocument *pDoc )
     mInfo.appendChild(load   );
     mInfo.appendChild(guide  );
 
-    // drive space   ---------------------
-
-    QStringList strlist;
-    QString dirs;
-    QString hostname;
-    QString directory;
-    QString isLocalstr;
-    QString fsID;
-    QString ids;
-    long long iTotal = -1, iUsed = -1, iAvail = -1;
-
-    if (m_pMainServer)
-        m_pMainServer->BackendQueryDiskSpace(strlist, true, m_bIsMaster);
-
-    QDomElement total;
+    QList<FileSystemInfo> fsInfos;
+    if (m_pFileServer)
+    {
+        if (m_bIsMaster)
+            fsInfos = m_pFileServer->QueryFileSystems();
+        else
+            fsInfos = m_pFileServer->QueryAllFileSystems();
+    }
+    FileSystemInfo::Consolidate(fsInfos);
 
     // Make a temporary list to hold the per-filesystem elements so that the
     // total is always the first element.
+    QDomElement total = pDoc->createElement("Group");
     QList<QDomElement> fsXML;
-    QStringList::const_iterator sit = strlist.begin();
-    while (sit != strlist.end())
-    {
-        hostname   = *(sit++);
-        directory  = *(sit++);
-        isLocalstr = *(sit++);
-        fsID       = *(sit++);
-        sit++; // ignore dirID
-        sit++; // ignore blocksize
-        iTotal     = decodeLongLong(strlist, sit);
-        iUsed      = decodeLongLong(strlist, sit);
-        iAvail     = iTotal - iUsed;
+    QList<FileSystemInfo>::const_iterator sit = fsInfos.begin();
 
-        if (fsID == "-2")
-            fsID = "total";
+    long long totalKB=0, usedKB=0, freeKB=0;
+
+    while (sit != fsInfos.end())
+    {
+        totalKB += sit->getTotalSpace();
+        usedKB  += sit->getUsedSpace();
+        freeKB  += sit->getFreeSpace();
 
         QDomElement group = pDoc->createElement("Group");
+        group.setAttribute("id",    sit->getFSysID());
+        group.setAttribute("total", (int)(sit->getTotalSpace()>>10));
+        group.setAttribute("used",  (int)(sit->getUsedSpace()>>10));
+        group.setAttribute("free",  (int)(sit->getFreeSpace()>>10));
+        group.setAttribute("dir",   sit->getPath());
 
-        group.setAttribute("id"   , fsID );
-        group.setAttribute("total", (int)(iTotal>>10) );
-        group.setAttribute("used" , (int)(iUsed>>10)  );
-        group.setAttribute("free" , (int)(iAvail>>10) );
-        group.setAttribute("dir"  , directory );
-
-        if (fsID == "total")
-        {
-            long long iLiveTV = -1, iDeleted = -1, iExpirable = -1;
-            MSqlQuery query(MSqlQuery::InitCon());
-            query.prepare("SELECT SUM(filesize) FROM recorded "
-                          " WHERE recgroup = :RECGROUP;");
-
-            query.bindValue(":RECGROUP", "LiveTV");
-            if (query.exec() && query.next())
-            {
-                iLiveTV = query.value(0).toLongLong();
-            }
-            query.bindValue(":RECGROUP", "Deleted");
-            if (query.exec() && query.next())
-            {
-                iDeleted = query.value(0).toLongLong();
-            }
-            query.prepare("SELECT SUM(filesize) FROM recorded "
-                          " WHERE autoexpire = 1 "
-                          "   AND recgroup NOT IN ('LiveTV', 'Deleted');");
-            if (query.exec() && query.next())
-            {
-                iExpirable = query.value(0).toLongLong();
-            }
-            group.setAttribute("livetv", (int)(iLiveTV>>20) );
-            group.setAttribute("deleted", (int)(iDeleted>>20) );
-            group.setAttribute("expirable", (int)(iExpirable>>20) );
-            total = group;
-        }
-        else
-            fsXML << group;
+        fsXML << group;
+        sit++;
     }
+
+    total.setAttribute("id",    "total");
+    total.setAttribute("dir",   "TotalDiskSpace");
+    total.setAttribute("total", (int)(totalKB>>10));
+    total.setAttribute("used",  (int)(usedKB>>10));
+    total.setAttribute("free",  (int)(freeKB>>10));
+
+    MSqlQuery query(MSqlQuery::InitCon());
+    query.prepare("SELECT SUM(filesize) FROM recorded "
+                  " WHERE recgroup = :RECGROUP;");
+
+    query.bindValue(":RECGROUP", "LiveTV");
+    if (query.exec() && query.next())
+    {
+        total.setAttribute("livetv",
+                (int)((query.value(0).toLongLong())>>20));
+    }
+    query.bindValue(":RECGROUP", "Deleted");
+    if (query.exec() && query.next())
+    {
+        total.setAttribute("deleted",
+                (int)((query.value(0).toLongLong())>>20));
+    }
+    query.prepare("SELECT SUM(filesize) FROM recorded "
+                  " WHERE autoexpire = 1 "
+                  "   AND recgroup NOT IN ('LiveTV', 'Deleted');");
+    if (query.exec() && query.next())
+    {
+        total.setAttribute("expirable",
+                (int)((query.value(0).toLongLong())>>20));
+    }
+
+
 
     storage.appendChild(total);
     int num_elements = fsXML.size();
@@ -445,7 +440,6 @@ void HttpStatus::FillStatusXML( QDomDocument *pDoc )
 
     QDateTime GuideDataThrough;
 
-    MSqlQuery query(MSqlQuery::InitCon());
     query.prepare("SELECT MAX(endtime) FROM program WHERE manualid = 0;");
 
     if (query.exec() && query.isActive() && query.size())

@@ -20,6 +20,7 @@ class ProgramInfo;
 class EncoderLink;
 class FileSystemInfo;
 class MainServer;
+class FileTransferHandler;
 
 typedef vector<ProgramInfo*> pginfolist_t;
 typedef vector<EncoderLink*> enclinklist_t;
@@ -82,6 +83,7 @@ class AutoExpire : public QObject
     static void Update(bool immediately) { Update(0, -1, immediately); }
 
     void SetMainServer(MainServer *ms) { mainServer = ms; }
+    void SetFileServer(FileTransferHandler *fs) { fileServer = fs; }
 
     QMap<int, EncoderLink *> *encoderList;
 
@@ -120,6 +122,7 @@ class AutoExpire : public QObject
     QWaitCondition instance_cond;
 
     MainServer *mainServer;
+    FileTransferHandler *fileServer;
 
     // update info
     bool                    update_pending;

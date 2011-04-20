@@ -29,50 +29,13 @@ class QUrl;
 class VideoScanner;
 class QTimer;
 
-typedef struct deletestruct
-{
-    MainServer *ms;
-    uint chanid;
-    QDateTime recstartts;
-    QDateTime recendts;
-    QString filename;
-    int fd;
-    off_t size;
-    QString title;
-    bool forceMetadataDelete;
-} DeleteStruct;
-
-class DeleteThread : public QThread
-{
-    Q_OBJECT
-  public:
-    DeleteThread() : m_parent(NULL) {}
-    void SetParent(DeleteStruct *parent) { m_parent = parent; }
-    void run(void);
-  private:
-    DeleteStruct *m_parent;
-};
-
-class TruncateThread : public QThread
-{
-    Q_OBJECT
-  public:
-    TruncateThread() : m_parent(NULL) {}
-    void SetParent(DeleteStruct *parent) { m_parent = parent; }
-    void run(void);
-  private:
-    DeleteStruct *m_parent;
-};
-
 class MainServer : public SocketRequestHandler
 {
     Q_OBJECT
-
-    friend class DeleteThread;
-    friend class TruncateThread;
   public:
     MainServer(bool master, QMap<int, EncoderLink *> *tvList,
-               Scheduler *sched, AutoExpire *expirer);
+               Scheduler *sched, AutoExpire *expirer,
+               FileTransferHandler *fileserver);
 
    ~MainServer();
 
@@ -86,9 +49,6 @@ class MainServer : public SocketRequestHandler
     void DeletePBS(PlaybackSock *pbs);
 
     size_t GetCurrentMaxBitrate(void);
-    void BackendQueryDiskSpace(QStringList &strlist, bool consolidated,
-                               bool allHosts);
-    void GetFilesystemInfos(vector <FileSystemInfo> &fsInfos);
 
     int GetExitCode() const { return m_exitCode; }
 
@@ -103,6 +63,8 @@ class MainServer : public SocketRequestHandler
     void deferredDeleteSlot(void);
     void autoexpireUpdate(void);
     void finishVideoScan(bool changed);
+    void recordingDeleted(QString filename);
+    void recordingFailedDelete(QString filename);
 
   private:
 
@@ -111,9 +73,6 @@ class MainServer : public SocketRequestHandler
                         MythSocket *socket);
 
     void HandleIsActiveBackendQuery(QStringList &slist, PlaybackSock *pbs);
-    bool HandleDeleteFile(QStringList &slist, PlaybackSock *pbs);
-    bool HandleDeleteFile(QString filename, QString storagegroup,
-                          PlaybackSock *pbs = NULL);
     void HandleQueryRecordings(QString type, PlaybackSock *pbs);
     void HandleQueryRecording(QStringList &slist, PlaybackSock *pbs);
     void HandleStopRecording(QStringList &slist, PlaybackSock *pbs);
@@ -131,18 +90,12 @@ class MainServer : public SocketRequestHandler
     void HandleForgetRecording(QStringList &slist, PlaybackSock *pbs);
     void HandleRescheduleRecordings(int recordid, PlaybackSock *pbs);
     void HandleGoToSleep(PlaybackSock *pbs);
-    void HandleQueryFreeSpace(PlaybackSock *pbs, bool allBackends);
-    void HandleQueryFreeSpaceSummary(PlaybackSock *pbs);
     void HandleQueryCheckFile(QStringList &slist, PlaybackSock *pbs);
-    void HandleQueryFileExists(QStringList &slist, PlaybackSock *pbs);
-    void HandleQueryFileHash(QStringList &slist, PlaybackSock *pbs);
     void HandleQueryGuideDataThrough(PlaybackSock *pbs);
     void HandleGetPendingRecordings(PlaybackSock *pbs, QString table = "", int recordid=-1);
     void HandleGetScheduledRecordings(PlaybackSock *pbs);
     void HandleGetConflictingRecordings(QStringList &slist, PlaybackSock *pbs);
     void HandleGetExpiringRecordings(PlaybackSock *pbs);
-    void HandleSGGetFileList(QStringList &sList, PlaybackSock *pbs);
-    void HandleSGFileQuery(QStringList &sList, PlaybackSock *pbs);
     void HandleGetNextFreeRecorder(QStringList &slist, PlaybackSock *pbs);
     void HandleGetFreeRecorder(PlaybackSock *pbs);
     void HandleGetFreeRecorderCount(PlaybackSock *pbs);
@@ -188,7 +141,6 @@ class MainServer : public SocketRequestHandler
     void HandleQueryMemStats(PlaybackSock *pbs);
     void HandleQueryTimeZone(PlaybackSock *pbs);
     void HandleBlockShutdown(bool blockShutdown, PlaybackSock *pbs);
-    void HandleDownloadFile(const QStringList &command, PlaybackSock *pbs);
 
     void SendResponse(MythSocket *pbs, QStringList &commands);
 
@@ -203,13 +155,6 @@ class MainServer : public SocketRequestHandler
 
     int GetfsID(vector<FileSystemInfo>::iterator fsInfo);
 
-    static void *SpawnTruncateThread(void *param);
-    void DoTruncateThread(const DeleteStruct *ds);
-    static void *SpawnDeleteThread(void *param);
-    void DoDeleteThread(const DeleteStruct *ds);
-    void DeleteRecordedFiles(const DeleteStruct *ds);
-    void DoDeleteInDB(const DeleteStruct *ds);
-
     LiveTVChain *GetExistingChain(const QString &id);
     LiveTVChain *GetExistingChain(const MythSocket *sock);
     LiveTVChain *GetChainWithRecording(const ProgramInfo &pginfo);
@@ -217,13 +162,6 @@ class MainServer : public SocketRequestHandler
     void DeleteChain(LiveTVChain *chain);
 
     void SetExitCode(int exitCode, bool closeApplication);
-
-    static int  DeleteFile(const QString &filename, bool followLinks,
-                           bool deleteBrokenSymlinks = false);
-    static int  OpenAndUnlink(const QString &filename);
-    static bool TruncateAndClose(ProgramInfo *pginfo,
-                                 int fd, const QString &filename,
-                                 off_t fsize);
 
     vector<LiveTVChain*> liveTVChains;
     QMutex liveTVChainsLock;
@@ -250,6 +188,7 @@ class MainServer : public SocketRequestHandler
 
     Scheduler *m_sched;
     AutoExpire *m_expirer;
+    FileTransferHandler *m_fileserver;
 
     struct DeferredDeleteStruct
     {
@@ -266,6 +205,9 @@ class MainServer : public SocketRequestHandler
 
     QMap<QString, int> fsIDcache;
     QMutex fsIDcacheLock;
+
+    QMutex                       m_deleteLock;
+    QMap<QString, RecordingInfo> m_deleteCache;
 
     QMutex                     m_downloadURLsLock;
     QMap<QString, QString>     m_downloadURLs;

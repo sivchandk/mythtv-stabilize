@@ -14,6 +14,7 @@ using namespace std;
 #include <QDir>
 #include <QWriteLocker>
 #include <QMutexLocker>
+#include <QThread>
 
 #include "filetransfer.h"
 #include "ringbuffer.h"
@@ -28,183 +29,152 @@ using namespace std;
 #include "decodeencode.h"
 #include "mythdownloadmanager.h"
 
-typedef struct deletestruct
-{
-    QString path;
-    int fd;
-    off_t size;
-} DeleteStruct;
-
-class DeleteThread : public QThread
-{
-    Q_OBJECT
-// TODO: add support for links
-  public:
-    DeleteThread(void) :
-        m_increment(4194304), m_run(true), m_timeout(20000)
-    {
-        m_slow = (bool) gCoreContext->GetNumSetting("TruncateDeletesSlowly", 0);
-
-        int cards = 5;
-        MSqlQuery query(MSqlQuery::InitCon());
-        query.prepare("SELECT COUNT(cardid) FROM capturecard;");
-        if (query.exec() && query.isActive() && query.size() && query.next())
-            cards = query.value(0).toInt();
-
-        size_t calc_tps = (size_t) (cards * 1.2 * (22200000LL / 8));
-        m_increment     = max(m_increment, calc_tps/2);
-
-        connect(&m_timer, SIGNAL(timeout()), this, SLOT(timeout()));
-        m_timer.start(m_timeout);
-    }
-
-    void run(void)
-    {
-        while (gCoreContext && m_run)
-        {
-            ProcessNew();
-            ProcessOld();
-            usleep(500000);
-        }
-
-        if (!m_files.empty())
-        {
-            // this will only happen if the program is closing, so fast
-            // deletion is not a problem
-            QList<deletestruct *>::iterator i;
-            for (i = m_files.begin(); i != m_files.end(); ++i)
-            {
-                close((*i)->fd);
-                delete (*i);
-            }
-        }
-    }
-
-    bool AddFile(QString path)
-    {
-        QFileInfo finfo(path);
-        if (!finfo.exists())
-            return false;
-
-        QMutexLocker lock(&m_newlock);
-        m_newfiles << path;
-        return true;
-    }
-
-  signals:
-    void fileUnlinked(QString path);
-    void unlinkFailed(QString path);
-
-  private slots:
-    void timeout(void) { m_run = false; }
-
-  private:
-    void ProcessNew(void)
-    {
-        // loop through new files, unlinking and adding for deletion
-        // until none are left
-        while (true)
-        {
-            QString path;
-            {
-                QMutexLocker lock(&m_newlock);
-                if (!m_newfiles.isEmpty())
-                    path = m_newfiles.takeFirst();
-            }
-
-            if (path.isEmpty())
-                break;
-
-            m_timer.start(m_timeout);
-
-            const char *cpath = path.toLocal8Bit().constData();
-
-            QFileInfo finfo(path);
-            VERBOSE(VB_FILE, QString("About to unlink/delete file: '%1'")
-                                    .arg(path));
-            int fd = open(cpath, O_WRONLY);
-            if (fd == -1)
-            {
-                VERBOSE(VB_IMPORTANT, QString("Error deleting '%1': "
-                            "could not open ").arg(path) + ENO);
-                emit unlinkFailed(path);
-                continue;
-            }
-
-            if (unlink(cpath))
-            {
-                VERBOSE(VB_IMPORTANT, QString("Error deleting '%1': "
-                            "could not unlink ").arg(path) + ENO);
-                emit unlinkFailed(path);
-                close(fd);
-                continue;
-            }
-
-            emit fileUnlinked(path);
-
-            deletestruct *ds = new deletestruct;
-            ds->path = path;
-            ds->fd = fd;
-            ds->size = finfo.size();
-
-            m_files << ds;
-        }
-    }
-
-    void ProcessOld(void)
-    {
-        // im the only thread accessing this, so no need for a lock
-        if (m_files.empty())
-            return;
-
-        m_timer.start(m_timeout);
-
-        while (true)
-        {
-            deletestruct *ds = m_files.first();
-            
-            if (m_slow)
-            {
-                ds->size -= m_increment;
-                int err = ftruncate(ds->fd, ds->size);
-
-                if (err)
-                {
-                    VERBOSE(VB_IMPORTANT, QString("Error truncating '%1'")
-                                .arg(ds->path) + ENO);
-                    ds->size = 0;
-                }
-            }
-            else
-                ds->size = 0;
-
-            if (ds->size == 0)
-            {
-                close(ds->fd);
-                m_files.removeFirst();
-                delete ds;
-            }
-
-            // fast delete can close out all, but slow delete needs
-            // to return to sleep
-            if (m_slow || m_files.empty())
-                break;
-        }
-    }
-
-    size_t               m_increment;
-    bool                 m_slow;
-    bool                 m_run;
-    QTimer               m_timer;
-    int                  m_timeout;
-
-    QStringList          m_newfiles;
-    QMutex               m_newlock;
-
-    QList<deletestruct*> m_files;
-};
-
 DeleteThread *deletethread = NULL;
+
+DeleteThread::DeleteThread(void) : m_increment(4194304), m_run(true), m_timeout(20000)
+{
+    m_slow = (bool) gCoreContext->GetNumSetting("TruncateDeletesSlowly", 0);
+
+    int cards = 5;
+    MSqlQuery query(MSqlQuery::InitCon());
+    query.prepare("SELECT COUNT(cardid) FROM capturecard;");
+    if (query.exec() && query.isActive() && query.size() && query.next())
+        cards = query.value(0).toInt();
+
+    size_t calc_tps = (size_t) (cards * 1.2 * (22200000LL / 8));
+    m_increment     = max(m_increment, calc_tps/2);
+
+    connect(&m_timer, SIGNAL(timeout()), this, SLOT(timeout()));
+    m_timer.start(m_timeout);
+}
+
+void DeleteThread::run(void)
+{
+    while (gCoreContext && m_run)
+    {
+        ProcessNew();
+        ProcessOld();
+        usleep(500000);
+    }
+
+    if (!m_files.empty())
+    {
+        // this will only happen if the program is closing, so fast
+        // deletion is not a problem
+        QList<deletestruct *>::iterator i;
+        for (i = m_files.begin(); i != m_files.end(); ++i)
+        {
+            close((*i)->fd);
+            delete (*i);
+        }
+    }
+}
+
+bool DeleteThread::AddFile(QString path)
+{
+    QFileInfo finfo(path);
+    if (!finfo.exists())
+        return false;
+
+    QMutexLocker lock(&m_newlock);
+    m_newfiles << path;
+    return true;
+}
+
+void DeleteThread::ProcessNew(void)
+{
+    // loop through new files, unlinking and adding for deletion
+    // until none are left
+    // TODO: add support for symlinks
+    while (true)
+    {
+        QString path;
+        {
+            QMutexLocker lock(&m_newlock);
+            if (!m_newfiles.isEmpty())
+                path = m_newfiles.takeFirst();
+        }
+
+        if (path.isEmpty())
+            break;
+
+        m_timer.start(m_timeout);
+
+        const char *cpath = path.toLocal8Bit().constData();
+
+        QFileInfo finfo(path);
+        VERBOSE(VB_FILE, QString("About to unlink/delete file: '%1'")
+                                .arg(path));
+        int fd = open(cpath, O_WRONLY);
+        if (fd == -1)
+        {
+            VERBOSE(VB_IMPORTANT, QString("Error deleting '%1': "
+                        "could not open ").arg(path) + ENO);
+            emit unlinkFailed(path);
+            continue;
+        }
+
+        if (unlink(cpath))
+        {
+            VERBOSE(VB_IMPORTANT, QString("Error deleting '%1': "
+                        "could not unlink ").arg(path) + ENO);
+            emit unlinkFailed(path);
+            close(fd);
+            continue;
+        }
+
+        emit fileUnlinked(path);
+
+        deletestruct *ds = new deletestruct;
+        ds->path = path;
+        ds->fd = fd;
+        ds->size = finfo.size();
+
+        m_files << ds;
+    }
+}
+
+void DeleteThread::ProcessOld(void)
+{
+    // im the only thread accessing this, so no need for a lock
+    if (m_files.empty())
+        return;
+
+    m_timer.start(m_timeout);
+
+    while (true)
+    {
+        deletestruct *ds = m_files.first();
+        
+        if (m_slow)
+        {
+            ds->size -= m_increment;
+            int err = ftruncate(ds->fd, ds->size);
+
+            if (err)
+            {
+                VERBOSE(VB_IMPORTANT, QString("Error truncating '%1'")
+                            .arg(ds->path) + ENO);
+                ds->size = 0;
+            }
+        }
+        else
+            ds->size = 0;
+
+        if (ds->size == 0)
+        {
+            close(ds->fd);
+            m_files.removeFirst();
+            delete ds;
+        }
+
+        // fast delete can close out all, but slow delete needs
+        // to return to sleep
+        if (m_slow || m_files.empty())
+            break;
+    }
+}
+
 
 void FileTransferHandler::connectionClosed(MythSocket *socket)
 {
@@ -835,6 +805,11 @@ bool FileTransferHandler::HandleDeleteFile(MythSocket *socket,
         return false;
 
     return HandleDeleteFile(socket, slist[1], slist[2]);
+}
+
+bool FileTransferHandler::DeleteFile(QString filename, QString storagegroup)
+{
+    return HandleDeleteFile(NULL, filename, storagegroup);
 }
 
 bool FileTransferHandler::HandleDeleteFile(MythSocket *socket,

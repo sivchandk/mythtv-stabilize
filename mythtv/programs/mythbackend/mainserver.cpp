@@ -121,10 +121,12 @@ const uint MainServer::kMasterServerReconnectTimeout = 1000; //ms
 
 
 MainServer::MainServer(bool master, QMap<int, EncoderLink *> *tvList,
-                       Scheduler *sched, AutoExpire *expirer) :
+                       Scheduler *sched, AutoExpire *expirer,
+                       FileTransferHandler *fileServer) :
     encoderList(tvList), masterServerReconnect(NULL),
     masterServer(NULL), ismaster(master), masterBackendOverride(false),
-    m_sched(sched), m_expirer(expirer), deferredDeleteTimer(NULL),
+    m_sched(sched), m_expirer(expirer), m_fileserver(fileServer),
+    deferredDeleteTimer(NULL),
     autoexpireUpdateTimer(NULL), m_exitCode(GENERIC_EXIT_OK)
 {
     PreviewGeneratorQueue::CreatePreviewGeneratorQueue(
@@ -195,18 +197,6 @@ bool MainServer::HandleQuery(MythSocket *sock, QStringList &tokens,
     {
         HandleGoToSleep(pbs);
     }
-    else if (command == "QUERY_FREE_SPACE")
-    {
-        HandleQueryFreeSpace(pbs, false);
-    }
-    else if (command == "QUERY_FREE_SPACE_LIST")
-    {
-        HandleQueryFreeSpace(pbs, true);
-    }
-    else if (command == "QUERY_FREE_SPACE_SUMMARY")
-    {
-        HandleQueryFreeSpaceSummary(pbs);
-    }
     else if (command == "QUERY_LOAD")
     {
         HandleQueryLoad(pbs);
@@ -231,30 +221,9 @@ bool MainServer::HandleQuery(MythSocket *sock, QStringList &tokens,
     {
         HandleQueryCheckFile(listline, pbs);
     }
-    else if (command == "QUERY_FILE_EXISTS")
-    {
-        if (listline.size() < 2)
-            VERBOSE(VB_IMPORTANT, "Bad QUERY_FILE_EXISTS command");
-        else
-            HandleQueryFileExists(listline, pbs);
-    }
-    else if (command == "QUERY_FILE_HASH")
-    {
-        if (listline.size() < 3)
-            VERBOSE(VB_IMPORTANT, "Bad QUERY_FILE_HASH command");
-        else
-            HandleQueryFileHash(listline, pbs);
-    }
     else if (command == "QUERY_GUIDEDATATHROUGH")
     {
         HandleQueryGuideDataThrough(pbs);
-    }
-    else if (command == "DELETE_FILE")
-    {
-        if (listline.size() < 3)
-            VERBOSE(VB_IMPORTANT, "Bad DELETE_FILE command");
-        else
-            HandleDeleteFile(listline, pbs);
     }
     else if (command == "STOP_RECORDING")
     {
@@ -315,14 +284,6 @@ bool MainServer::HandleQuery(MythSocket *sock, QStringList &tokens,
     {
         HandleGetExpiringRecordings(pbs);
     }
-    else if (command == "QUERY_SG_GETFILELIST")
-    {
-        HandleSGGetFileList(listline, pbs);
-    }
-    else if (command == "QUERY_SG_FILEQUERY")
-    {
-        HandleSGFileQuery(listline, pbs);
-    }
     else if (command == "GET_FREE_RECORDER")
     {
         HandleGetFreeRecorder(pbs);
@@ -379,13 +340,6 @@ bool MainServer::HandleQuery(MythSocket *sock, QStringList &tokens,
     else if (command == "GET_RECORDER_NUM")
     {
         HandleGetRecorderNum(listline, pbs);
-    }
-    else if (command == "QUERY_FILETRANSFER")
-    {
-        if (tokens.size() != 2)
-            VERBOSE(VB_IMPORTANT, "Bad QUERY_FILETRANSFER");
-        else
-            HandleFileTransferQuery(listline, tokens, pbs);
     }
     else if (command == "QUERY_GENPIXMAP2")
     {
@@ -526,14 +480,6 @@ bool MainServer::HandleQuery(MythSocket *sock, QStringList &tokens,
             extra << listline[i];
         MythEvent me(message, extra);
         gCoreContext->dispatch(me);
-    }
-    else if ((command == "DOWNLOAD_FILE") ||
-             (command == "DOWNLOAD_FILE_NOW"))
-    {
-        if (listline.size() != 4)
-            VERBOSE(VB_IMPORTANT, QString("Bad %1 command").arg(command));
-        else
-            HandleDownloadFile(listline, pbs);
     }
     else if (command == "REFRESH_BACKEND")
     {
@@ -1523,6 +1469,7 @@ void MainServer::HandleFillProgramInfo(QStringList &slist, PlaybackSock *pbs)
     SendResponse(pbssock, strlist);
 }
 
+/*
 void DeleteThread::run(void)
 {
     if (!m_parent)
@@ -1618,7 +1565,7 @@ void MainServer::DoDeleteThread(const DeleteStruct *ds)
     off_t size = 0;
     bool errmsg = false;
 
-    /* Delete recording. */
+    // Delete recording. /
     if (slowDeletes)
     {
         // Since stat fails after unlinking on some filesystems,
@@ -1652,7 +1599,7 @@ void MainServer::DoDeleteThread(const DeleteStruct *ds)
         return;
     }
 
-    /* Delete all preview thumbnails. */
+    // Delete all preview thumbnails. /
 
     QFileInfo fInfo( ds->filename );
     QString nameFilter = fInfo.fileName() + "*.png";
@@ -1816,169 +1763,7 @@ void MainServer::DoDeleteInDB(const DeleteStruct *ds)
                            QString("Error deleting recordedseek for %1.")
                                    .arg(logInfo));
     }
-}
-
-/**
- *  \brief Deletes links and unlinks the main file and returns the descriptor.
- *
- *  This is meant to be used with TruncateAndClose() to slowly shrink a
- *  large file and then eventually delete the file by closing the file
- *  descriptor.
- *
- *  \return fd for success, -1 for error, -2 for only a symlink deleted.
- */
-int MainServer::DeleteFile(const QString &filename, bool followLinks,
-                           bool deleteBrokenSymlinks)
-{
-    QFileInfo finfo(filename);
-    int fd = -1, err = 0;
-    QString linktext = "";
-    QByteArray fname = filename.toLocal8Bit();
-
-    VERBOSE(VB_FILE, QString("About to unlink/delete file: '%1'")
-            .arg(fname.constData()));
-
-    QString errmsg = QString("Delete Error '%1'").arg(fname.constData());
-    if (finfo.isSymLink())
-    {
-        linktext = getSymlinkTarget(filename);
-        QByteArray alink = linktext.toLocal8Bit();
-        errmsg += QString(" -> '%2'").arg(alink.constData());
-    }
-
-    if (followLinks && finfo.isSymLink())
-    {
-        if (!finfo.exists() && deleteBrokenSymlinks)
-            err = unlink(fname.constData());
-        else
-        {
-            fd = OpenAndUnlink(linktext);
-            if (fd >= 0)
-                err = unlink(fname.constData());
-        }
-    }
-    else if (!finfo.isSymLink())
-    {
-        fd = OpenAndUnlink(filename);
-    }
-    else // just delete symlinks immediately
-    {
-        err = unlink(fname.constData());
-        if (err == 0)
-            return -2; // valid result, not an error condition
-    }
-
-    if (fd < 0)
-        VERBOSE(VB_IMPORTANT, errmsg + ENO);
-
-    return fd;
-}
-
-/** \fn MainServer::OpenAndUnlink(const QString&)
- *  \brief Opens a file, unlinks it and returns the file descriptor.
- *
- *  This is used by DeleteFile(const QString&,bool) to delete recordings.
- *  In order to actually delete the file from the filesystem the user of
- *  this function must close the return file descriptor.
- *
- *  \return fd for success, negative number for error.
- */
-int MainServer::OpenAndUnlink(const QString &filename)
-{
-    QByteArray fname = filename.toLocal8Bit();
-    QString msg = QString("Error deleting '%1'").arg(fname.constData());
-    int fd = open(fname.constData(), O_WRONLY);
-
-    if (fd == -1)
-    {
-        VERBOSE(VB_IMPORTANT, msg + " could not open " + ENO);
-        return -1;
-    }
-
-    if (unlink(fname.constData()))
-    {
-        VERBOSE(VB_IMPORTANT, msg + " could not unlink " + ENO);
-        close(fd);
-        return -1;
-    }
-
-    return fd;
-}
-
-/**
- *  \brief Repeatedly truncate an open file in small increments.
- *
- *   When the file is small enough this closes the file and returns.
- *
- *   NOTE: This acquires a lock so that only one instance of TruncateAndClose()
- *         is running at a time.
- */
-bool MainServer::TruncateAndClose(ProgramInfo *pginfo, int fd,
-                                  const QString &filename, off_t fsize)
-{
-    QMutexLocker locker(&truncate_and_close_lock);
-
-    if (pginfo)
-    {
-        pginfo->SetPathname(filename);
-        pginfo->MarkAsInUse(true, kTruncatingDeleteInUseID);
-    }
-
-    int cards = 5;
-
-    MSqlQuery query(MSqlQuery::InitCon());
-    query.prepare("SELECT COUNT(cardid) FROM capturecard;");
-    if (query.exec() && query.isActive() && query.size() && query.next())
-        cards = query.value(0).toInt();
-
-    // Time between truncation steps in milliseconds
-    const size_t sleep_time = 500;
-    const size_t min_tps    = 8 * 1024 * 1024;
-    const size_t calc_tps   = (size_t) (cards * 1.2 * (22200000LL / 8));
-    const size_t tps = max(min_tps, calc_tps);
-    const size_t increment  = (size_t) (tps * (sleep_time * 0.001f));
-
-    VERBOSE(VB_FILE,
-            QString("Truncating '%1' by %2 MB every %3 milliseconds")
-            .arg(filename)
-            .arg(increment / (1024.0 * 1024.0), 0, 'f', 2)
-            .arg(sleep_time));
-
-    int count = 0;
-    while (fsize > 0)
-    {
-        //VERBOSE(VB_FILE, QString("Truncating '%1' to %2 MB")
-        //        .arg(filename).arg(fsize / (1024.0 * 1024.0), 0, 'f', 2));
-
-        int err = ftruncate(fd, fsize);
-        if (err)
-        {
-            VERBOSE(VB_IMPORTANT, QString("Error truncating '%1'")
-                    .arg(filename) + ENO);
-            if (pginfo)
-                pginfo->MarkAsInUse(false, kTruncatingDeleteInUseID);
-            return 0 == close(fd);
-        }
-
-        fsize -= increment;
-
-        if (pginfo && ((count % 100) == 0))
-            pginfo->UpdateInUseMark(true);
-
-        count++;
-
-        usleep(sleep_time * 1000);
-    }
-
-    bool ok = (0 == close(fd));
-
-    if (pginfo)
-        pginfo->MarkAsInUse(false, kTruncatingDeleteInUseID);
-
-    VERBOSE(VB_FILE, QString("Finished truncating '%1'").arg(filename));
-
-    return ok;
-}
+}*/
 
 void MainServer::finishVideoScan(bool changed)
 {
@@ -2115,6 +1900,28 @@ void MainServer::DoHandleStopRecording(
         QStringList outputlist( QString::number(recnum) );
         SendResponse(pbssock, outputlist);
     }
+}
+
+void MainServer::recordingDeleted(QString filename)
+{
+    RecordingInfo recinfo;
+
+    {
+        QMutexLocker mlock(&m_deleteLock);
+        if (m_deleteCache.contains(filename))
+            recinfo = m_deleteCache.take(filename);
+        else
+            return;
+    }
+
+    
+}
+
+void MainServer::recordingFailedDelete(QString filename)
+{
+    QMutexLocker mlock(&m_deleteLock);
+    if (m_deleteCache.contains(filename))
+        m_deleteCache.remove(filename);
 }
 
 void MainServer::HandleDeleteRecording(QString &chanid, QString &starttime,
@@ -2279,20 +2086,16 @@ void MainServer::DoHandleDeleteRecording(
     // most likely absent and deleting the file metadata is unsafe.
     if (fileExists || !recinfo.GetFilesize() || forceMetadataDelete)
     {
-        DeleteStruct *ds = new DeleteStruct;
-        ds->ms = this;
-        ds->filename = filename;
-        ds->title = recinfo.GetTitle();
-        ds->chanid = recinfo.GetChanID();
-        ds->recstartts = recinfo.GetRecordingStartTime();
-        ds->recendts = recinfo.GetRecordingEndTime();
-        ds->forceMetadataDelete = forceMetadataDelete;
-
         recinfo.SaveDeletePendingFlag(true);
 
-        DeleteThread *deleteThread = new DeleteThread;
-        deleteThread->SetParent(ds);
-        deleteThread->start();
+        QMutexLocker mlock(&m_deleteLock);
+        m_deleteCache.insert(filename, recinfo);
+        if (!m_fileserver->DeleteFile(recinfo.GetBasename(),
+                                        recinfo.GetStorageGroup()))
+        {
+            m_deleteCache.remove(recinfo.GetBasename());
+            resultCode = -2;
+        }
     }
     else
     {
@@ -2428,49 +2231,6 @@ void MainServer::HandleGoToSleep(PlaybackSock *pbs)
                 "ERROR: in HandleGoToSleep(), but no SleepCommand found!");
         SendResponse(pbs->getSocket(), strlist);
     }
-}
-
-/**
- * \addtogroup myth_network_protocol
- * \par        QUERY_FREE_SPACE
- * Returns the free space on this backend, as a list of hostname, directory,
- * 1, -1, total size, used (both in K and 64bit, so two 32bit numbers each).
- * \par        QUERY_FREE_SPACE_LIST
- * Returns the free space on \e all hosts. (each host as above,
- * except that the directory becomes a URL, and a TotalDiskSpace is appended)
- */
-void MainServer::HandleQueryFreeSpace(PlaybackSock *pbs, bool allHosts)
-{
-    QStringList strlist;
-
-    BackendQueryDiskSpace(strlist, allHosts, allHosts);
-    if (strlist.isEmpty())
-        VERBOSE(VB_IMPORTANT, "No directories found for file storage. Please "
-                "check the Storage Groups setting for this backend.");
-
-    SendResponse(pbs->getSocket(), strlist);
-}
-
-/**
- * \addtogroup myth_network_protocol
- * \par        QUERY_FREE_SPACE_SUMMARY
- * Summarises the free space on this backend, as list of total size, used
- */
-void MainServer::HandleQueryFreeSpaceSummary(PlaybackSock *pbs)
-{
-    QStringList fullStrList;
-    QStringList strList;
-
-    BackendQueryDiskSpace(fullStrList, true, true);
-
-    // The TotalKB and UsedKB are the last two numbers encoded in the list
-    unsigned int index = fullStrList.size() - 4;
-    strList << fullStrList[index++];
-    strList << fullStrList[index++];
-    strList << fullStrList[index++];
-    strList << fullStrList[index++];
-
-    SendResponse(pbs->getSocket(), strList);
 }
 
 /**
@@ -2624,109 +2384,6 @@ void MainServer::HandleQueryCheckFile(QStringList &slist, PlaybackSock *pbs)
     SendResponse(pbssock, strlist);
 }
 
-
-/**
- * \addtogroup myth_network_protocol
- * \par        QUERY_FILE_HASH \e storagegroup \e filename
- */
-void MainServer::HandleQueryFileHash(QStringList &slist, PlaybackSock *pbs)
-{
-    QString filename = slist[1];
-    QString storageGroup = "Default";
-    QStringList retlist;
-
-    if (slist.size() > 2)
-        storageGroup = slist[2];
-
-    if ((filename.isEmpty()) ||
-        (filename.contains("/../")) ||
-        (filename.startsWith("../")))
-    {
-        VERBOSE(VB_IMPORTANT, QString("ERROR checking for file, filename '%1' "
-                "fails sanity checks").arg(filename));
-        retlist << "";
-        SendResponse(pbs->getSocket(), retlist);
-        return;
-    }
-
-    if (storageGroup.isEmpty())
-        storageGroup = "Default";
-
-    StorageGroup sgroup(storageGroup, gCoreContext->GetHostName());
-
-    QString fullname = sgroup.FindRecordingFile(filename);
-    QString hash = FileHash(fullname);
-
-    retlist << hash;
-
-    SendResponse(pbs->getSocket(), retlist);
-}
-
-/**
- * \addtogroup myth_network_protocol
- * \par        QUERY_FILE_EXISTS \e storagegroup \e filename
- */
-void MainServer::HandleQueryFileExists(QStringList &slist, PlaybackSock *pbs)
-{
-    QString filename = slist[1];
-    QString storageGroup = "Default";
-    QStringList retlist;
-
-    if (slist.size() > 2)
-        storageGroup = slist[2];
-
-    if ((filename.isEmpty()) ||
-        (filename.contains("/../")) ||
-        (filename.startsWith("../")))
-    {
-        VERBOSE(VB_IMPORTANT, QString("ERROR checking for file, filename '%1' "
-                "fails sanity checks").arg(filename));
-        retlist << "0";
-        SendResponse(pbs->getSocket(), retlist);
-        return;
-    }
-
-    if (storageGroup.isEmpty())
-        storageGroup = "Default";
-
-    StorageGroup sgroup(storageGroup, gCoreContext->GetHostName());
-
-    QString fullname = sgroup.FindRecordingFile(filename);
-
-    if (!fullname.isEmpty())
-    {
-        retlist << "1";
-        retlist << fullname;
-
-        struct stat fileinfo;
-        if (stat(fullname.toLocal8Bit().constData(), &fileinfo) >= 0)
-        {
-            retlist << QString::number(fileinfo.st_dev);
-            retlist << QString::number(fileinfo.st_ino);
-            retlist << QString::number(fileinfo.st_mode);
-            retlist << QString::number(fileinfo.st_nlink);
-            retlist << QString::number(fileinfo.st_uid);
-            retlist << QString::number(fileinfo.st_gid);
-            retlist << QString::number(fileinfo.st_rdev);
-            retlist << QString::number(fileinfo.st_size);
-#ifdef USING_MINGW
-            retlist << "0"; // st_blksize
-            retlist << "0"; // st_blocks
-#else
-            retlist << QString::number(fileinfo.st_blksize);
-            retlist << QString::number(fileinfo.st_blocks);
-#endif
-            retlist << QString::number(fileinfo.st_atime);
-            retlist << QString::number(fileinfo.st_mtime);
-            retlist << QString::number(fileinfo.st_ctime);
-        }
-    }
-    else
-        retlist << "0";
-
-    SendResponse(pbs->getSocket(), retlist);
-}
-
 void MainServer::getGuideDataThrough(QDateTime &GuideDataThrough)
 {
     MSqlQuery query(MSqlQuery::InitCon());
@@ -2851,130 +2508,6 @@ void MainServer::HandleGetExpiringRecordings(PlaybackSock *pbs)
         m_expirer->GetAllExpiring(strList);
     else
         strList << QString::number(0);
-
-    SendResponse(pbssock, strList);
-}
-
-void MainServer::HandleSGGetFileList(QStringList &sList,
-                                     PlaybackSock *pbs)
-{
-    MythSocket *pbssock = pbs->getSocket();
-    QStringList strList;
-
-    if ((sList.size() < 4) || (sList.size() > 5))
-    {
-        VERBOSE(VB_IMPORTANT, QString("HandleSGGetFileList: Invalid Request. "
-                                      "%1").arg(sList.join("[]:[]")));
-        strList << "EMPTY LIST";
-        SendResponse(pbssock, strList);
-        return;
-    }
-
-    QString host = gCoreContext->GetHostName();
-    QString wantHost = sList.at(1);
-    QString groupname = sList.at(2);
-    QString path = sList.at(3);
-    bool fileNamesOnly = false;
-
-    if (sList.size() >= 5)
-        fileNamesOnly = sList.at(4).toInt();
-
-    bool slaveUnreachable = false;
-
-    VERBOSE(VB_FILE, QString("HandleSGGetFileList: group = %1  host = %2  path = %3 wanthost = %4").arg(groupname).arg(host).arg(path).arg(wantHost));
-
-    if ((host.toLower() == wantHost.toLower()) ||
-        (gCoreContext->GetSetting("BackendServerIP") == wantHost))
-    {
-        StorageGroup sg(groupname, host);
-        VERBOSE(VB_FILE, QString("HandleSGGetFileList: Getting local info"));
-        if (fileNamesOnly)
-            strList = sg.GetFileList(path);
-        else
-            strList = sg.GetFileInfoList(path);
-    }
-    else
-    {
-        PlaybackSock *slave = GetSlaveByHostname(wantHost);
-        if (slave)
-        {
-            VERBOSE(VB_FILE, QString("HandleSGGetFileList: Getting remote info"));
-            strList = slave->GetSGFileList(wantHost, groupname, path,
-                                           fileNamesOnly);
-            slave->DownRef();
-            slaveUnreachable = false;
-        }
-        else
-        {
-            VERBOSE(VB_FILE, QString("HandleSGGetFileList: Failed to grab slave socket : %1 :").arg(wantHost));
-            slaveUnreachable = true;
-        }
-
-    }
-
-    if (slaveUnreachable)
-        strList << "SLAVE UNREACHABLE: " << host;
-
-    if (strList.count() == 0 || (strList.at(0) == "0"))
-        strList << "EMPTY LIST";
-
-    SendResponse(pbssock, strList);
-}
-
-void MainServer::HandleSGFileQuery(QStringList &sList,
-                                     PlaybackSock *pbs)
-{
-    MythSocket *pbssock = pbs->getSocket();
-    QStringList strList;
-
-    if (sList.size() != 4)
-    {
-        VERBOSE(VB_IMPORTANT, QString("HandleSGFileQuery: Invalid Request. %1")
-                .arg(sList.join("[]:[]")));
-        strList << "EMPTY LIST";
-        SendResponse(pbssock, strList);
-        return;
-    }
-
-    QString wantHost = sList.at(1);
-    QString groupname = sList.at(2);
-    QString filename = sList.at(3);
-
-    bool slaveUnreachable = false;
-
-    VERBOSE(VB_FILE, QString("HandleSGFileQuery: myth://%1@%2/%3")
-                             .arg(groupname).arg(wantHost).arg(filename));
-
-    if ((wantHost.toLower() == gCoreContext->GetHostName().toLower()) ||
-        (wantHost == gCoreContext->GetSetting("BackendServerIP")))
-    {
-        VERBOSE(VB_FILE, QString("HandleSGFileQuery: Getting local info"));
-        StorageGroup sg(groupname, gCoreContext->GetHostName());
-        strList = sg.GetFileInfo(filename);
-    }
-    else
-    {
-        PlaybackSock *slave = GetSlaveByHostname(wantHost);
-        if (slave)
-        {
-            VERBOSE(VB_FILE, QString("HandleSGFileQuery: Getting remote info"));
-            strList = slave->GetSGFileQuery(wantHost, groupname, filename);
-            slave->DownRef();
-            slaveUnreachable = false;
-        }
-        else
-        {
-            VERBOSE(VB_FILE, QString("HandleSGFileQuery: Failed to grab slave socket : %1 :").arg(wantHost));
-            slaveUnreachable = true;
-        }
-
-    }
-
-    if (slaveUnreachable)
-        strList << "SLAVE UNREACHABLE: " << wantHost;
-
-    if (strList.count() == 0 || (strList.at(0) == "0"))
-        strList << "EMPTY LIST";
 
     SendResponse(pbssock, strList);
 }
@@ -3889,16 +3422,6 @@ void MainServer::HandleIsActiveBackendQuery(QStringList &slist,
     SendResponse(pbs->getSocket(), retlist);
 }
 
-int MainServer::GetfsID(vector<FileSystemInfo>::iterator fsInfo)
-{
-    QString fskey = fsInfo->hostname + ":" + fsInfo->directory;
-    QMutexLocker lock(&fsIDcacheLock);
-    if (!fsIDcache.contains(fskey))
-        fsIDcache[fskey] = fsIDcache.count();
-
-    return fsIDcache[fskey];
-}
-
 size_t MainServer::GetCurrentMaxBitrate(void)
 {
     size_t totalKBperMin = 0;
@@ -3924,438 +3447,6 @@ size_t MainServer::GetCurrentMaxBitrate(void)
             .arg(totalKBperMin));
 
     return totalKBperMin;
-}
-
-void MainServer::BackendQueryDiskSpace(QStringList &strlist, bool consolidated,
-                                       bool allHosts)
-{
-    QString allHostList = gCoreContext->GetHostName();
-    long long totalKB = -1, usedKB = -1;
-    QMap <QString, bool>foundDirs;
-    QString driveKey;
-    QString localStr = "1";
-    struct statfs statbuf;
-    QStringList groups(StorageGroup::kSpecialGroups);
-    groups.removeAll("LiveTV");
-    QString specialGroups = groups.join("', '");
-    QString sql = QString("SELECT MIN(id),dirname "
-                            "FROM storagegroup "
-                           "WHERE hostname = :HOSTNAME "
-                             "AND groupname NOT IN ( '%1' ) "
-                           "GROUP BY dirname;").arg(specialGroups);
-    MSqlQuery query(MSqlQuery::InitCon());
-    query.prepare(sql);
-    query.bindValue(":HOSTNAME", gCoreContext->GetHostName());
-
-    if (query.exec() && query.isActive())
-    {
-        // If we don't have any dirs of our own, fallback to list of Default
-        // dirs since that is what StorageGroup::Init() does.
-        if (!query.size())
-        {
-            query.prepare("SELECT MIN(id),dirname "
-                          "FROM storagegroup "
-                          "WHERE groupname = :GROUP "
-                          "GROUP BY dirname;");
-            query.bindValue(":GROUP", "Default");
-            if (!query.exec())
-                MythDB::DBError("BackendQueryDiskSpace", query);
-        }
-
-        QDir checkDir("");
-        QString dirID;
-        QString currentDir;
-        int bSize;
-        while (query.next())
-        {
-            dirID = query.value(0).toString();
-            /* The storagegroup.dirname column uses utf8_bin collation, so Qt
-             * uses QString::fromAscii() for toString(). Explicitly convert the
-             * value using QString::fromUtf8() to prevent corruption. */
-            currentDir = QString::fromUtf8(query.value(1)
-                                           .toByteArray().constData());
-            if (currentDir.right(1) == "/")
-                currentDir.remove(currentDir.length() - 1, 1);
-
-            checkDir.setPath(currentDir);
-            if (!foundDirs.contains(currentDir))
-            {
-                if (checkDir.exists())
-                {
-                    QByteArray cdir = currentDir.toAscii();
-                    getDiskSpace(cdir.constData(), totalKB, usedKB);
-                    memset(&statbuf, 0, sizeof(statbuf));
-                    localStr = "1"; // Assume local
-                    bSize = 0;
-
-                    if (!statfs(currentDir.toLocal8Bit().constData(), &statbuf))
-                    {
-#if CONFIG_DARWIN
-                        char *fstypename = statbuf.f_fstypename;
-                        if ((!strcmp(fstypename, "nfs")) ||   // NFS|FTP
-                            (!strcmp(fstypename, "afpfs")) || // ApplShr
-                            (!strcmp(fstypename, "smbfs")))   // SMB
-                            localStr = "0";
-#elif __linux__
-                        long fstype = statbuf.f_type;
-                        if ((fstype == 0x6969) ||             // NFS
-                            (fstype == 0x517B) ||             // SMB
-                            (fstype == (long)0xFF534D42))     // CIFS
-                            localStr = "0";
-#endif
-                        bSize = statbuf.f_bsize;
-                    }
-
-                    strlist << gCoreContext->GetHostName();
-                    strlist << currentDir;
-                    strlist << localStr;
-                    strlist << "-1"; // Ignore fsID
-                    strlist << dirID;
-                    strlist << QString::number(bSize);
-                    encodeLongLong(strlist, totalKB);
-                    encodeLongLong(strlist, usedKB);
-
-                    foundDirs[currentDir] = true;
-                }
-                else
-                    foundDirs[currentDir] = false;
-            }
-        }
-    }
-
-    if (allHosts)
-    {
-        QMap <QString, bool> backendsCounted;
-        QString pbsHost;
-
-        list<PlaybackSock *> localPlaybackList;
-
-        sockListLock.lockForRead();
-
-        vector<PlaybackSock *>::iterator pbsit = playbackList.begin();
-        for (; pbsit != playbackList.end(); ++pbsit)
-        {
-            PlaybackSock *pbs = *pbsit;
-
-            if ((pbs->IsDisconnected()) ||
-                (!pbs->isSlaveBackend()) ||
-                (pbs->isLocal()) ||
-                (backendsCounted.contains(pbs->getHostname())))
-                continue;
-
-            backendsCounted[pbs->getHostname()] = true;
-            pbs->UpRef();
-            localPlaybackList.push_back(pbs);
-            allHostList += "," + pbs->getHostname();
-        }
-
-        sockListLock.unlock();
-
-        for (list<PlaybackSock *>::iterator p = localPlaybackList.begin() ;
-             p != localPlaybackList.end() ; ++p) {
-            (*p)->GetDiskSpace(strlist);
-            (*p)->DownRef();
-        }
-    }
-
-    if (!consolidated)
-        return;
-
-    FileSystemInfo fsInfo;
-    vector<FileSystemInfo> fsInfos;
-
-    QStringList::const_iterator it = strlist.begin();
-    while (it != strlist.end())
-    {
-        fsInfo.hostname = *(it++);
-        fsInfo.directory = *(it++);
-        fsInfo.isLocal = (*(it++)).toInt();
-        fsInfo.fsID = (*(it++)).toInt();
-        fsInfo.dirID = (*(it++)).toInt();
-        fsInfo.blocksize = (*(it++)).toInt();
-        fsInfo.totalSpaceKB = decodeLongLong(strlist, it);
-        fsInfo.usedSpaceKB = decodeLongLong(strlist, it);
-        fsInfo.freeSpaceKB = fsInfo.totalSpaceKB - fsInfo.usedSpaceKB;
-        fsInfos.push_back(fsInfo);
-    }
-    strlist.clear();
-
-    // Consolidate hosts sharing storage
-    size_t maxWriteFiveSec = GetCurrentMaxBitrate()/12 /*5 seconds*/;
-    maxWriteFiveSec = max((size_t)2048, maxWriteFiveSec); // safety for NFS mounted dirs
-    vector<FileSystemInfo>::iterator it1, it2;
-    int bSize = 32;
-    for (it1 = fsInfos.begin(); it1 != fsInfos.end(); ++it1)
-    {
-        if (it1->fsID == -1)
-        {
-            it1->fsID = GetfsID(it1);
-            it1->directory =
-                it1->hostname.section(".", 0, 0) + ":" + it1->directory;
-        }
-
-        for (it2 = it1 + 1; it2 != fsInfos.end(); ++it2)
-        {
-            // our fuzzy comparison uses the maximum of the two block sizes
-            // or 32, whichever is greater
-            bSize = max(32, max(it1->blocksize, it2->blocksize) / 1024);
-            if (it2->fsID == -1 &&
-                (absLongLong(it1->totalSpaceKB - it2->totalSpaceKB) <= bSize) &&
-                ((size_t)absLongLong(it1->usedSpaceKB - it2->usedSpaceKB)
-                 <= maxWriteFiveSec))
-            {
-                if (!it1->hostname.contains(it2->hostname))
-                    it1->hostname = it1->hostname + "," + it2->hostname;
-                it1->directory = it1->directory + "," +
-                    it2->hostname.section(".", 0, 0) + ":" + it2->directory;
-                fsInfos.erase(it2);
-                it2 = it1;
-            }
-        }
-    }
-
-    // Passed the cleaned list back
-    totalKB = 0;
-    usedKB  = 0;
-    for (it1 = fsInfos.begin(); it1 != fsInfos.end(); ++it1)
-    {
-        strlist << it1->hostname;
-        strlist << it1->directory;
-        strlist << QString::number(it1->isLocal);
-        strlist << QString::number(it1->fsID);
-        strlist << QString::number(it1->dirID);
-        strlist << QString::number(it1->blocksize);
-        encodeLongLong(strlist, it1->totalSpaceKB);
-        encodeLongLong(strlist, it1->usedSpaceKB);
-
-        totalKB += it1->totalSpaceKB;
-        usedKB  += it1->usedSpaceKB;
-    }
-
-    if (allHosts)
-    {
-        strlist << allHostList;
-        strlist << "TotalDiskSpace";
-        strlist << "0";
-        strlist << "-2";
-        strlist << "-2";
-        strlist << "0";
-        encodeLongLong(strlist, totalKB);
-        encodeLongLong(strlist, usedKB);
-    }
-}
-
-void MainServer::GetFilesystemInfos(vector <FileSystemInfo> &fsInfos)
-{
-    QStringList strlist;
-    FileSystemInfo fsInfo;
-
-    fsInfos.clear();
-
-    BackendQueryDiskSpace(strlist, false, true);
-
-    QStringList::const_iterator it = strlist.begin();
-    while (it != strlist.end())
-    {
-        fsInfo.hostname = *(it++);
-        fsInfo.directory = *(it++);
-        fsInfo.isLocal = (*(it++)).toInt();
-        fsInfo.fsID = -1;
-        it++;
-        fsInfo.dirID = (*(it++)).toInt();
-        fsInfo.blocksize = (*(it++)).toInt();
-        fsInfo.totalSpaceKB = decodeLongLong(strlist, it);
-        fsInfo.usedSpaceKB = decodeLongLong(strlist, it);
-        fsInfo.freeSpaceKB = fsInfo.totalSpaceKB - fsInfo.usedSpaceKB;
-        fsInfo.weight = 0;
-        fsInfos.push_back(fsInfo);
-    }
-
-    VERBOSE(VB_SCHEDULE+VB_FILE+VB_EXTRA, "Determining unique filesystems");
-    size_t maxWriteFiveSec = GetCurrentMaxBitrate()/12  /*5 seconds*/;
-    maxWriteFiveSec = max((size_t)2048, maxWriteFiveSec); // safety for NFS mounted dirs
-    vector<FileSystemInfo>::iterator it1, it2;
-    int bSize = 32;
-    for (it1 = fsInfos.begin(); it1 != fsInfos.end(); ++it1)
-    {
-        if (it1->fsID == -1)
-            it1->fsID = GetfsID(it1);
-        else
-            continue;
-
-        VERBOSE(VB_SCHEDULE+VB_FILE+VB_EXTRA,
-            QString("%1:%2 (fsID %3, dirID %4) using %5 out of %6 KB, "
-                    "looking for matches")
-                    .arg(it1->hostname).arg(it1->directory)
-                    .arg(it1->fsID).arg(it1->dirID)
-                    .arg(it1->usedSpaceKB).arg(it1->totalSpaceKB));
-
-        for (it2 = it1 + 1; it2 != fsInfos.end(); ++it2)
-        {
-            // our fuzzy comparison uses the maximum of the two block sizes
-            // or 32, whichever is greater
-            bSize = max(32, max(it1->blocksize, it2->blocksize) / 1024);
-            VERBOSE(VB_SCHEDULE+VB_FILE+VB_EXTRA,
-                QString("    Checking %1:%2 (dirID %3) using %4 of %5 KB")
-                        .arg(it2->hostname).arg(it2->directory).arg(it2->dirID)
-                        .arg(it2->usedSpaceKB).arg(it2->totalSpaceKB));
-            VERBOSE(VB_SCHEDULE+VB_FILE+VB_EXTRA,
-                QString("        Total KB Diff: %1 (want <= %2)")
-                .arg((long)absLongLong(it1->totalSpaceKB - it2->totalSpaceKB))
-                .arg(bSize));
-            VERBOSE(VB_SCHEDULE+VB_FILE+VB_EXTRA,
-                QString("        Used  KB Diff: %1 (want <= %2)")
-                .arg((size_t)absLongLong(it1->usedSpaceKB - it2->usedSpaceKB))
-                .arg(maxWriteFiveSec));
-
-            if (it2->fsID == -1 &&
-                (absLongLong(it1->totalSpaceKB - it2->totalSpaceKB) <= bSize) &&
-                ((size_t)absLongLong(it1->usedSpaceKB - it2->usedSpaceKB)
-                 <= maxWriteFiveSec))
-            {
-                it2->fsID = it1->fsID;
-
-                VERBOSE(VB_SCHEDULE+VB_FILE+VB_EXTRA,
-                    QString("    MATCH Found: %1:%2 will use fsID %3")
-                            .arg(it2->hostname).arg(it2->directory)
-                            .arg(it2->fsID));
-            }
-        }
-    }
-
-    if (VERBOSE_LEVEL_CHECK(VB_FILE|VB_SCHEDULE))
-    {
-        cout << "--- GetFilesystemInfos directory list start ---" << endl;
-        for (it1 = fsInfos.begin(); it1 != fsInfos.end(); ++it1)
-        {
-            QString msg = QString("Dir: %1:%2")
-                .arg(it1->hostname).arg(it1->directory);
-            cout << msg.toLocal8Bit().constData() << endl;
-            cout << "     Location: ";
-            if (it1->isLocal)
-                cout << "Local";
-            else
-                cout << "Remote";
-            cout << endl;
-            cout << "     fsID    : " << it1->fsID << endl;
-            cout << "     dirID   : " << it1->dirID << endl;
-            cout << "     BlkSize : " << it1->blocksize << endl;
-            cout << "     TotalKB : " << it1->totalSpaceKB << endl;
-            cout << "     UsedKB  : " << it1->usedSpaceKB << endl;
-            cout << "     FreeKB  : " << it1->freeSpaceKB << endl;
-            cout << endl;
-        }
-        cout << "--- GetFilesystemInfos directory list end ---" << endl;
-    }
-}
-
-void TruncateThread::run(void)
-{
-    if (!m_parent)
-        return;
-
-    MainServer *ms = m_parent->ms;
-    ms->DoTruncateThread(m_parent);
-
-    delete m_parent;
-    this->deleteLater();
-}
-
-void MainServer::DoTruncateThread(const DeleteStruct *ds)
-{
-    if (gCoreContext->GetNumSetting("TruncateDeletesSlowly", 0))
-        TruncateAndClose(NULL, ds->fd, ds->filename, ds->size);
-    else
-    {
-        QMutexLocker dl(&deletelock);
-        close(ds->fd);
-    }
-}
-
-bool MainServer::HandleDeleteFile(QStringList &slist, PlaybackSock *pbs)
-{
-    return HandleDeleteFile(slist[1], slist[2], pbs);
-}
-
-bool MainServer::HandleDeleteFile(QString filename, QString storagegroup,
-                                  PlaybackSock *pbs)
-{
-    StorageGroup sgroup(storagegroup, "", false);
-    QStringList retlist;
-
-    if ((filename.isEmpty()) ||
-        (filename.contains("/../")) ||
-        (filename.startsWith("../")))
-    {
-        VERBOSE(VB_IMPORTANT, QString("ERROR deleting file, filename '%1' "
-                "fails sanity checks").arg(filename));
-        if (pbs)
-        {
-            retlist << "0";
-            SendResponse(pbs->getSocket(), retlist);
-        }
-        return false;
-    }
-
-    QString fullfile = sgroup.FindRecordingFile(filename);
-
-    if (fullfile.isEmpty()) {
-        VERBOSE(VB_IMPORTANT, QString("Unable to find %1 in HandleDeleteFile()")
-                .arg(filename));
-        if (pbs)
-        {
-            retlist << "0";
-            SendResponse(pbs->getSocket(), retlist);
-        }
-        return false;
-    }
-
-    QFile checkFile(fullfile);
-    bool followLinks = gCoreContext->GetNumSetting("DeletesFollowLinks", 0);
-    int fd = -1;
-    off_t size = 0;
-
-    // This will open the file and unlink the dir entry.  The actual file
-    // data will be deleted in the truncate thread spawned below.
-    // Since stat fails after unlinking on some filesystems, get the size first
-    const QFileInfo info(fullfile);
-    size = info.size();
-    fd = DeleteFile(fullfile, followLinks);
-
-    if ((fd < 0) && checkFile.exists())
-    {
-        VERBOSE(VB_IMPORTANT, QString("Error deleting file: %1.")
-                .arg(fullfile));
-        if (pbs)
-        {
-            retlist << "0";
-            SendResponse(pbs->getSocket(), retlist);
-        }
-        return false;
-    }
-
-    if (pbs)
-    {
-        retlist << "1";
-        SendResponse(pbs->getSocket(), retlist);
-    }
-
-    // DeleteFile() opened up a file for us to delete
-    if (fd >= 0)
-    {
-        // Thread off the actual file delete
-        DeleteStruct *ds = new DeleteStruct;
-        ds->ms = this;
-        ds->filename = fullfile;
-        ds->fd = fd;
-        ds->size = size;
-
-        TruncateThread *truncateThread = new TruncateThread;
-        truncateThread->SetParent(ds);
-        truncateThread->run();
-    }
-
-    return true;
 }
 
 // Helper function for the guts of HandleCommBreakQuery + HandleCutlistQuery
@@ -4527,79 +3618,6 @@ void MainServer::HandleSettingQuery(QStringList &tokens, PlaybackSock *pbs)
     return;
 }
 
-void MainServer::HandleDownloadFile(const QStringList &command,
-                                    PlaybackSock *pbs)
-{
-    bool synchronous = (command[0] == "DOWNLOAD_FILE_NOW");
-    QString srcURL = command[1];
-    QString storageGroup = command[2];
-    QString filename = command[3];
-    StorageGroup sgroup(storageGroup, gCoreContext->GetHostName(), false);
-    QString outDir = sgroup.FindNextDirMostFree();
-    QString outFile;
-    QStringList retlist;
-
-    MythSocket *pbssock = NULL;
-    if (pbs)
-        pbssock = pbs->getSocket();
-
-    if (filename.isEmpty())
-    {
-        QFileInfo finfo(srcURL);
-        filename = finfo.fileName();
-    }
-
-    if (outDir.isEmpty())
-    {
-        VERBOSE(VB_IMPORTANT, QString("Unable to determine directory "
-                "to write to in %1 write command").arg(command[0]));
-        retlist << "downloadfile_directory_not_found";
-        if (pbssock)
-            SendResponse(pbssock, retlist);
-        return;
-    }
-
-    if ((filename.contains("/../")) ||
-        (filename.startsWith("../")))
-    {
-        VERBOSE(VB_IMPORTANT, QString("ERROR: %1 write "
-                "filename '%2' does not pass sanity checks.")
-                .arg(command[0]).arg(filename));
-        retlist << "downloadfile_filename_dangerous";
-        if (pbssock)
-            SendResponse(pbssock, retlist);
-        return;
-    }
-
-    outFile = outDir + "/" + filename;
-
-    if (synchronous)
-    {
-        if (GetMythDownloadManager()->download(srcURL, outFile))
-        {
-            retlist << "OK";
-            retlist << gCoreContext->GetMasterHostPrefix(storageGroup)
-                       + filename;
-        }
-        else
-            retlist << "ERROR";
-    }
-    else
-    {
-        QMutexLocker locker(&m_downloadURLsLock);
-        m_downloadURLs[outFile] =
-            gCoreContext->GetMasterHostPrefix(storageGroup) +
-            StorageGroup::GetRelativePathname(outFile);
-
-        GetMythDownloadManager()->queueDownload(srcURL, outFile, this);
-        retlist << "OK";
-        retlist << gCoreContext->GetMasterHostPrefix(storageGroup) + filename;
-    }
-
-    if (pbssock)
-        SendResponse(pbssock, retlist);
-}
-
 void MainServer::HandleSetSetting(QStringList &tokens,
                                   PlaybackSock *pbs)
 {
@@ -4644,92 +3662,6 @@ void MainServer::HandleScanVideos(PlaybackSock *pbs)
 
     if (pbssock)
         SendResponse(pbssock, retlist);
-}
-
-void MainServer::HandleFileTransferQuery(QStringList &slist,
-                                         QStringList &commands,
-                                         PlaybackSock *pbs)
-{
-    MythSocket *pbssock = pbs->getSocket();
-
-    int recnum = commands[1].toInt();
-    QString command = slist[1];
-
-    QStringList retlist;
-
-    sockListLock.lockForRead();
-    FileTransfer *ft = GetFileTransferByID(recnum);
-    if (!ft)
-    {
-        if (command == "DONE")
-        {
-            // if there is an error opening the file, we may not have a
-            // FileTransfer instance for this connection.
-            retlist << "ok";
-        }
-        else
-        {
-            VERBOSE(VB_IMPORTANT, QString("Unknown file transfer socket: %1")
-                                   .arg(recnum));
-            retlist << QString("ERROR: Unknown file transfer socket: %1")
-                               .arg(recnum);
-        }
-
-        SendResponse(pbssock, retlist);
-        sockListLock.unlock();
-        return;
-    }
-
-    ft->UpRef();
-    sockListLock.unlock();
-
-    if (command == "IS_OPEN")
-    {
-        bool isopen = ft->isOpen();
-
-        retlist << QString::number(isopen);
-    }
-    else if (command == "DONE")
-    {
-        ft->Stop();
-        retlist << "ok";
-    }
-    else if (command == "REQUEST_BLOCK")
-    {
-        int size = slist[2].toInt();
-
-        retlist << QString::number(ft->RequestBlock(size));
-    }
-    else if (command == "WRITE_BLOCK")
-    {
-        int size = slist[2].toInt();
-
-        retlist << QString::number(ft->WriteBlock(size));
-    }
-    else if (command == "SEEK")
-    {
-        long long pos = decodeLongLong(slist, 2);
-        int whence = slist[4].toInt();
-        long long curpos = decodeLongLong(slist, 5);
-
-        long long ret = ft->Seek(curpos, pos, whence);
-        encodeLongLong(retlist, ret);
-    }
-    else if (command == "SET_TIMEOUT")
-    {
-        bool fast = slist[2].toInt();
-        ft->SetTimeout(fast);
-        retlist << "ok";
-    }
-    else
-    {
-        VERBOSE(VB_IMPORTANT, QString("Unknown command: %1").arg(command));
-        retlist << "ok";
-    }
-
-    ft->DownRef();
-
-    SendResponse(pbssock, retlist);
 }
 
 void MainServer::HandleGetRecorderNum(QStringList &slist, PlaybackSock *pbs)

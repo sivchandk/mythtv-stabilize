@@ -51,6 +51,7 @@
 #include "main_helpers.h"
 #include "backendcontext.h"
 #include "jobscheduler.h"
+#include "filetransfer.h"
 
 #include "mediaserver.h"
 #include "httpstatus.h"
@@ -780,8 +781,15 @@ int run_backend(const MythCommandLineParser &cmdline)
         return GENERIC_EXIT_SOCKET_ERROR;
     }
 
-    MainServer *mainServer = new MainServer(ismaster, &tvList,
-                                            sched, expirer);
+    FileTransferHandler *fileServer = new FileTransferHandler();
+    expirer->SetFileServer(fileServer);
+    httpStatus->SetFileServer(fileServer);
+    sched->SetFileServer(fileServer);
+
+    MainServer *mainServer = new MainServer(ismaster, &tvList, sched,
+                                        expirer, fileServer);
+
+    socketManager->RegisterHandler(fileServer);
     socketManager->RegisterHandler(mainServer);
 
     if (ismaster)
