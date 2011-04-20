@@ -39,6 +39,7 @@ class MPUBLIC FileSystemInfo : public QObject
     int         getBlockSize(void)    const { return m_blksize; }
     long long   getTotalSpace(void)   const { return m_total; }
     long long   getUsedSpace(void)    const { return m_used; }
+    int         getWeight(void)       const { return m_weight; }
 
     long long   getFreeSpace(void)    const { return m_total-m_used; }
 
@@ -51,6 +52,7 @@ class MPUBLIC FileSystemInfo : public QObject
     void setBlockSize(int size)             { m_blksize = size; }
     void setTotalSpace(long long size)      { m_total = size; }
     void setUsedSpace(long long size)       { m_used = size; }
+    void setWeight(int weight)              { m_weight = weight; }
 
     bool        ToStringList(QStringList &slist) const;
 
@@ -73,5 +75,6 @@ class MPUBLIC FileSystemInfo : public QObject
     int m_blksize;
     long long m_total;
     long long m_used;
+    int m_weight;
 };
 #endif
