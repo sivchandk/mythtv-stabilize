@@ -68,9 +68,9 @@ class JobScheduler : public SocketRequestHandler
                      QStringList &slist);
     void connectionClosed(MythSocket *socket);
 
-    bool         RestartScheduler(void);
-    JobHostList *GetConnectedQueues(void);
-    MythSocket  *GetQueueByHostname(QString hostname);
+    bool             RestartScheduler(void);
+    JobHostList     *GetConnectedQueues(void);
+    JobQueueSocket  *GetQueueByHostname(QString hostname);
 
     JobList     *GetQueuedJobs(void);
     JobList     *GetJobByProgram(uint chanid, QDateTime starttime);

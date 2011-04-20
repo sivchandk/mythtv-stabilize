@@ -69,11 +69,11 @@ void JobQueueSocket::DeleteJob(JobInfoDB *job)
     if (!m_jobList.contains(job))
         return;
 
-    m_jobList.removeOne(job)
+    m_jobList.removeOne(job);
     job->DownRef();
 }
 
-JobList *JobQueueSocket:getAssignedJobs(void)
+JobList *JobQueueSocket::getAssignedJobs(void)
 {
     QReadLocker rlock(&m_jobLock);
     JobList *list = new JobList(m_jobList);
@@ -93,15 +93,15 @@ void JobScheduler::connectionClosed(MythSocket *socket)
 
 JobHostList *JobScheduler::GetConnectedQueues(void)
 {
-    QReadLock rlock(&m_hostLock);
+    QReadLocker rlock(&m_hostLock);
     JobHostList *hosts = new JobHostList(m_hostMap.values());
     return hosts;
 }
 
-MythSocket *GetQueueByHostname(QString hostname)
+JobQueueSocket *JobScheduler::GetQueueByHostname(QString hostname)
 {
-    QReadLock rlock(&m_hostLock);
-    MythSocket *socket = NULL;
+    QReadLocker rlock(&m_hostLock);
+    JobQueueSocket *socket = NULL;
 
     if (m_hostMap.contains(hostname))
         socket = m_hostMap[hostname];
@@ -174,7 +174,7 @@ bool JobScheduler::HandleQuery(MythSocket *socket, QStringList &commands,
 
     QStringList::const_iterator i = slist.begin();
     JobInfoDB tmpjob(++i, slist.end());
-    if (!tmpjob.getJobID())
+    if (!tmpjob.isValid())
     {
         res << "ERROR" << "invalid_job";
         socket->writeStringList(res);
@@ -544,7 +544,7 @@ void JobSchedulerCF::DoJobScheduling(void)
     }
 
     JobHostList *hosts = m_parent->GetConnectedQueues();
-    if (hosts.empty())
+    if (hosts->isEmpty())
     {
         VERBOSE(VB_GENERAL, "Jobs in queue cannot be run, "
                             "no jobqueue available.");
@@ -554,7 +554,7 @@ void JobSchedulerCF::DoJobScheduling(void)
     }
 
     int jobmax;
-    JobInfoDB::iterator job;
+    JobList::iterator job;
 
     while (!jobs->isEmpty())
     {
@@ -579,7 +579,7 @@ void JobSchedulerCF::DoJobScheduling(void)
                     // skip to next host, well come back to this one if jobs
                     // are still left after going through all of them
                     jobs->removeOne(*job);
-                    job->UpRef();
+                    (*job)->UpRef();
                     (*host)->AddJob(*job);
                     break;
                 //}
@@ -592,7 +592,7 @@ void JobSchedulerCF::DoJobScheduling(void)
             // host can accept new job
             // TODO: check if host can run type
             jobs->removeOne(*job);
-            job->UpRef();
+            (*job)->UpRef();
             (*host)->AddJob(*job);
             job++;
         }

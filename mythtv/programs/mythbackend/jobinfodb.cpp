@@ -248,7 +248,7 @@ bool JobInfoDB::Pause(void)
     sl << "COMMAND_JOBQUEUE" << "PAUSE";
     ToStringList(sl);
 
-    if (!socket->SendReceiveStringList(sl) ||
+    if (!m_hostSocket->SendReceiveStringList(sl) ||
         sl[0] == "ERROR")
     {
         VERBOSE(VB_IMPORTANT, "Scheduler failed to pause job");
@@ -270,7 +270,7 @@ bool JobInfoDB::Resume(void)
     sl << "COMMAND_JOBQUEUE" << "RESUME";
     ToStringList(sl);
 
-    if (!socket->SendReceiveStringList(sl) ||
+    if (!m_hostSocket->SendReceiveStringList(sl) ||
         sl[0] == "ERROR")
     {
         VERBOSE(VB_IMPORTANT, "Scheduler failed to resume job");
@@ -292,7 +292,7 @@ bool JobInfoDB::Stop(void)
     sl << "COMMAND_JOBQUEUE" << "STOP";
     ToStringList(sl);
 
-    if (!socket->SendReceiveStringList(sl) ||
+    if (!m_hostSocket->SendReceiveStringList(sl) ||
         sl[0] == "ERROR")
     {
         VERBOSE(VB_IMPORTANT, "Scheduler failed to stop job");
@@ -314,7 +314,7 @@ bool JobInfoDB::Restart(void)
     sl << "COMMAND_JOBQUEUE" << "RESTART";
     ToStringList(sl);
 
-    if (!socket->SendReceiveStringList(sl) ||
+    if (!m_hostSocket->SendReceiveStringList(sl) ||
         sl[0] == "ERROR")
     {
         VERBOSE(VB_IMPORTANT, "Scheduler failed to restart job");
