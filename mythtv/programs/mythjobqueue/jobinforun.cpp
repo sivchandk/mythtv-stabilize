@@ -161,8 +161,8 @@ void JobInfoRun::ConnectMS(void)
     }
     else if (m_jobType == JOB_COMMFLAG)
     {
-        connect(m_process, SIGNAL(finished()), this, SLOT(finishedcf()));
-        connect(m_process, SIGNAL(error(uint)), this, SLOT(errorcf(uint())));
+        connect(m_process, SIGNAL(finished()), this, SLOT(finished()));
+        connect(m_process, SIGNAL(error(uint)), this, SLOT(error(uint())));
     }
     else
     {
@@ -183,8 +183,8 @@ void JobInfoRun::DisconnectMS(void)
     }
     else if (m_jobType == JOB_COMMFLAG)
     {
-        disconnect(m_process, SIGNAL(finished()), this, SLOT(finishedcf()));
-        disconnect(m_process, SIGNAL(error(uint)), this, SLOT(errorcf(uint())));
+        disconnect(m_process, SIGNAL(finished()), this, SLOT(finished()));
+        disconnect(m_process, SIGNAL(error(uint)), this, SLOT(error(uint())));
     }
     else
     {
@@ -196,6 +196,8 @@ void JobInfoRun::DisconnectMS(void)
 void JobInfoRun::finished(void)
 {
     QString msg;
+
+    QueryObject();
 
     if (GetPGInfo())
         msg = QString("Finished %1 for %2 recorded from channel %3")
@@ -277,19 +279,16 @@ void JobInfoRun::finishedts(void)
     m_process = NULL;
 }
 
-void JobInfoRun::finishedcf(void)
-{
-    errorcf(0);
-}
-
 void JobInfoRun::error(uint error)
 {
     QString msg, comment;
 
+    QueryObject();
+
     if ((error == GENERIC_EXIT_DAEMONIZING_ERROR) ||
         (error == GENERIC_EXIT_CMD_NOT_FOUND))
     {
-        msg = QString("User Job '%1' failed, unable to find "
+        msg = QString("Job '%1' failed, unable to find "
                       "executable. Check your PATH and backend logs.")
                         .arg(GetJobDescription());
         VERBOSE(VB_IMPORTANT, LOC_ERR + msg);
@@ -297,7 +296,7 @@ void JobInfoRun::error(uint error)
                                         .arg(getenv("PATH")));
 
         gCoreContext->LogEntry("jobqueue", LP_WARNING,
-                            "User Job Errored", msg);
+                            "Job Errored", msg);
 
         saveStatus(JOB_ERRORED, 
             "ERROR: Unable to find executable, check backend logs.");
@@ -321,15 +320,15 @@ void JobInfoRun::error(uint error)
     }
     else
     {
-        msg = QString("User Job '%1' failed, code: %2.")
+        msg = QString("Job '%1' failed, code: %2.")
                     .arg(GetJobCommand()).arg(error);
         VERBOSE(VB_IMPORTANT, LOC_ERR + msg);
 
         gCoreContext->LogEntry("jobqueue", LP_WARNING,
-                            "User Job Errored", msg);
+                            "Job Errored", msg);
 
         saveStatus(JOB_ERRORED,
-            "ERROR: User Job returned non-zero, check logs.");
+            "ERROR: Job returned non-zero, check logs.");
     }
 
     delete m_process;
@@ -356,84 +355,6 @@ void JobInfoRun::errorts(uint error)
     }
 
     GetPGInfo()->SaveTranscodeStatus(TRANSCODING_NOT_TRANSCODED);
-
-    delete m_process;
-    m_process = NULL;
-}
-
-void JobInfoRun::errorcf(uint error)
-{
-    QString comment, msg;
-    int priority = LP_NOTICE;
-
-    // pull new data
-    QueryObject();
-
-    if ((error == GENERIC_EXIT_DAEMONIZING_ERROR) ||
-        (error == GENERIC_EXIT_CMD_NOT_FOUND))
-    {
-        comment = tr("Unable to find mythcommflag");
-        saveStatus(JOB_ERRORED, comment);
-        priority = LP_WARNING;
-    }
-    else if ((m_flags == JOB_STOP) ||
-             (error == GENERIC_EXIT_KILLED))
-    {
-        comment = tr("Aborted by user");
-        saveStatus(JOB_ABORTED, comment);
-        priority = LP_WARNING;
-    }
-    else if (error == GENERIC_EXIT_NO_RECORDING_DATA)
-    {
-        comment = tr("Unable to open file or init decoder");
-        saveStatus(JOB_ERRORED, comment);
-        priority = LP_WARNING;
-    }
-    else if (error >= GENERIC_EXIT_NOT_OK)
-    {
-        comment = tr("Failed with exit status %1").arg(error);
-        saveStatus(JOB_ERRORED, comment);
-        priority = LP_WARNING;
-    }
-    else
-    {
-        comment = tr("%n commercial break(s)", "", error);
-        saveStatus(JOB_FINISHED, comment);
-
-        GetPGInfo()->SendUpdateEvent();
-
-        ProgramInfo *pginfo = GetPGInfo();
-        if (!pginfo->IsLocal())
-            pginfo->SetPathname(pginfo->GetPlaybackURL(false, true));
-
-        if (GetPGInfo()->IsLocal())
-        {
-            PreviewGenerator *pg = new PreviewGenerator(
-                pginfo, QString(), PreviewGenerator::kLocal);
-            pg->Run();
-            pg->deleteLater();
-        }
-
-    }
-
-    msg = tr("Commercial Detection %1", "Job ID")
-        .arg(GetStatusText());
-    QString detailstr = QString("%1 recorded from channel %2")
-                    .arg(GetPGInfo()->toString(ProgramInfo::kTitleSubtitle))
-                    .arg(GetPGInfo()->toString(ProgramInfo::kRecordingKey));
-    QString details;
-
-    if (!comment.isEmpty())
-    {
-        detailstr += QString(" (%1)").arg(comment);
-        details = detailstr.toLocal8Bit();
-    }
-
-    gCoreContext->LogEntry("jobqueue", priority, msg, detailstr);
-
-    if (priority <= LP_WARNING)
-        VERBOSE(VB_IMPORTANT, QString("%1%2: %3").arg(LOC_ERR).arg(msg)
-                                .arg(detailstr));
 
     delete m_process;
     m_process = NULL;
