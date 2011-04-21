@@ -280,7 +280,7 @@ QString FileTransferHandler::LocalFilePath(const QUrl &url,
                 lpath = QFileInfo(lpath).fileName();
             }
 
-            QString tmpFile = sgroup.FindRecordingFile(lpath);
+            QString tmpFile = sgroup.FindFile(lpath);
             if (!tmpFile.isEmpty())
             {
                 lpath = tmpFile;
@@ -697,6 +697,10 @@ QList<FileSystemInfo> FileTransferHandler::QueryAllFileSystems(void)
     return disks;
 }
 
+/**
+ * \addtogroup myth_network_protocol
+ * \par        QUERY_FILE_EXISTS \e storagegroup \e filename
+ */
 bool FileTransferHandler::HandleQueryFileExists(MythSocket *socket,
                                                 QStringList &slist)
 {
@@ -724,7 +728,7 @@ bool FileTransferHandler::HandleQueryFileExists(MythSocket *socket,
     }
 
     StorageGroup sgroup(storageGroup, gCoreContext->GetHostName());
-    QString fullname = sgroup.FindRecordingFile(filename);
+    QString fullname = sgroup.FindFile(filename);
 
     if (!fullname.isEmpty())
     {
@@ -762,6 +766,10 @@ bool FileTransferHandler::HandleQueryFileExists(MythSocket *socket,
     return true;
 }
 
+/**
+ * \addtogroup myth_network_protocol
+ * \par        QUERY_FILE_HASH \e storagegroup \e filename
+ */
 bool FileTransferHandler::HandleQueryFileHash(MythSocket *socket,
                                               QStringList &slist)
 {
@@ -789,7 +797,7 @@ bool FileTransferHandler::HandleQueryFileHash(MythSocket *socket,
     }
 
     StorageGroup sgroup(storageGroup, gCoreContext->GetHostName());
-    QString fullname = sgroup.FindRecordingFile(filename);
+    QString fullname = sgroup.FindFile(filename);
     QString hash = FileHash(fullname);
 
     res << hash;
@@ -833,7 +841,7 @@ bool FileTransferHandler::HandleDeleteFile(MythSocket *socket,
         return false;
     }
 
-    QString fullfile = sgroup.FindRecordingFile(filename);
+    QString fullfile = sgroup.FindFile(filename);
 
     if (fullfile.isEmpty())
     {

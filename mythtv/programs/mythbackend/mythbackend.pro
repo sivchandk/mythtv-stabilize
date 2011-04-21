@@ -27,9 +27,10 @@ HEADERS += httpconfig.h mythsettings.h
 
 HEADERS += serviceHosts/mythServiceHost.h    serviceHosts/guideServiceHost.h
 HEADERS += serviceHosts/contentServiceHost.h serviceHosts/dvrServiceHost.h
+HEADERS += serviceHosts/channelServiceHost.h
 
 HEADERS += services/myth.h services/guide.h services/content.h services/dvr.h
-HEADERS += services/serviceUtil.h
+HEADERS += services/serviceUtil.h services/channel.h
 
 SOURCES += autoexpire.cpp encoderlink.cpp filetransfer.cpp httpstatus.cpp
 SOURCES += main.cpp mainserver.cpp playbacksock.cpp scheduler.cpp
@@ -40,7 +41,7 @@ SOURCES += jobinfodb.cpp jobscheduler.cpp
 SOURCES += httpconfig.cpp mythsettings.cpp
 
 SOURCES += services/myth.cpp services/guide.cpp services/content.cpp 
-SOURCES += services/dvr.cpp
+SOURCES += services/dvr.cpp services/channel.cpp
 SOURCES += services/serviceUtil.cpp
 
 using_oss:DEFINES += USING_OSS

@@ -55,7 +55,7 @@ class Scheduler : public QObject
               QString recordTbl = "record", Scheduler *master_sched = NULL);
     ~Scheduler();
 
-    void SetExpirer(AutoExpire *autoExpirer) { expirer = autoExpirer; }
+    void SetExpirer(AutoExpire *autoExpirer) { m_expirer = autoExpirer; }
 
     void Reschedule(int recordid);
     void AddRecording(const RecordingInfo&);
@@ -173,6 +173,7 @@ class Scheduler : public QObject
     QMap<QString, RecList> titlelistmap;
     InputGroupMap igrp;
 
+    QDateTime schedTime;
     bool reclist_changed;
 
     bool specsched;
@@ -181,7 +182,7 @@ class Scheduler : public QObject
     QMap<int, bool> schedAfterStartMap;
 
     QMap<int, EncoderLink *> *m_tvList;
-    AutoExpire *expirer;
+    AutoExpire *m_expirer;
 
     QMap<QString, bool> recPendingList;
 

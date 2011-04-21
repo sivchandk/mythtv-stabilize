@@ -62,6 +62,7 @@ class VideoOutputVDPAU : public VideoOutput
     virtual bool hasHWAcceleration(void) const
         { return codec_is_vdpau(video_codec_id); }
     virtual MythPainter* GetOSDPainter(void) { return (MythPainter*)m_osd_painter; }
+    virtual bool GetScreenShot(int width = 0, int height = 0);
 
     virtual bool CanVisualise(AudioPlayer *audio, MythRender *render)
         { return VideoOutput::CanVisualise(audio, m_render);       }
@@ -98,7 +99,8 @@ class VideoOutputVDPAU : public VideoOutput
     Window               m_win;
     MythRenderVDPAU     *m_render;
 
-    uint                 m_buffer_size;
+    uint                 m_decoder_buffer_size;
+    uint                 m_process_buffer_size;
     QVector<uint>        m_video_surfaces;
     QVector<uint>        m_reference_frames;
     uint                 m_pause_surface;

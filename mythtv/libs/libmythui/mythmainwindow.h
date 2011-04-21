@@ -90,12 +90,12 @@ class MUI_PUBLIC MythMainWindow : public QWidget
     MythPainter *GetCurrentPainter();
     QWidget     *GetPaintWindow();
     MythRender  *GetRenderDevice();
+    void         ShowPainterWindow();
+    void         HidePainterWindow();
 
-    bool screenShot(QString fname, int x, int y, int x2, int y2, int w, int h);
-    bool screenShot(int x, int y, int x2, int y2);
-    bool screenShot(QString fname, int w, int h);
-    bool screenShot(void);
-    void remoteScreenShot(QString fname, int w, int h);
+    void GrabWindow(QImage &image);
+    bool SaveScreenShot(const QImage &image);
+    bool ScreenShot(int w = 0, int h = 0);
 
     void AllowInput(bool allow);
 
@@ -128,10 +128,6 @@ class MUI_PUBLIC MythMainWindow : public QWidget
 
   protected slots:
     void animate();
-    void doRemoteScreenShot(QString fname, int w, int h);
-
-  signals:
-    void signalRemoteScreenShot(QString fname, int w, int h);
 
   protected:
     MythMainWindow(const bool useDB = true);

@@ -1669,7 +1669,7 @@ void MainServer::DeleteRecordedFiles(const DeleteStruct *ds)
                     .arg(logInfo).arg(query.value(0).toString()));
 
             StorageGroup sgroup(storagegroup);
-            QString localFile = sgroup.FindRecordingFile(basename);
+            QString localFile = sgroup.FindFile(basename);
             QString url = QString("myth://%1@%2:%3/%4").arg(storagegroup)
                 .arg(gCoreContext->GetSettingOnHost("BackendServerIP", hostname))
                 .arg(gCoreContext->GetSettingOnHost("BackendServerPort", hostname))
@@ -4570,7 +4570,7 @@ QString MainServer::LocalFilePath(const QUrl &url, const QString &wantgroup)
                 lpath = QFileInfo(lpath).fileName();
             }
 
-            QString tmpFile = sgroup.FindRecordingFile(lpath);
+            QString tmpFile = sgroup.FindFile(lpath);
             if (!tmpFile.isEmpty())
             {
                 lpath = tmpFile;

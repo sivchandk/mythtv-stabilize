@@ -72,10 +72,6 @@ using namespace std;
 #include "mythuihelper.h"
 #include "mythdialogbox.h"
 
-#ifdef USING_VDPAU
-#include "mythpainter_vdpau.h"
-#endif
-
 #ifdef USING_MINGW
 #include "mythpainter_d3d9.h"
 #endif
@@ -365,22 +361,6 @@ void MythPainterWindowGL::paintEvent(QPaintEvent *pe)
 }
 #endif
 
-#ifdef USING_VDPAU
-MythPainterWindowVDPAU::MythPainterWindowVDPAU(MythMainWindow *win,
-                                               MythMainWindowPrivate *priv)
-                   : QGLWidget(win),
-                     parent(win), d(priv)
-{
-    setAutoBufferSwap(false);
-}
-
-void MythPainterWindowVDPAU::paintEvent(QPaintEvent *pe)
-{
-    d->repaintRegion = d->repaintRegion.unite(pe->region());
-    parent->drawScreen();
-}
-#endif
-
 #ifdef USING_MINGW
 MythPainterWindowD3D9::MythPainterWindowD3D9(MythMainWindow *win,
                                              MythMainWindowPrivate *priv)
@@ -485,10 +465,6 @@ MythMainWindow::MythMainWindow(const bool useDB)
     d->repaintRegion = QRegion(QRect(0,0,0,0));
 
     d->m_drawEnabled = true;
-
-    connect(this, SIGNAL(signalRemoteScreenShot(QString,int,int)),
-            this, SLOT(doRemoteScreenShot(QString,int,int)),
-            Qt::BlockingQueuedConnection);
 }
 
 MythMainWindow::~MythMainWindow()
@@ -552,6 +528,21 @@ MythPainter *MythMainWindow::GetCurrentPainter(void)
 QWidget *MythMainWindow::GetPaintWindow(void)
 {
     return d->paintwin;
+}
+
+void MythMainWindow::ShowPainterWindow(void)
+{
+    if (d->paintwin)
+        d->paintwin->show();
+}
+
+void MythMainWindow::HidePainterWindow(void)
+{
+    if (d->paintwin)
+    {
+        d->paintwin->clearMask();
+        d->paintwin->hide();
+    }
 }
 
 MythRender *MythMainWindow::GetRenderDevice()
@@ -754,105 +745,49 @@ void MythMainWindow::closeEvent(QCloseEvent *e)
         QWidget::closeEvent(e);
 }
 
-bool MythMainWindow::screenShot(QString fname, int x, int y,
-                                int x2, int y2, int w, int h)
+void MythMainWindow::GrabWindow(QImage &image)
 {
-    bool ret = false;
-
-    QString extension = fname.section('.', -1, -1);
-    if (extension == "jpg")
-        extension = "JPEG";
+    WId winid;
+    QWidget *active = QApplication::activeWindow();
+    if (active)
+        winid = active->winId();
     else
-        extension = "PNG";
+        winid = QApplication::desktop()->winId();
 
-    VERBOSE(VB_GENERAL, "MythMainWindow::screenShot saving winId " +
-                        QString("%1 to %2 (%3 x %4) [ %5/%6 - %7/%8] type %9")
-                        .arg((long)QApplication::desktop()->winId())
-                        .arg(fname)
-                        .arg(w).arg(h)
-                        .arg(x).arg(y)
-                        .arg(x2).arg(y2)
-                        .arg(extension));
+    QPixmap p = QPixmap::grabWindow(winid);
+    image = p.toImage();
+}
 
-    QPixmap p;
-    p = QPixmap::grabWindow( QApplication::desktop()->winId(), x, y, x2, y2);
+bool MythMainWindow::SaveScreenShot(const QImage &image)
+{
+    QString fpath = GetMythDB()->GetSetting("ScreenShotPath", "/tmp");
+    QString fname = QString("%1/myth-screenshot-%2.png").arg(fpath)
+        .arg(QDateTime::currentDateTime().toString("yyyy-MM-ddThh-mm-ss.zzz"));
 
-    QImage img = p.toImage();
+    VERBOSE(VB_GENERAL,QString("Saving screenshot to %1 (%2x%3)")
+                       .arg(fname).arg(image.width()).arg(image.height()));
 
-    if ( w == 0 )
-        w = img.width();
-
-    if ( h == 0 )
-        h = img.height();
-
-    VERBOSE(VB_GENERAL, QString("Scaling to %1 x %2 from %3 x %4")
-                        .arg(w)
-                        .arg(h)
-                        .arg(img.width())
-                        .arg(img.height()));
-
-    img = img.scaled(w, h, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-
-    if (img.save(fname, extension.toAscii(), 100))
+    if (image.save(fname))
     {
         VERBOSE(VB_GENERAL, "MythMainWindow::screenShot succeeded");
-        ret = true;
-    }
-    else
-    {
-        VERBOSE(VB_GENERAL, "MythMainWindow::screenShot Failed!");
-        ret = false;
+        return true;
     }
 
-    return ret;
-}
-
-bool MythMainWindow::screenShot(int x, int y, int x2, int y2)
-{
-    QString fPath = GetMythDB()->GetSetting("ScreenShotPath","/tmp/");
-    QString fName = QString("/%1/myth-screenshot-%2.png")
-                    .arg(fPath)
-                    .arg(QDateTime::currentDateTime()
-                         .toString("yyyy-MM-ddThh-mm-ss.zzz"));
-
-    return screenShot(fName, x, y, x2, y2, 0, 0);
-}
-
-bool MythMainWindow::screenShot(QString fname, int w, int h)
-{
-    QWidget *active = QApplication::activeWindow();
-    if (active)
-    {
-        QRect sLoc = active->geometry();
-        return screenShot(fname, sLoc.left(),sLoc.top(),
-                          sLoc.width(), sLoc.height(), w, h);
-    }
+    VERBOSE(VB_GENERAL, "MythMainWindow::screenShot Failed!");
     return false;
 }
 
-void MythMainWindow::remoteScreenShot(QString fname, int w, int h)
+bool MythMainWindow::ScreenShot(int w, int h)
 {
-    // This will be running from the MythFEXML handler, primarily
-    // Since QPixmap must be running in the GUI thread, we need to cross
-    // threads here.
-    emit signalRemoteScreenShot(fname, w, h);
-}
+    QImage img;
+    GrabWindow(img);
+    if (w <= 0)
+        w = img.width();
+    if (h <= 0)
+        h = img.height();
 
-void MythMainWindow::doRemoteScreenShot(QString fname, int w, int h)
-{
-    // This will be running in the GUI thread
-    screenShot(fname, w, h);
-}
-
-bool MythMainWindow::screenShot(void)
-{
-    QWidget *active = QApplication::activeWindow();
-    if (active)
-    {
-        QRect sLoc = active->geometry();
-        return screenShot(sLoc.left(),sLoc.top(), sLoc.width(), sLoc.height());
-    }
-    return false;
+    img = img.scaled(w, h, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    return SaveScreenShot(img);
 }
 
 bool MythMainWindow::event(QEvent *e)
@@ -930,6 +865,8 @@ void MythMainWindow::Init(void)
 
     GetMythUI()->ThemeWidget(this);
     Show();
+    setAttribute(Qt::WA_NoSystemBackground);
+    setAutoFillBackground(false);
 
     if (!GetMythDB()->GetNumSetting("HideMouseCursor", 0))
         setMouseTracking(true); // Required for mouse cursor auto-hide
@@ -1006,14 +943,6 @@ void MythMainWindow::Init(void)
         }
     }
 #endif
-#ifdef USING_VDPAU
-    if (painter == "vdpau")
-    {
-        VERBOSE(VB_GENERAL, "Using the VDPAU painter");
-        d->painter = new MythVDPAUPainter();
-        d->paintwin = new MythPainterWindowVDPAU(this, d);
-    }
-#endif
 
     if (!d->painter && !d->paintwin)
     {
@@ -1032,7 +961,7 @@ void MythMainWindow::Init(void)
     d->paintwin->move(0, 0);
     d->paintwin->setFixedSize(size());
     d->paintwin->raise();
-    d->paintwin->show();
+    ShowPainterWindow();
     if (!GetMythDB()->GetNumSetting("HideMouseCursor", 0))
         d->paintwin->setMouseTracking(true); // Required for mouse cursor auto-hide
 
@@ -1071,6 +1000,8 @@ void MythMainWindow::InitKeys()
         "Delete"),                  "D");
     RegisterKey("Global", "EDIT", QT_TRANSLATE_NOOP("MythControls",
         "Edit"),                    "E");
+    RegisterKey("Global", ACTION_SCREENSHOT, QT_TRANSLATE_NOOP("MythControls",
+         "Save screenshot"), "");
 
     RegisterKey("Global", "PAGEUP", QT_TRANSLATE_NOOP("MythControls",
         "Page Up"),              "PgUp");
@@ -1204,7 +1135,7 @@ void MythMainWindow::ReinitDone(void)
     d->paintwin->move(0, 0);
     d->paintwin->setFixedSize(size());
     d->paintwin->raise();
-    d->paintwin->show();
+    ShowPainterWindow();
 
     d->drawTimer->start(1000 / 70);
 }
@@ -1335,11 +1266,13 @@ void MythMainWindow::SetDrawEnabled(bool enable)
             d->m_pendingUpdate = false;
         }
         d->drawTimer->start(1000 / 70);
-
+        ShowPainterWindow();
     }
     else
+    {
+        HidePainterWindow();
         d->drawTimer->stop();
-
+    }
 
     d->m_setDrawEnabledWait.wakeAll();
 }
@@ -1455,7 +1388,25 @@ bool MythMainWindow::TranslateKeyPress(const QString &context,
     if (e->key() == 0 && !e->text().isEmpty() &&
         e->modifiers() == Qt::NoModifier)
     {
-        actions.append(e->text());
+        QString action = e->text();
+        // check if it is a jumppoint
+        if (!d->destinationMap.contains(action))
+        {
+            actions.append(action);
+            return false;
+        }
+
+        if (allowJumps)
+        {
+            // This does not filter the jump based on the current location but
+            // is consistent with handling of other actions that do not need
+            // a keybinding. The network control code tries to match
+            // GetCurrentLocation with the jumppoint but matching is utterly
+            // inconsistent e.g. mainmenu<->Main Menu, Playback<->Live TV
+            JumpTo(action);
+            return true;
+        }
+
         return false;
     }
 
@@ -1744,9 +1695,7 @@ void MythMainWindow::RegisterJump(const QString &destination,
 
 void MythMainWindow::JumpTo(const QString& destination, bool pop)
 {
-    if (destination == "ScreenShot")
-        screenShot();
-    else if (d->destinationMap.count(destination) > 0 && d->exitmenucallback == NULL)
+    if (d->destinationMap.count(destination) > 0 && d->exitmenucallback == NULL)
     {
         d->exitingtomain = true;
         d->popwindows = pop;
@@ -2223,6 +2172,19 @@ void MythMainWindow::customEvent(QEvent *ce)
             HandleMedia(tokens[1],
                         message.mid(tokens[0].length() +
                                     tokens[1].length() + 2));
+        }
+        else if (message.startsWith(ACTION_SCREENSHOT))
+        {
+            if (me->ExtraDataCount() == 2)
+            {
+                int width  = me->ExtraData(0).toInt();
+                int height = me->ExtraData(1).toInt();
+                ScreenShot(width, height);
+            }
+            else
+            {
+                ScreenShot();
+            }
         }
     }
     else if ((MythEvent::Type)(ce->type()) == MythEvent::MythUserMessage)
