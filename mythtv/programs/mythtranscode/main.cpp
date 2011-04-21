@@ -14,7 +14,6 @@ using namespace std;
 // MythTV headers
 #include "exitcodes.h"
 #include "programinfo.h"
-#include "jobqueue.h"
 #include "mythcontext.h"
 #include "mythdb.h"
 #include "mythverbose.h"
@@ -24,11 +23,12 @@ using namespace std;
 #include "mpeg2fix.h"
 #include "remotefile.h"
 #include "mythtranslation.h"
+#include "jobinfo.h"
 
 static void CompleteJob(int jobID, ProgramInfo *pginfo, bool useCutlist,
                         frm_dir_map_t *deleteMap, int &resultCode);
 
-static int glbl_jobID = -1;
+JobInfo *gJob = new JobInfo(-1);
 static QString recorderOptions = "";
 
 static void usage(char *progname)
@@ -103,31 +103,35 @@ static void UpdatePositionMap(frm_pos_map_t &posMap, QString mapfile,
 static int BuildKeyframeIndex(MPEG2fixup *m2f, QString &infile,
                        frm_pos_map_t &posMap, int jobID)
 {
-    if (jobID < 0 || JobQueue::GetJobCmd(jobID) != JOB_STOP)
-    {
-        if (jobID >= 0)
-            JobQueue::ChangeJobComment(jobID,
-                QString(QObject::tr("Generating Keyframe Index")));
-        int err = m2f->BuildKeyframeIndex(infile, posMap);
-        if (err)
-            return err;
-        if (jobID >= 0)
-            JobQueue::ChangeJobComment(jobID,
-                QString(QObject::tr("Transcode Completed")));
-    }
+    if (gJob->queryCmds() == JOB_STOP)
+        return 0;
+
+    gJob->saveComment(QObject::tr("Generating Keyframe Index"));
+
+    int err = m2f->BuildKeyframeIndex(infile, posMap);
+    if (err)
+        return err;
+
+    gJob->saveComment(QObject::tr("Transcode Completed"));
+
     return 0;
 }
 
 static void UpdateJobQueue(float percent_done)
 {
-    JobQueue::ChangeJobComment(glbl_jobID,
-                               QString("%1% " + QObject::tr("Completed"))
-                               .arg(percent_done, 0, 'f', 1));
+    if (!gJob)
+        return;
+
+    gJob->saveComment(QString("%1% " + QObject::tr("Completed"))
+                            .arg(percent_done, 0, 'f', 1));
 }
 
 static int CheckJobQueue()
 {
-    if (JobQueue::GetJobCmd(glbl_jobID) == JOB_STOP)
+    if (!gJob->isValid())
+        return 0;
+
+    if (gJob->getCmds() == JOB_STOP)
     {
         VERBOSE(VB_IMPORTANT, "Transcoding stopped by JobQueue");
         return 1;
@@ -143,7 +147,6 @@ int main(int argc, char *argv[])
     QString fifodir = NULL;
     int jobID = -1;
     QDateTime startts;
-    int jobType = JOB_NONE;
     int otype = REPLEX_MPEG2;
     bool useCutlist = false, keyframesonly = false;
     bool build_index = false, fifosync = false, showprogress = false, mpeg2 = false;
@@ -537,19 +540,18 @@ int main(int argc, char *argv[])
 
     if (jobID != -1)
     {
-        if (JobQueue::GetJobInfoFromID(
-                jobID, jobType, chanid, startts))
-        {
-            starttime = startts.toString(Qt::ISODate);
-            found_starttime = 1;
-            found_chanid = 1;
-        }
-        else
+        delete gJob;
+        gJob = new JobInfo(jobID);
+        if (!gJob->isValid())
         {
             cerr << "mythtranscode: ERROR: Unable to find DB info for "
                  << "JobQueue ID# " << jobID << endl;
             return GENERIC_EXIT_NO_RECORDING_DATA;
         }
+
+        starttime = gJob->getStartTime().toString(Qt::ISODate);
+        found_starttime = 1;
+        found_chanid = 1;
     }
 
     if ((! found_infile && !(found_chanid && found_starttime)) ||
@@ -563,12 +565,12 @@ int main(int argc, char *argv[])
          cerr << "Must specify --infile to use --video\n";
          return GENERIC_EXIT_INVALID_CMDLINE;
     }
-    if (jobID >= 0 && (found_infile || build_index))
+    if (gJob && (found_infile || build_index))
     {
          cerr << "Can't specify -j with --buildindex, --video or --infile\n";
          return GENERIC_EXIT_INVALID_CMDLINE;
     }
-    if ((jobID >= 0) && build_index)
+    if (gJob && build_index)
     {
          cerr << "Can't specify both -j and --buildindex\n";
          return GENERIC_EXIT_INVALID_CMDLINE;
@@ -641,8 +643,8 @@ int main(int argc, char *argv[])
     if (outfile.isNull() && !build_index)
         outfile = infile + ".tmp";
 
-    if (jobID >= 0)
-        JobQueue::ChangeJobStatus(jobID, JOB_RUNNING);
+    if (gJob->isValid())
+        gJob->saveStatus(JOB_RUNNING);
 
     Transcode *transcode = new Transcode(pginfo);
 
@@ -662,8 +664,8 @@ int main(int argc, char *argv[])
                                           (fifosync || keyframesonly), jobID,
                                           fifodir, deleteMap, AudioTrackNo,
                                           passthru);
-        if ((result == REENCODE_OK) && (jobID >= 0))
-            JobQueue::ChangeJobArgs(jobID, "RENAME_TO_NUV");
+        if ((result == REENCODE_OK) && gJob)
+            gJob->saveArgs("RENAME_TO_NUV");
     }
 
     int exitcode = GENERIC_EXIT_OK;
@@ -673,9 +675,8 @@ int main(int argc, char *argv[])
         int (*check_func)() = NULL;
         if (useCutlist && !found_infile)
             pginfo->QueryCutList(deleteMap);
-        if (jobID >= 0)
+        if (gJob->isValid())
         {
-           glbl_jobID = jobID;
            update_func = &UpdateJobQueue;
            check_func = &CheckJobQueue;
         }
@@ -717,37 +718,37 @@ int main(int argc, char *argv[])
 
     if (result == REENCODE_OK)
     {
-        if (jobID >= 0)
-            JobQueue::ChangeJobStatus(jobID, JOB_STOPPING);
+        if (gJob->isValid())
+            gJob->saveStatus(JOB_STOPPING);
         VERBOSE(VB_GENERAL, QString("%1 %2 done")
                 .arg(build_index ? "Building Index for" : "Transcoding")
                 .arg(infile));
     }
     else if (result == REENCODE_CUTLIST_CHANGE)
     {
-        if (jobID >= 0)
-            JobQueue::ChangeJobStatus(jobID, JOB_RETRY);
+        if (gJob->isValid())
+            gJob->saveStatus(JOB_RETRY);
         VERBOSE(VB_GENERAL, QString("Transcoding %1 aborted because of "
                                     "cutlist update").arg(infile));
         exitcode = GENERIC_EXIT_RESTART;
     }
     else if (result == REENCODE_STOPPED)
     {
-        if (jobID >= 0)
-            JobQueue::ChangeJobStatus(jobID, JOB_ABORTING);
+        if (gJob->isValid())
+            gJob->saveStatus(JOB_ABORTING);
         VERBOSE(VB_GENERAL, QString("Transcoding %1 stopped because of "
                                     "stop command").arg(infile));
         exitcode = GENERIC_EXIT_KILLED;
     }
     else
     {
-        if (jobID >= 0)
-            JobQueue::ChangeJobStatus(jobID, JOB_ERRORING);
+        if (gJob->isValid())
+            gJob->saveStatus(JOB_ERRORING);
         VERBOSE(VB_GENERAL, QString("Transcoding %1 failed").arg(infile));
         exitcode = result;
     }
 
-    if (jobID >= 0)
+    if (gJob->isValid())
         CompleteJob(jobID, pginfo, useCutlist, &deleteMap, exitcode);
 
     transcode->deleteLater();
@@ -873,11 +874,11 @@ static void WaitToDelete(ProgramInfo *pginfo)
 static void CompleteJob(int jobID, ProgramInfo *pginfo, bool useCutlist,
                  frm_dir_map_t *deleteMap, int &resultCode)
 {
-    int status = JobQueue::GetJobStatus(jobID);
+    int status = gJob->getStatus();
 
     if (!pginfo)
     {
-        JobQueue::ChangeJobStatus(jobID, JOB_ERRORED,
+        gJob->saveStatus(JOB_ERRORED, 
                   "Job errored, unable to find Program Info for job");
         return;
     }
@@ -895,7 +896,7 @@ static void CompleteJob(int jobID, ProgramInfo *pginfo, bool useCutlist,
             ComputeNewBookmark(ReloadBookmark(pginfo), deleteMap);
         pginfo->SaveBookmark(previousBookmark);
 
-        const QString jobArgs = JobQueue::GetJobArgs(jobID);
+        const QString jobArgs = gJob->getArgs();
 
         const QString tmpfile = filename + ".tmp";
         const QByteArray atmpfile = tmpfile.toLocal8Bit();
@@ -1090,7 +1091,7 @@ static void CompleteJob(int jobID, ProgramInfo *pginfo, bool useCutlist,
         if (newSize)
             pginfo->SaveFilesize(newSize);
 
-        JobQueue::ChangeJobStatus(jobID, JOB_FINISHED);
+        gJob->saveStatus(JOB_FINISHED);
 
     } else {
         // Not a successful run, so remove the files we created
@@ -1104,12 +1105,11 @@ static void CompleteJob(int jobID, ProgramInfo *pginfo, bool useCutlist,
         unlink(fname_map.constData());
 
         if (status == JOB_ABORTING)                     // Stop command was sent
-            JobQueue::ChangeJobStatus(jobID, JOB_ABORTED, "Job Aborted");
+            gJob->saveStatus(JOB_ABORTED, "Job Aborted");
         else if (status != JOB_ERRORING)                // Recoverable error
             resultCode = GENERIC_EXIT_RESTART;
         else                                            // Unrecoverable error
-            JobQueue::ChangeJobStatus(jobID, JOB_ERRORED,
-                                      "Unrecoverable error");
+            gJob->saveStatus(JOB_ERRORED, "Unrecoverable error");
     }
 }
 /* vim: set expandtab tabstop=4 shiftwidth=4: */
