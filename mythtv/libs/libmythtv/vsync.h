@@ -23,7 +23,6 @@
 #include <time.h>
 
 class VideoOutput;
-class MythRenderOpenGL;
 
 extern bool tryingVideoSync;
 
@@ -133,46 +132,6 @@ class DRMVideoSync : public VideoSync
 };
 #endif // !_WIN32
 
-#ifndef _WIN32
-/** \brief Video synchronization class employing SGI_video_sync
- *         OpenGL extension.
- *
- *   Uses glXWaitVideoSyncSGI() to wait for retrace. Phase-maintaining,
- *   meaning WaitForFrame should always return approximately the same time 
- *   after a vertical retrace.
- *
- *   This works with version 50 or later of the nVidia vendor drivers.
- *
- *   Special care must be taken with this video sync method due 
- *   to a bad interaction between some pthread implementations
- *   and OpenGL. OpenGL DIRECT contexts cannot be shared between
- *   processes. And some pthread implementations, notably a common
- *   one on Linux, treat each thread as a seperate process.
- *   Hence Start(void), Stop(void) and WaitForFrame(void) must all be called
- *   from the same thread.
- *
- *  \sa http://osgcvs.no-ip.com/osgarchiver/archives/June2002/0022.html
- *  \sa http://www.ac3.edu.au/SGI_Developer/books/OpenGLonSGI/sgi_html/ch10.html#id37188
- *  \sa http://www.inb.mu-luebeck.de/~boehme/xvideo_sync.html
- */
-class OpenGLVideoSync : public VideoSync
-{
-  public:
-    OpenGLVideoSync(VideoOutput*,
-                    int frame_interval, int refresh_interval, bool interlaced);
-    ~OpenGLVideoSync();
-
-    QString getName(void) const { return QString("SGI OpenGL"); }
-    bool TryInit(void);
-    void Start(void);
-    int WaitForFrame(int sync_delay);
-
-  private:
-    MythRenderOpenGL  *m_context;
-    QPixmap           *m_device;
-};
-#endif // !_WIN32
-
 #ifdef __linux__
 /** \brief Video synchronization class employing /dev/rtc
  *  
@@ -198,26 +157,6 @@ class RTCVideoSync : public VideoSync
   private:
     int m_rtcfd;
 };
-#endif
-
-#ifdef USING_VDPAU
-/** \brief Video synchronization class employing VDPAU
- */
-class VDPAUVideoSync : public VideoSync
-{
-  public:
-    VDPAUVideoSync(VideoOutput*,
-                      int frame_interval, int refresh_interval,
-                      bool interlaced);
-    ~VDPAUVideoSync();
-
-    QString getName(void) const { return QString("VDPAU"); }
-    bool TryInit(void);
-    int WaitForFrame(int sync_delay);
-
-  private:
-};
-
 #endif
 
 /** \brief Video synchronization classes employing usleep() and busy-waits.

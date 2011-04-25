@@ -4,7 +4,7 @@
 //
 // Purpose     : Http Request/Response
 //                                                                            
-// Copyright (c) 2005 David Blain <mythtv@theblains.net>
+// Copyright (c) 2005 David Blain <dblain@mythtv.org>
 //                                          
 // This library is free software; you can redistribute it and/or 
 // modify it under the terms of the GNU Lesser General Public
@@ -27,6 +27,7 @@
 #include <QFileInfo>
 #include <QTextCodec>
 #include <QStringList>
+#include <QCryptographicHash>
 
 #include "mythconfig.h"
 #if !( CONFIG_DARWIN || CONFIG_CYGWIN || defined(__FreeBSD__) || defined(USING_MINGW))
@@ -48,6 +49,10 @@
 #include "compat.h"
 #include "mythverbose.h"
 
+#include "serializers/xmlSerializer.h"
+#include "serializers/soapSerializer.h"
+#include "serializers/jsonSerializer.h"
+
 #ifndef O_LARGEFILE
 #define O_LARGEFILE 0
 #endif
@@ -60,7 +65,9 @@ static MIMETypes g_MIMETypes[] =
     { "png" , "image/png"                  },
     { "htm" , "text/html"                  },
     { "html", "text/html"                  },
-    { "js"  , "text/html"                  },
+    { "qsp" , "text/html"                  },
+    { "js"  , "application/javascript"     },
+    { "qjs" , "application/javascript"     },
     { "txt" , "text/plain"                 },
     { "xml" , "text/xml"                   },
     { "pdf" , "application/pdf"            },
@@ -99,6 +106,17 @@ static MIMETypes g_MIMETypes[] =
     { "m4a" , "audio/x-m4a"                },
 };
 
+static const char *Static401Error = 
+    "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\""
+        "\"http://www.w3.org/TR/1999/REC-html401-19991224/loose.dtd\">"
+    "<HTML>"
+      "<HEAD>"
+        "<TITLE>Error</TITLE>"
+        "<META HTTP-EQUIV=\"Content-Type\" CONTENT=\"text/html; charset=ISO-8859-1\">"
+      "</HEAD>"
+      "<BODY><H1>401 Unauthorized.</H1></BODY>"
+    "</HTML>";
+
 static const int g_nMIMELength = sizeof( g_MIMETypes) / sizeof( MIMETypes );
 static const int g_on          = 1;
 static const int g_off         = 0;
@@ -118,46 +136,9 @@ HTTPRequest::HTTPRequest() : m_procReqLineExp ( "[ \r\n][ \r\n]*"  ),
                              m_bSOAPRequest   ( false ),
                              m_eResponseType  ( ResponseTypeUnknown),
                              m_nResponseStatus( 200 ),
-                             m_response       ( &m_aBuffer,
-                                                QIODevice::WriteOnly ),
                              m_pPostProcess   ( NULL )
 {
-    m_response.setCodec(QTextCodec::codecForName("UTF-8"));
-}
-
-/////////////////////////////////////////////////////////////////////////////
-//
-/////////////////////////////////////////////////////////////////////////////
-
-void HTTPRequest::Reset()
-{
-    m_eType          = RequestTypeUnknown;
-    m_eContentType   = ContentType_Unknown;
-    m_nMajor         = 0;
-    m_nMinor         = 0;
-    m_bSOAPRequest   = false;
-    m_eResponseType  = ResponseTypeUnknown;
-    m_nResponseStatus= 200;
-    m_pPostProcess   = NULL;
-
-    m_response << flush;
-    m_aBuffer.truncate( 0 );
-
-    m_sRawRequest.clear();
-    m_sBaseUrl.clear();
-    m_sMethod.clear();
-
-    m_mapParams.clear();
-    m_mapHeaders.clear();
-
-    m_sPayload.clear();
-
-    m_sProtocol.clear();
-    m_sNameSpace.clear();
-
-    m_mapRespHeaders.clear();
-
-    m_sFileName.clear();
+    m_response.open( QIODevice::ReadWrite );
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -278,9 +259,9 @@ long HTTPRequest::SendResponse( void )
     // ----------------------------------------------------------------------
     // Write out Header.
     // ----------------------------------------------------------------------
+    const QByteArray &buffer = m_response.buffer();
 
-    m_response << flush;
-    QString    rHeader = BuildHeader( m_aBuffer.size() );
+    QString    rHeader = BuildHeader( buffer.length() );
     QByteArray sHeader = rHeader.toUtf8();
     nBytes  = WriteBlockDirect( sHeader.constData(), sHeader.length() );
 
@@ -288,7 +269,7 @@ long HTTPRequest::SendResponse( void )
     // Write out Response buffer.
     // ----------------------------------------------------------------------
 
-    if (( m_eType != RequestTypeHead ) && ( m_aBuffer.size() > 0 ))
+    if (( m_eType != RequestTypeHead ) && ( buffer.length() > 0 ))
     {
 #if 0
         VERBOSE(VB_UPNP, QString("HTTPRequest::SendResponse : DATA : %1 : ")
@@ -298,7 +279,7 @@ long HTTPRequest::SendResponse( void )
 
         cout << endl;
 #endif
-        nBytes += WriteBlockDirect( m_aBuffer.constData(), m_aBuffer.size() );
+        nBytes += SendData( &m_response, 0, m_response.size() );
     }
 
     // ----------------------------------------------------------------------
@@ -471,17 +452,15 @@ long HTTPRequest::SendResponseFile( QString sFileName )
 
 #define SENDFILE_BUFFER_SIZE 65536
 
-qint64 HTTPRequest::SendFile( QFile &file, qint64 llStart, qint64 llBytes )
+qint64 HTTPRequest::SendData( QIODevice *pDevice, qint64 llStart, qint64 llBytes )
 {
     qint64 sent = 0;
-
-#if CONFIG_DARWIN || CONFIG_CYGWIN || defined(__FreeBSD__) || defined(USING_MINGW)
 
     // ----------------------------------------------------------------------
     // Set out file position to requested start location.
     // ----------------------------------------------------------------------
 
-    if ( file.seek( llStart ) == false)
+    if ( pDevice->seek( llStart ) == false)
         return -1;
 
     char   aBuffer[ SENDFILE_BUFFER_SIZE ];
@@ -491,11 +470,11 @@ qint64 HTTPRequest::SendFile( QFile &file, qint64 llStart, qint64 llBytes )
     qint64 llBytesRead      = 0;
     qint64 llBytesWritten   = 0;
 
-    while ((sent < llBytes) && !file.atEnd())
+    while ((sent < llBytes) && !pDevice->atEnd())
     {
         llBytesToRead  = std::min( (qint64)SENDFILE_BUFFER_SIZE, llBytesRemaining );
         
-        if (( llBytesRead = file.read( aBuffer, llBytesToRead )) != -1 )
+        if (( llBytesRead = pDevice->read( aBuffer, llBytesToRead )) != -1 )
         {
             if (( llBytesWritten = WriteBlockDirect( aBuffer, llBytesRead )) == -1)
                 return -1;
@@ -506,6 +485,21 @@ qint64 HTTPRequest::SendFile( QFile &file, qint64 llStart, qint64 llBytes )
             llBytesRemaining -= llBytesRead;
         }
     }
+
+    return sent;
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// 
+/////////////////////////////////////////////////////////////////////////////
+
+qint64 HTTPRequest::SendFile( QFile &file, qint64 llStart, qint64 llBytes )
+{
+    qint64 sent = 0;
+
+#if CONFIG_DARWIN || CONFIG_CYGWIN || defined(__FreeBSD__) || defined(USING_MINGW)
+
+    sent = SendData( (QIODevice *)(&file), llStart, llBytes );
 
 #else
 
@@ -565,7 +559,9 @@ void HTTPRequest::FormatErrorResponse( bool  bServerError,
     m_eResponseType   = ResponseTypeXML;
     m_nResponseStatus = 500;
 
-    m_response << "<?xml version=\"1.0\" encoding=\"utf-8\"?>";
+    QTextStream stream( &m_response );
+
+    stream << "<?xml version=\"1.0\" encoding=\"utf-8\"?>";
 
     QString sWhere = ( bServerError ) ? "s:Server" : "s:Client";
 
@@ -573,19 +569,36 @@ void HTTPRequest::FormatErrorResponse( bool  bServerError,
     {
         m_mapRespHeaders[ "EXT" ] = "";
 
-        m_response << SOAP_ENVELOPE_BEGIN
-                   << "<s:Fault>"
-                   << "<faultcode>"   << sWhere       << "</faultcode>"
-                   << "<faultstring>" << sFaultString << "</faultstring>";
+        stream << SOAP_ENVELOPE_BEGIN
+               << "<s:Fault>"
+               << "<faultcode>"   << sWhere       << "</faultcode>"
+               << "<faultstring>" << sFaultString << "</faultstring>";
     }
 
     if (sDetails.length() > 0)
     {
-        m_response << "<detail>" << sDetails << "</detail>";
+        stream << "<detail>" << sDetails << "</detail>";
     }
 
     if (m_bSOAPRequest)
-        m_response << "</s:Fault>" << SOAP_ENVELOPE_END;
+        stream << "</s:Fault>" << SOAP_ENVELOPE_END;
+
+    stream.flush();
+}
+
+/////////////////////////////////////////////////////////////////////////////
+//
+/////////////////////////////////////////////////////////////////////////////
+
+void HTTPRequest::FormatActionResponse( Serializer *pSer )
+{
+    m_eResponseType     = ResponseTypeOther;
+    m_sResponseTypeText = pSer->GetContentType();
+    m_nResponseStatus   = 200;
+
+    pSer->AddHeaders( m_mapRespHeaders );
+
+    //m_response << pFormatter->ToString();
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -597,51 +610,55 @@ void HTTPRequest::FormatActionResponse(const NameValues &args)
     m_eResponseType   = ResponseTypeXML;
     m_nResponseStatus = 200;
 
-    m_response << "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n";
+    QTextStream stream( &m_response );
+
+    stream << "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n";
 
     if (m_bSOAPRequest)
     {
         m_mapRespHeaders[ "EXT" ] = "";
 
-        m_response << SOAP_ENVELOPE_BEGIN
-                   << "<u:" << m_sMethod << "Response xmlns:u=\""
-                   << m_sNameSpace << "\">\r\n";
+        stream << SOAP_ENVELOPE_BEGIN
+               << "<u:" << m_sMethod << "Response xmlns:u=\""
+               << m_sNameSpace << "\">\r\n";
     }
     else
-        m_response << "<" << m_sMethod << "Response>\r\n";
+        stream << "<" << m_sMethod << "Response>\r\n";
 
     NameValues::const_iterator nit = args.begin();
     for (; nit != args.end(); ++nit)
     {
-        m_response << "<" << (*nit).sName;
+        stream << "<" << (*nit).sName;
 
         if ((*nit).pAttributes)
         {
             NameValues::const_iterator nit2 = (*nit).pAttributes->begin();
             for (; nit2 != (*nit).pAttributes->end(); ++nit2)
             {
-                m_response << " " << (*nit2).sName << "='"
-                           << Encode( (*nit2).sValue ) << "'";
+                stream << " " << (*nit2).sName << "='"
+                       << Encode( (*nit2).sValue ) << "'";
             }
         }
 
-        m_response << ">";
+        stream << ">";
 
         if (m_bSOAPRequest)
-            m_response << Encode( (*nit).sValue );
+            stream << Encode( (*nit).sValue );
         else
-            m_response << (*nit).sValue;
+            stream << (*nit).sValue;
 
-        m_response << "</" << (*nit).sName << ">\r\n";
+        stream << "</" << (*nit).sName << ">\r\n";
     }
 
     if (m_bSOAPRequest)
     {
-        m_response << "</u:" << m_sMethod << "Response>\r\n"
+        stream << "</u:" << m_sMethod << "Response>\r\n"
                    << SOAP_ENVELOPE_END;
     }
     else
-        m_response << "</" << m_sMethod << "Response>\r\n";
+        stream << "</" << m_sMethod << "Response>\r\n";
+
+    stream.flush();
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -653,7 +670,11 @@ void HTTPRequest::FormatRawResponse(const QString &sXML)
     m_eResponseType   = ResponseTypeXML;
     m_nResponseStatus = 200;
 
-    m_response << sXML;
+    QTextStream stream( &m_response );
+
+    stream << sXML;
+
+    stream.flush();
 }
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -697,8 +718,13 @@ void HTTPRequest::SetRequestProtocol( const QString &sLine )
 
 ContentType HTTPRequest::SetContentType( const QString &sType )
 {
-    if (sType == "application/x-www-form-urlencoded") return( m_eContentType = ContentType_Urlencoded );
-    if (sType == "text/xml"                         ) return( m_eContentType = ContentType_XML        );
+    if ((sType == "application/x-www-form-urlencoded"          ) ||
+        (sType.startsWith("application/x-www-form-urlencoded;")))
+        return( m_eContentType = ContentType_Urlencoded );
+
+    if ((sType == "text/xml"                                   ) ||
+        (sType.startsWith("text/xml;")                         ))
+        return( m_eContentType = ContentType_XML        );
 
     return( m_eContentType = ContentType_Unknown );
 }
@@ -837,7 +863,11 @@ long HTTPRequest::GetParameters( QString sParams, QStringMap &mapParams  )
 {
     long nCount = 0;
 
-    sParams.replace( "%26", "&" );
+    VERBOSE(VB_UPNP|VB_EXTRA, QString("sParams: '%1'").arg(sParams));
+
+    // This looks odd, but it is here to cope with stupid UPnP clients that
+    // forget to de-escape the URLs.  We can't map %26 here as well, as that
+    // breaks anything that is trying to pass & as part of a name or value.
     sParams.replace( "&amp;", "&" );
 
     if (sParams.length() > 0)
@@ -849,6 +879,7 @@ long HTTPRequest::GetParameters( QString sParams, QStringMap &mapParams  )
         {
             QString sName  = (*it).section( '=', 0, 0 );
             QString sValue = (*it).section( '=', 1 );
+            sValue.replace("+"," ");
 
             if ((sName.length() != 0) && (sValue.length() !=0))
             {
@@ -887,6 +918,11 @@ QString HTTPRequest::GetHeaderValue( const QString &sKey, QString sDefault )
 QString HTTPRequest::GetAdditionalHeaders( void )
 {
     QString sHeader = m_szServerHeaders;
+
+    // Override the cache-control header on protected resources.
+
+    if (m_bProtected)
+        m_mapRespHeaders[ "Cache-control" ] = "no-cache";
 
     for ( QStringMap::iterator it  = m_mapRespHeaders.begin();
                                it != m_mapRespHeaders.end();
@@ -996,6 +1032,25 @@ bool HTTPRequest::ParseRequest()
             return false;
         }
 
+        m_bProtected = false;
+
+        if (IsUrlProtected( m_sBaseUrl ))
+        {
+            if (!Authenticated())
+            {
+                m_eResponseType   = ResponseTypeHTML;
+                m_nResponseStatus = 401;
+                m_mapRespHeaders[ "WWW-Authenticate" ] = "Basic realm=\"MythTV\"";
+
+                m_response.write( Static401Error );
+
+                return true;
+            }
+
+            m_bProtected = true;
+        }
+
+
         bSuccess = true;
 
         SetContentType( m_mapHeaders[ "content-type" ] );
@@ -1094,6 +1149,8 @@ void HTTPRequest::ProcessRequestLine( const QString &sLine )
         {
             //m_sBaseUrl = tokens[1].section( '?', 0, 0).trimmed();
             m_sBaseUrl = (QUrl::fromPercentEncoding(tokens[1].toUtf8())).section( '?', 0, 0).trimmed();
+
+            m_sResourceUrl = m_sBaseUrl;  // Save complete url without paramaters
 
             // Process any Query String Parameters
 
@@ -1278,11 +1335,38 @@ bool HTTPRequest::ProcessSOAPPayload( const QString &sSOAPAction )
     // XML Document Loaded... now parse it
     // --------------------------------------------------------------
 
-    m_sNameSpace    = sSOAPAction.section( '#', 0, 0).remove( 0, 1);
-    m_sMethod       = sSOAPAction.section( '#', 1 );
-    m_sMethod.remove( m_sMethod.length()-1, 1 );
+    QString sService;
+
+    if (sSOAPAction.contains( '#' ))
+    {
+        m_sNameSpace    = sSOAPAction.section( '#', 0, 0).remove( 0, 1);
+        m_sMethod       = sSOAPAction.section( '#', 1 );
+        m_sMethod.remove( m_sMethod.length()-1, 1 );
+    }
+    else
+    {
+        if (sSOAPAction.contains( '/' ))
+        {
+            int nPos       = sSOAPAction.lastIndexOf( '/' );
+            m_sNameSpace   = sSOAPAction.mid( 1, nPos );
+            m_sMethod      = sSOAPAction.mid( nPos + 1, sSOAPAction.length() - nPos - 2  );
+
+            nPos           = m_sNameSpace.lastIndexOf( '/', -2);
+            sService       = m_sNameSpace.mid( nPos + 1, m_sNameSpace.length() - nPos - 2  );
+            m_sNameSpace   = m_sNameSpace.mid( 0, nPos );
+        }
+        else
+        {
+            m_sNameSpace = QString::null;
+            m_sMethod    = sSOAPAction;
+            m_sMethod.remove( QChar( '\"' ) );
+        }
+    }
 
     QDomNodeList oNodeList = doc.elementsByTagNameNS( m_sNameSpace, m_sMethod );
+
+    if (oNodeList.count() == 0)
+        oNodeList = doc.elementsByTagNameNS( "http://schemas.xmlsoap.org/soap/envelope/", "Body" );
 
     if (oNodeList.count() > 0)
     {
@@ -1325,6 +1409,34 @@ bool HTTPRequest::ProcessSOAPPayload( const QString &sSOAPAction )
 //
 /////////////////////////////////////////////////////////////////////////////
 
+Serializer *HTTPRequest::GetSerializer()
+{
+    Serializer *pSerializer = NULL;
+
+    if (m_bSOAPRequest) 
+        pSerializer = (Serializer *)new SoapSerializer( &m_response, m_sNameSpace, m_sMethod );
+    else
+    {
+        QString sAccept = GetHeaderValue( "Accept", "*/*" );
+        
+        if (sAccept.contains( "application/json", Qt::CaseInsensitive ))    
+            pSerializer = (Serializer *)new JSONSerializer( &m_response, m_sMethod );
+        else if (sAccept.contains( "text/javascript", Qt::CaseInsensitive ))    
+            pSerializer = (Serializer *)new JSONSerializer( &m_response, m_sMethod );
+    }
+
+    // Default to XML
+
+    if (pSerializer == NULL)
+        pSerializer = (Serializer *)new XmlSerializer( &m_response, m_sMethod );
+
+    return pSerializer;
+}
+
+/////////////////////////////////////////////////////////////////////////////
+//
+/////////////////////////////////////////////////////////////////////////////
+
 QString HTTPRequest::Encode(const QString &sIn)
 {
     QString sStr = sIn;
@@ -1338,6 +1450,68 @@ QString HTTPRequest::Encode(const QString &sIn)
     //VERBOSE(VB_UPNP, QString("HTTPRequest::Encode Output : %1").arg(sStr));
     return sStr;
 }
+
+/////////////////////////////////////////////////////////////////////////////
+//
+/////////////////////////////////////////////////////////////////////////////
+
+bool HTTPRequest::IsUrlProtected( const QString &sBaseUrl )
+{
+    QString sProtected = UPnp::GetConfiguration()->GetValue( "HTTP/Protected/Urls", "/setup;/Config" );
+
+    QStringList oList = sProtected.split( ';' );
+
+    for( int nIdx = 0; nIdx < oList.count(); nIdx++)
+    {
+        if (sBaseUrl.startsWith( oList[nIdx], Qt::CaseInsensitive ))
+            return true;
+    }
+
+    return false;
+}
+
+/////////////////////////////////////////////////////////////////////////////
+//
+/////////////////////////////////////////////////////////////////////////////
+
+bool HTTPRequest::Authenticated()
+{
+    QStringList oList = m_mapHeaders[ "authorization" ].split( ' ' );
+
+    if (oList.count() < 2)
+        return false;
+
+    if (oList[0].compare( "basic", Qt::CaseInsensitive ) != 0)
+        return false;
+
+    QString sCredentials = QByteArray::fromBase64( oList[1].toUtf8() );
+    
+    oList = sCredentials.split( ':' );
+
+    if (oList.count() < 2)
+        return false;
+
+    QString sUserName = UPnp::GetConfiguration()->GetValue( "HTTP/Protected/UserName", "admin" );
+    
+
+    if (oList[0].compare( sUserName, Qt::CaseInsensitive ) != 0)
+        return false;
+
+    QString sPassword = UPnp::GetConfiguration()->GetValue( "HTTP/Protected/Password", 
+                                 /* mythtv */ "8hDRxR1+E/n3/s3YUOhF+lUw7n4=" );
+
+    QCryptographicHash crypto( QCryptographicHash::Sha1 );
+
+    crypto.addData( oList[1].toUtf8() );
+
+    QString sPasswordHash( crypto.result().toBase64() );
+
+    if (sPasswordHash != sPassword )
+        return false;
+    
+    return true;
+}
+
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////

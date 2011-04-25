@@ -18,6 +18,7 @@ using namespace std;
 #include <QList>
 
 #include "mythobservable.h"
+#include "mythexp.h"
 
 class QObject;
 class Buffer;
@@ -101,6 +102,7 @@ public:
     OutputListeners();
     virtual ~OutputListeners();
 
+    bool hasVisual(void) { return visuals.size(); }
     void addVisual(MythTV::Visual *);
     void removeVisual(MythTV::Visual *);
 

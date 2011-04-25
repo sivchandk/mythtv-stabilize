@@ -46,11 +46,15 @@ class VideoOutputOpenGL : public VideoOutput
     void MoveResizeWindow(QRect new_rect);
 
     virtual void RemovePIP(MythPlayer *pipplayer);
-    virtual bool IsPIPSupported(void) const   { return true; }
+    virtual bool IsPIPSupported(void) const   { return false/*true*/; }
     virtual bool hasFullScreenOSD(void) const { return true; }
-    virtual bool IsSyncLocked(void) const     { return true; }
     virtual bool ApproveDeintFilter(const QString& filtername) const;
     virtual MythPainter *GetOSDPainter(void)  { return (MythPainter*)gl_painter; }
+
+    virtual bool CanVisualise(AudioPlayer *audio, MythRender *render)
+        { return VideoOutput::CanVisualise(audio, gl_context);       }
+    virtual bool SetupVisualisation(AudioPlayer *audio, MythRender *render)
+        { return VideoOutput::SetupVisualisation(audio, gl_context); }
 
   protected:
     virtual bool CreateBuffers(void);

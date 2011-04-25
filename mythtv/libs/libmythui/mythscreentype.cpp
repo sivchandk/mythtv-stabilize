@@ -121,8 +121,8 @@ bool MythScreenType::SetFocusWidget(MythUIType *widget)
     m_CurrentFocusWidget = widget;
     m_CurrentFocusWidget->TakeFocus();
 
-    if (helpText)
-        helpText->SetText(m_CurrentFocusWidget->GetHelpText());
+    if (helpText && !widget->GetHelpText().isEmpty())
+        helpText->SetText(widget->GetHelpText());
 
     return true;
 }
@@ -445,6 +445,10 @@ bool MythScreenType::keyPressEvent(QKeyEvent *event)
                                  .arg(action.mid(8)));
             QCoreApplication::postEvent(
                 GetMythMainWindow()->GetSystemEventHandler(), me.clone());
+        }
+        else if (action == ACTION_SCREENSHOT)
+        {
+            GetMythMainWindow()->ScreenShot();
         }
         else
             handled = false;

@@ -214,7 +214,10 @@ class Recorded( DBDataWrite, CMPRecord ):
                 'force' forces a delete if the file cannot be found.
                 'rerecord' sets the file as recordable in oldrecorded
         """
-        return self.getProgram().delete(force, rerecord)
+        try:
+            return self.getProgram().delete(force, rerecord)
+        except NoneType:
+            raise MythError("Program could not be found")
 
     def open(self, type='r'):
         """Recorded.open(type='r') -> file or FileTransfer object"""
@@ -413,7 +416,7 @@ class OldRecorded( DBDataWrite, RECSTATUS, CMPRecord ):
                  'category':'',  'seriesid':'',      'programid':'',
                  'findid':0,     'recordid':0,       'station':'',
                  'rectype':0,    'duplicate':0,      'recstatus':-3,
-                 'reactivate':0, 'generic':0}
+                 'reactivate':0, 'generic':0,        'future':None}
 
     def __str__(self):
         if self._wheredat is None:
@@ -429,6 +432,9 @@ class OldRecorded( DBDataWrite, RECSTATUS, CMPRecord ):
             if None not in data:
                 data = [data[0], datetime.duck(data[1])]
         DBDataWrite.__init__(self, data, db)
+        if self.future:
+            raise MythDBError(MythError.DB_RESTRICT, "'future' OldRecorded " +\
+                        "instances are not usable from the bindings.")
 
     def setDuplicate(self, record=False):
         """
@@ -579,6 +585,25 @@ class Guide( DBData, CMPRecord ):
         for key in ('startTime','endTime','lastModified'):
             if key in attrib:
                 dat[key.lower()] = datetime.fromIso(attrib[key])
+
+        raw = []
+        for key in db.tablefields[cls._table]:
+            if key in dat:
+                raw.append(dat[key])
+            else:
+                raw.append(None)
+        return cls.fromRaw(raw, db)
+
+    @classmethod
+    def fromJSON(cls, prog, db=None):
+        dat = {}
+        for key in ('ChanId','Title','SubTitle','Category'):
+            dat[key.lower()] = prog[key]
+        for key,key2 in (('CatType', 'category_type'),):
+            dat[key2] = prog[key]
+        for key in ('StartTime', 'EndTime'):
+            dat[key.lower()] = datetime.fromIso(prog[key])
+        dat['airdate'] = dat['starttime'].year
 
         raw = []
         for key in db.tablefields[cls._table]:
@@ -1004,8 +1029,6 @@ class VideoGrabber( Grabber ):
                                   path[self.mode]))
         except KeyError:
             raise MythError('Invalid MythVideo grabber')
-        self._check_schema('mythvideo.DBSchemaVer',
-                                MVSCHEMA_VERSION, 'MythVideo')
         self.append('-l',lang)
 
 #### MYTHNETVISION ####

@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdint.h>
 #include "fourcc.h"
+#include "mythtvexp.h" // for MUNUSED
 
 #ifdef __cplusplus
 extern "C" {
@@ -64,10 +65,10 @@ typedef struct VideoFrame_
 static inline void init(VideoFrame *vf, VideoFrameType _codec,
                         unsigned char *_buf, int _width, int _height, int _size,
                         const int *p = 0,
-                        const int *o = 0) __attribute__ ((unused));
-static inline void clear(VideoFrame *vf) __attribute__ ((unused));
+                        const int *o = 0) MUNUSED;
+static inline void clear(VideoFrame *vf) MUNUSED;
 static inline bool compatible(const VideoFrame *a,
-                              const VideoFrame *b) __attribute__ ((unused));
+                              const VideoFrame *b) MUNUSED;
 static inline int  bitsperpixel(VideoFrameType type);
 
 static inline void init(VideoFrame *vf, VideoFrameType _codec,
@@ -220,6 +221,20 @@ static inline int bitsperpixel(VideoFrameType type)
             res = 8;
     }
     return res;
+}
+
+static inline uint buffersize(VideoFrameType type, int width, int height)
+{
+    int  type_bpp = bitsperpixel(type);
+    uint bpp = type_bpp / 4; /* bits per pixel div common factor */
+    uint bpb =  8 / 4; /* bits per byte div common factor */
+
+    // If the buffer sizes are not a multple of 16, adjust.
+    // old versions of MythTV allowed people to set invalid
+    // dimensions for MPEG-4 capture, no need to segfault..
+    uint adj_w = (width  + 15) & ~0xF;
+    uint adj_h = (height + 15) & ~0xF;
+    return (adj_w * adj_h * bpp + 4/* to round up */) / bpb;
 }
 
 #endif /* __cplusplus */

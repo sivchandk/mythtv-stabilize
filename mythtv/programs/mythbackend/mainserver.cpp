@@ -181,7 +181,7 @@ MainServer::MainServer(bool master, int port,
     encoderList(tvList), mythserver(NULL), masterServerReconnect(NULL),
     masterServer(NULL), ismaster(master), masterBackendOverride(false),
     m_sched(sched), m_expirer(expirer), deferredDeleteTimer(NULL),
-    autoexpireUpdateTimer(NULL), m_exitCode(BACKEND_EXIT_OK)
+    autoexpireUpdateTimer(NULL), m_exitCode(GENERIC_EXIT_OK)
 {
     PreviewGeneratorQueue::CreatePreviewGeneratorQueue(
         PreviewGenerator::kLocalAndRemote, ~0, 0);
@@ -204,7 +204,7 @@ MainServer::MainServer(bool master, int port,
     {
         VERBOSE(VB_IMPORTANT, QString("Failed to bind port %1. Exiting.")
                 .arg(port));
-        SetExitCode(BACKEND_BUGGY_EXIT_NO_BIND_MAIN, false);
+        SetExitCode(GENERIC_EXIT_SOCKET_ERROR, false);
         return;
     }
 
@@ -408,7 +408,7 @@ void MainServer::ProcessRequestWork(MythSocket *sock)
     }
     else if (command == "QUERY_FILE_EXISTS")
     {
-        if (listline.size() < 3)
+        if (listline.size() < 2)
             VERBOSE(VB_IMPORTANT, "Bad QUERY_FILE_EXISTS command");
         else
             HandleQueryFileExists(listline, pbs);
@@ -520,6 +520,14 @@ void MainServer::ProcessRequestWork(MythSocket *sock)
             VERBOSE(VB_IMPORTANT, "Bad QUERY_RECORDER");
         else
             HandleRecorderQuery(listline, tokens, pbs);
+    }
+    else if (command == "QUERY_RECORDING_DEVICE")
+    {
+        // TODO
+    }
+    else if (command == "QUERY_RECORDING_DEVICES")
+    {
+        // TODO
     }
     else if (command == "SET_NEXT_LIVETV_DIR")
     {
@@ -1487,7 +1495,7 @@ void MainServer::HandleAnnounce(QStringList &slist, QStringList commands,
             for (it = checkfiles.begin(); it != checkfiles.end(); ++it)
             {
                 if (dir.exists(*it) &&
-                    QFileInfo(dir, *it).size() >= RingBuffer::kReadTestSize)
+                    QFileInfo(dir, *it).size() >= kReadTestSize)
                 {
                     retlist<<*it;
                 }
@@ -1540,7 +1548,8 @@ void MainServer::SendResponse(MythSocket *socket, QStringList &commands)
 /**
  * \addtogroup myth_network_protocol
  * \par        QUERY_RECORDINGS \e type
- * The \e type parameter can be either "Play", "Recording" or "Delete".
+ * The \e type parameter can be either "Recording", "Unsorted", "Ascending",
+ * or "Descending".
  * Returns programinfo (title, subtitle, description, category, chanid,
  * channum, callsign, channel.name, fileURL, \e et \e cetera)
  */
@@ -1557,10 +1566,18 @@ void MainServer::HandleQueryRecordings(QString type, PlaybackSock *pbs)
     QMap<QString,bool> isJobRunning =
         ProgramInfo::QueryJobsRunning(JOB_COMMFLAG);
 
+    int sort = 0;
+    // Allow "Play" and "Delete" for backwards compatibility with protocol
+    // version 56 and below.
+    if ((type == "Ascending") || (type == "Play"))
+        sort = 1;
+    else if ((type == "Descending") || (type == "Delete"))
+        sort = -1;
+
     ProgramList destination;
     LoadFromRecorded(
         destination, (type == "Recording"),
-        inUseMap, isJobRunning, recMap);
+        inUseMap, isJobRunning, recMap, sort);
 
     QMap<QString,ProgramInfo*>::iterator mit = recMap.begin();
     for (; mit != recMap.end(); mit = recMap.erase(mit))
@@ -1747,16 +1764,16 @@ void MainServer::HandleFillProgramInfo(QStringList &slist, PlaybackSock *pbs)
     SendResponse(pbssock, strlist);
 }
 
-void *MainServer::SpawnDeleteThread(void *param)
+void DeleteThread::run(void)
 {
-    DeleteStruct *ds = (DeleteStruct *)param;
+    if (!m_parent)
+        return;
 
-    MainServer *ms = ds->ms;
-    ms->DoDeleteThread(ds);
+    MainServer *ms = m_parent->ms;
+    ms->DoDeleteThread(m_parent);
 
-    delete ds;
-
-    return NULL;
+    delete m_parent;
+    this->deleteLater();
 }
 
 void MainServer::DoDeleteThread(const DeleteStruct *ds)
@@ -1946,7 +1963,7 @@ void MainServer::DeleteRecordedFiles(const DeleteStruct *ds)
                     .arg(logInfo).arg(query.value(0).toString()));
 
             StorageGroup sgroup(storagegroup);
-            QString localFile = sgroup.FindRecordingFile(basename);
+            QString localFile = sgroup.FindFile(basename);
             QString url = QString("myth://%1@%2:%3/%4").arg(storagegroup)
                 .arg(gCoreContext->GetSettingOnHost("BackendServerIP", hostname))
                 .arg(gCoreContext->GetSettingOnHost("BackendServerPort", hostname))
@@ -2267,6 +2284,11 @@ void MainServer::DoHandleStopRecording(
     if (pbs)
         pbssock = pbs->getSocket();
 
+    if (recinfo.GetRecordingStatus() == rsRecording)
+        recinfo.SetRecordingStatus(rsRecorded);
+    else if (recinfo.GetRecordingStatus() != rsRecorded)
+        recinfo.SetRecordingStatus(rsFailed);
+
     if (ismaster && recinfo.GetHostname() != gCoreContext->GetHostName())
     {
         PlaybackSock *slave = GetSlaveByHostname(recinfo.GetHostname());
@@ -2278,7 +2300,6 @@ void MainServer::DoHandleStopRecording(
             if (num > 0)
             {
                 (*encoderList)[num]->StopRecording();
-                recinfo.SetRecordingStatus(rsRecorded);
                 if (m_sched)
                     m_sched->UpdateRecStatus(&recinfo);
             }
@@ -2297,7 +2318,6 @@ void MainServer::DoHandleStopRecording(
             // recording has stopped and the status should be updated.
             // Continue so that the master can try to update the endtime
             // of the file is in a shared directory.
-            recinfo.SetRecordingStatus(rsRecorded);
             if (m_sched)
                 m_sched->UpdateRecStatus(&recinfo);
         }
@@ -2325,7 +2345,6 @@ void MainServer::DoHandleStopRecording(
 
             if (ismaster)
             {
-                recinfo.SetRecordingStatus(rsRecorded);
                 if (m_sched)
                     m_sched->UpdateRecStatus(&recinfo);
             }
@@ -2408,7 +2427,8 @@ void MainServer::DoHandleDeleteRecording(
     {
         recinfo.ApplyRecordRecGroupChange("Deleted");
         recinfo.SaveAutoExpire(kDeletedAutoExpire, true);
-        if (recinfo.GetRecordingStatus() == rsRecording)
+        if (recinfo.GetRecordingStatus() == rsRecording ||
+            recinfo.GetRecordingStatus() == rsTuning)
             DoHandleStopRecording(recinfo, NULL);
         if (forgetHistory)
             recinfo.ForgetHistory();
@@ -2416,6 +2436,11 @@ void MainServer::DoHandleDeleteRecording(
         SendResponse(pbssock, outputlist);
         return;
     }
+
+    if (recinfo.GetRecordingStatus() == rsRecording)
+        recinfo.SetRecordingStatus(rsRecorded);
+    else if (recinfo.GetRecordingStatus() != rsRecorded)
+        recinfo.SetRecordingStatus(rsFailed);
 
     // If this recording was made by a another recorder, and that
     // recorder is available, tell it to do the deletion.
@@ -2430,7 +2455,6 @@ void MainServer::DoHandleDeleteRecording(
             if (num > 0)
             {
                 (*encoderList)[num]->StopRecording();
-                recinfo.SetRecordingStatus(rsRecorded);
                 if (m_sched)
                     m_sched->UpdateRecStatus(&recinfo);
             }
@@ -2471,7 +2495,6 @@ void MainServer::DoHandleDeleteRecording(
 
             if (ismaster)
             {
-                recinfo.SetRecordingStatus(rsRecorded);
                 if (m_sched)
                     m_sched->UpdateRecStatus(&recinfo);
             }
@@ -2508,12 +2531,9 @@ void MainServer::DoHandleDeleteRecording(
 
         recinfo.SaveDeletePendingFlag(true);
 
-        pthread_t deleteThread;
-        pthread_attr_t attr;
-        pthread_attr_init(&attr);
-        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-        pthread_create(&deleteThread, &attr, SpawnDeleteThread, ds);
-        pthread_attr_destroy(&attr);
+        DeleteThread *deleteThread = new DeleteThread;
+        deleteThread->SetParent(ds);
+        deleteThread->start();
     }
     else
     {
@@ -2569,7 +2589,7 @@ void MainServer::HandleUndeleteRecording(QStringList &slist, PlaybackSock *pbs)
 void MainServer::DoHandleUndeleteRecording(
     RecordingInfo &recinfo, PlaybackSock *pbs)
 {
-    bool ret = -1;
+    int ret = -1;
     bool undelete_possible =
             gCoreContext->GetNumSetting("AutoExpireInsteadOfDelete", 0);
     MythSocket *pbssock = NULL;
@@ -2875,7 +2895,7 @@ void MainServer::HandleQueryFileHash(QStringList &slist, PlaybackSock *pbs)
 
     StorageGroup sgroup(storageGroup, gCoreContext->GetHostName());
 
-    QString fullname = sgroup.FindRecordingFile(filename);
+    QString fullname = sgroup.FindFile(filename);
     QString hash = FileHash(fullname);
 
     retlist << hash;
@@ -2912,7 +2932,7 @@ void MainServer::HandleQueryFileExists(QStringList &slist, PlaybackSock *pbs)
 
     StorageGroup sgroup(storageGroup, gCoreContext->GetHostName());
 
-    QString fullname = sgroup.FindRecordingFile(filename);
+    QString fullname = sgroup.FindFile(filename);
 
     if (!fullname.isEmpty())
     {
@@ -3080,13 +3100,22 @@ void MainServer::HandleSGGetFileList(QStringList &sList,
                                      PlaybackSock *pbs)
 {
     MythSocket *pbssock = pbs->getSocket();
+    QStringList strList;
+
+    if ((sList.size() < 4) || (sList.size() > 5))
+    {
+        VERBOSE(VB_IMPORTANT, QString("HandleSGGetFileList: Invalid Request. "
+                                      "%1").arg(sList.join("[]:[]")));
+        strList << "EMPTY LIST";
+        SendResponse(pbssock, strList);
+        return;
+    }
 
     QString host = gCoreContext->GetHostName();
     QString wantHost = sList.at(1);
     QString groupname = sList.at(2);
     QString path = sList.at(3);
     bool fileNamesOnly = false;
-    QStringList strList;
 
     if (sList.size() >= 5)
         fileNamesOnly = sList.at(4).toInt();
@@ -3137,11 +3166,20 @@ void MainServer::HandleSGFileQuery(QStringList &sList,
                                      PlaybackSock *pbs)
 {
     MythSocket *pbssock = pbs->getSocket();
+    QStringList strList;
+
+    if (sList.size() != 4)
+    {
+        VERBOSE(VB_IMPORTANT, QString("HandleSGFileQuery: Invalid Request. %1")
+                .arg(sList.join("[]:[]")));
+        strList << "EMPTY LIST";
+        SendResponse(pbssock, strList);
+        return;
+    }
 
     QString wantHost = sList.at(1);
     QString groupname = sList.at(2);
     QString filename = sList.at(3);
-    QStringList strList;
 
     bool slaveUnreachable = false;
 
@@ -4452,16 +4490,16 @@ void MainServer::GetFilesystemInfos(vector <FileSystemInfo> &fsInfos)
     }
 }
 
-void *MainServer::SpawnTruncateThread(void *param)
+void TruncateThread::run(void)
 {
-    DeleteStruct *ds = (DeleteStruct *)param;
+    if (!m_parent)
+        return;
 
-    MainServer *ms = ds->ms;
-    ms->DoTruncateThread(ds);
+    MainServer *ms = m_parent->ms;
+    ms->DoTruncateThread(m_parent);
 
-    delete ds;
-
-    return NULL;
+    delete m_parent;
+    this->deleteLater();
 }
 
 void MainServer::DoTruncateThread(const DeleteStruct *ds)
@@ -4500,7 +4538,7 @@ bool MainServer::HandleDeleteFile(QString filename, QString storagegroup,
         return false;
     }
 
-    QString fullfile = sgroup.FindRecordingFile(filename);
+    QString fullfile = sgroup.FindFile(filename);
 
     if (fullfile.isEmpty()) {
         VERBOSE(VB_IMPORTANT, QString("Unable to find %1 in HandleDeleteFile()")
@@ -4553,18 +4591,15 @@ bool MainServer::HandleDeleteFile(QString filename, QString storagegroup,
         ds->fd = fd;
         ds->size = size;
 
-        pthread_t truncateThread;
-        pthread_attr_t attr;
-        pthread_attr_init(&attr);
-        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-        pthread_create(&truncateThread, &attr, SpawnTruncateThread, ds);
-        pthread_attr_destroy(&attr);
+        TruncateThread *truncateThread = new TruncateThread;
+        truncateThread->SetParent(ds);
+        truncateThread->run();
     }
 
     return true;
 }
 
-// Helper function for the guts of HandleCommBreakQuery + HandleCutListQuery
+// Helper function for the guts of HandleCommBreakQuery + HandleCutlistQuery
 void MainServer::HandleCutMapQuery(const QString &chanid,
                                    const QString &starttime,
                                    PlaybackSock *pbs, bool commbreak)
@@ -5841,7 +5876,7 @@ QString MainServer::LocalFilePath(const QUrl &url, const QString &wantgroup)
                 lpath = QFileInfo(lpath).fileName();
             }
 
-            QString tmpFile = sgroup.FindRecordingFile(lpath);
+            QString tmpFile = sgroup.FindFile(lpath);
             if (!tmpFile.isEmpty())
             {
                 lpath = tmpFile;

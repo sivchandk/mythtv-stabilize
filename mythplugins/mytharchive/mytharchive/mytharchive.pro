@@ -12,7 +12,6 @@ DEPENDPATH *= $${INCLUDEPATH}
 LIBS += -lmythswscale
 LIBS += -lmythavformat
 LIBS += -lmythavcodec
-LIBS += -lmythavcore
 LIBS += -lmythavutil
 LIBS += -lmythmetadata-$$LIBVERSION
 
@@ -64,6 +63,8 @@ INSTALLS +=  nativeuifiles
 
 #The following line was inserted by qt3to4
 QT += xml sql opengl
+
+DEFINES += MPLUGIN_API
 
 use_hidesyms {
     QMAKE_CXXFLAGS += -fvisibility=hidden

@@ -34,10 +34,6 @@ using namespace std;
 
 
 #define FFTW_N 512
-extern "C" {
-void *av_malloc(unsigned int size);
-void av_free(void *ptr);
-}
 
 Spectrum::Spectrum()
 #if defined(FFTW3_SUPPORT) || defined(FFTW2_SUPPORT)
@@ -104,19 +100,22 @@ void Spectrum::resize(const QSize &newsize)
 
     size = newsize;
 
+    analyzerBarWidth = size.width() / 64;
+    if (analyzerBarWidth < 6)
+        analyzerBarWidth = 6;
     scale.setMax(192, size.width() / analyzerBarWidth);
 
     rects.resize( scale.range() );
     unsigned int i = 0;
     int w = 0;
-    for (; i < rects.size(); i++, w += analyzerBarWidth)
+    for (; i < (uint)rects.size(); i++, w += analyzerBarWidth)
     {
         rects[i].setRect(w, size.height() / 2, analyzerBarWidth - 1, 1);
     }
 
     unsigned int os = magnitudes.size();
     magnitudes.resize( scale.range() * 2 );
-    for (; os < magnitudes.size(); os++)
+    for (; os < (uint)magnitudes.size(); os++)
     {
         magnitudes[os] = 0.0;
     }
@@ -161,7 +160,7 @@ bool Spectrum::process(VisualNode *node)
 #endif
 
     index = 1;
-    for (i = 0; i < rects.size(); i++, w += analyzerBarWidth)
+    for (i = 0; i < (uint)rects.size(); i++, w += analyzerBarWidth)
     {        
 #ifdef FFTW3_SUPPORT
         magL = (log(sq(real(lout[index])) + sq(real(lout[FFTW_N - index]))) - 22.0) * 
@@ -252,7 +251,7 @@ bool Spectrum::draw(QPainter *p, const QColor &back)
     double r, g, b, per;
 
     p->fillRect(0, 0, size.width(), size.height(), back);
-    for (uint i = 0; i < rects.size(); i++)
+    for (uint i = 0; i < (uint)rects.size(); i++)
     {
         per = double( rectsp[i].height() - 2 ) / double( size.height() );
 
@@ -564,9 +563,11 @@ bool Squares::draw(QPainter *p, const QColor &back)
     int h = w;
     int center = size.height () / 2;
 
+    (void) h;
+    (void) center;
 #if defined(FFTW3_SUPPORT) || defined(FFTW2_SUPPORT)
     QRect *rectsp = rects.data();
-    for (uint i = 0; i < rects.size(); i++)
+    for (uint i = 0; i < (uint)rects.size(); i++)
         drawRect(p, &(rectsp[i]), i, center, w, h);
 
 #else
@@ -806,14 +807,14 @@ void Gears::resize(const QSize &newsize)
 
     rects.resize( scale.range() );
     int i = 0, w = 0;
-    for (; (unsigned) i < rects.size(); i++, w += analyzerBarWidth)
+    for (; (unsigned) i < (uint)rects.size(); i++, w += analyzerBarWidth)
     {
         rects[i].setRect(w, size.height() / 2, analyzerBarWidth - 1, 1);
     }
 
     int os = magnitudes.size();
     magnitudes.resize( scale.range() * 2 );
-    for (; (unsigned) os < magnitudes.size(); os++)
+    for (; (unsigned) os < (uint)magnitudes.size(); os++)
     {
         magnitudes[os] = 0.0;
     }
@@ -857,7 +858,7 @@ bool Gears::process(VisualNode *node)
     rfftw_one(plan, rin, rout);
 #endif
     index = 1;
-    for (i = 0; i < rects.size(); i++, w += analyzerBarWidth)
+    for (i = 0; i < (uint)rects.size(); i++, w += analyzerBarWidth)
     {
 #ifdef FFTW3_SUPPORT
         magL = (log(sq(real(lout[index])) + sq(real(lout[FFTW_N - index]))) - 22.0) * 

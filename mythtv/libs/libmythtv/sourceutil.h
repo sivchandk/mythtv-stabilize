@@ -10,9 +10,9 @@ using namespace std;
 #include <QString>
 
 // MythTV headers
-#include "mythexp.h"
+#include "mythtvexp.h"
 
-class MPUBLIC SourceUtil
+class MTV_PUBLIC SourceUtil
 {
   public:
     static bool    HasDigitalChannel(uint sourceid);
@@ -32,6 +32,16 @@ class MPUBLIC SourceUtil
     static bool    UpdateChannelsFromListings(
         uint sourceid, QString cardtype = QString::null);
 
+    static bool    UpdateSource( uint sourceid, QString sourcename,
+                                 QString grabber, QString userid,
+                                 QString freqtable, QString lineupid,
+                                 QString password, bool useeit,
+                                 QString configpath, int nitid);
+    static bool    CreateSource( QString sourcename,
+                                 QString grabber, QString userid,
+                                 QString freqtable, QString lineupid,
+                                 QString password, bool useeit,
+                                 QString configpath, int nitid);
     static bool    DeleteSource(uint sourceid);
     static bool    DeleteAllSources(void);
 };

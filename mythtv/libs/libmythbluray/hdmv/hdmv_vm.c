@@ -26,18 +26,22 @@
 #include "util/macro.h"
 #include "util/strutl.h"
 #include "util/logging.h"
+#include "util/mutex.h"
 
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
+#include <time.h>
 
 
 typedef struct {
-    struct timeval time;
+    time_t   time;
     uint32_t mobj_id;
 } NV_TIMER;
 
 struct hdmv_vm_s {
+
+    BD_MUTEX       mutex;
+
     /* state */
     uint32_t       pc;            /* program counter */
     BD_REGISTERS  *regs;          /* player registers */
@@ -79,12 +83,12 @@ static int _is_valid_reg(uint32_t reg)
 static int _store_reg(HDMV_VM *p, uint32_t reg, uint32_t val)
 {
     if (!_is_valid_reg(reg)) {
-        DEBUG(DBG_HDMV, "_store_reg(): invalid register 0x%x\n", reg);
+        BD_DEBUG(DBG_HDMV, "_store_reg(): invalid register 0x%x\n", reg);
         return -1;
     }
 
     if (reg & PSR_FLAG) {
-        DEBUG(DBG_HDMV, "_store_reg(): storing to PSR is not allowed\n");
+        BD_DEBUG(DBG_HDMV, "_store_reg(): storing to PSR is not allowed\n");
         return -1;
     }  else {
         return bd_gpr_write(p->regs, reg, val);
@@ -94,7 +98,7 @@ static int _store_reg(HDMV_VM *p, uint32_t reg, uint32_t val)
 static uint32_t _read_reg(HDMV_VM *p, uint32_t reg)
 {
     if (!_is_valid_reg(reg)) {
-        DEBUG(DBG_HDMV, "_read_reg(): invalid register 0x%x\n", reg);
+        BD_DEBUG(DBG_HDMV, "_read_reg(): invalid register 0x%x\n", reg);
         return 0;
     }
 
@@ -134,7 +138,7 @@ static int _store_result(HDMV_VM *p, MOBJ_CMD *cmd, uint32_t src, uint32_t dst, 
     /* store result to destination register(s) */
     if (dst != dst0) {
         if (cmd->insn.imm_op1) {
-            DEBUG(DBG_HDMV|DBG_CRIT, "ERROR: storing to imm ! ");
+            BD_DEBUG(DBG_HDMV|DBG_CRIT, "ERROR: storing to imm ! ");
             return -1;
         }
         ret = _store_reg(p, cmd->dst, dst);
@@ -142,7 +146,7 @@ static int _store_result(HDMV_VM *p, MOBJ_CMD *cmd, uint32_t src, uint32_t dst, 
 
     if (src != src0) {
         if (cmd->insn.imm_op1) {
-            DEBUG(DBG_HDMV|DBG_CRIT, "ERROR: storing to imm ! ");
+            BD_DEBUG(DBG_HDMV|DBG_CRIT, "ERROR: storing to imm ! ");
             return -1;
         }
         ret += _store_reg(p, cmd->src, src);
@@ -219,7 +223,7 @@ static int _queue_event(HDMV_VM *p, uint32_t event, uint32_t param)
         }
     }
 
-    DEBUG(DBG_HDMV|DBG_CRIT, "_queue_event(%d, %d): queue overflow !\n", event, param);
+    BD_DEBUG(DBG_HDMV|DBG_CRIT, "_queue_event(%d, %d): queue overflow !\n", event, param);
     return -1;
 }
 
@@ -243,6 +247,8 @@ HDMV_VM *hdmv_vm_init(const char *disc_root, BD_REGISTERS *regs)
 
     p->regs         = regs;
 
+    bd_mutex_init(&p->mutex);
+
     return  p;
 }
 
@@ -258,6 +264,8 @@ void hdmv_vm_free(HDMV_VM **p)
 {
     if (p && *p) {
 
+        bd_mutex_destroy(&(*p)->mutex);
+
         mobj_free(&(*p)->movie_objects);
 
         _free_ig_object(*p);
@@ -272,10 +280,10 @@ void hdmv_vm_free(HDMV_VM **p)
 
 static void _suspend_object(HDMV_VM *p)
 {
-    DEBUG(DBG_HDMV, "_suspend_object()\n");
+    BD_DEBUG(DBG_HDMV, "_suspend_object()\n");
 
     if (p->suspended_object) {
-        DEBUG(DBG_HDMV, "_suspend_object: object already suspended !\n");
+        BD_DEBUG(DBG_HDMV, "_suspend_object: object already suspended !\n");
         // [execute the call, discard old suspended object (10.2.4.2.2)].
     }
 
@@ -290,7 +298,7 @@ static void _suspend_object(HDMV_VM *p)
 static int _resume_object(HDMV_VM *p)
 {
     if (!p->suspended_object) {
-        DEBUG(DBG_HDMV|DBG_CRIT, "_resume_object: no suspended object!\n");
+        BD_DEBUG(DBG_HDMV|DBG_CRIT, "_resume_object: no suspended object!\n");
         return -1;
     }
 
@@ -299,7 +307,7 @@ static int _resume_object(HDMV_VM *p)
 
     bd_psr_restore_state(p->regs);
 
-    DEBUG(DBG_HDMV, "resuming object %p at %d\n", p->object, p->pc + 1);
+    BD_DEBUG(DBG_HDMV, "resuming object %p at %d\n", p->object, p->pc + 1);
 
     p->suspended_object = NULL;
 
@@ -313,14 +321,17 @@ static int _resume_object(HDMV_VM *p)
 
 static int _jump_object(HDMV_VM *p, int object)
 {
-    if (object < 0 || object > p->movie_objects->num_objects) {
-        DEBUG(DBG_HDMV|DBG_CRIT, "_jump_object(): invalid object %d\n", object);
+    if (object < 0 || object >= p->movie_objects->num_objects) {
+        BD_DEBUG(DBG_HDMV|DBG_CRIT, "_jump_object(): invalid object %d\n", object);
         return -1;
     }
 
-    DEBUG(DBG_HDMV, "_jump_object(): jumping to object %d\n", object);
+    BD_DEBUG(DBG_HDMV, "_jump_object(): jumping to object %d\n", object);
 
-    hdmv_vm_select_object(p, object);
+    _free_ig_object(p);
+
+    p->pc     = 0;
+    p->object = &p->movie_objects->objects[object];
 
     return 0;
 }
@@ -328,26 +339,24 @@ static int _jump_object(HDMV_VM *p, int object)
 static int _jump_title(HDMV_VM *p, int title)
 {
     if (title >= 0 && title <= 0xffff) {
-        DEBUG(DBG_HDMV, "_jump_title(%d)\n", title);
+        BD_DEBUG(DBG_HDMV, "_jump_title(%d)\n", title);
 
-        if (p->suspended_object) {
-            /* discard suspended object */
-            p->suspended_object = NULL;
-            bd_psr_restore_state(p->regs);
-        }
+        /* discard suspended object */
+        p->suspended_object = NULL;
+        bd_psr_reset_backup_registers(p->regs);
 
         _queue_event(p, HDMV_EVENT_TITLE, title);
         return 0;
     }
 
-    DEBUG(DBG_HDMV|DBG_CRIT, "_jump_title(%d): invalid title number\n", title);
+    BD_DEBUG(DBG_HDMV|DBG_CRIT, "_jump_title(%d): invalid title number\n", title);
 
     return -1;
 }
 
 static int _call_object(HDMV_VM *p, int object)
 {
-    DEBUG(DBG_HDMV, "_call_object(%d)\n", object);
+    BD_DEBUG(DBG_HDMV, "_call_object(%d)\n", object);
 
     _suspend_object(p);
 
@@ -357,7 +366,7 @@ static int _call_object(HDMV_VM *p, int object)
 static int _call_title(HDMV_VM *p, int title)
 {
     if (title >= 0 && title <= 0xffff) {
-        DEBUG(DBG_HDMV, "_call_title(%d)\n", title);
+        BD_DEBUG(DBG_HDMV, "_call_title(%d)\n", title);
 
         _suspend_object(p);
 
@@ -365,7 +374,7 @@ static int _call_title(HDMV_VM *p, int title)
         return 0;
     }
 
-    DEBUG(DBG_HDMV|DBG_CRIT, "_call_title(%d): invalid title number\n", title);
+    BD_DEBUG(DBG_HDMV|DBG_CRIT, "_call_title(%d): invalid title number\n", title);
 
     return -1;
 }
@@ -377,20 +386,20 @@ static int _call_title(HDMV_VM *p, int title)
 static int _play_at(HDMV_VM *p, int playlist, int playitem, int playmark)
 {
     if (p->ig_object && playlist >= 0) {
-        DEBUG(DBG_HDMV, "play_at(list %d, item %d, mark %d): "
+        BD_DEBUG(DBG_HDMV, "play_at(list %d, item %d, mark %d): "
               "playlist change not allowed in interactive composition\n",
               playlist, playitem, playmark);
         return -1;
     }
 
     if (!p->ig_object && playlist < 0) {
-        DEBUG(DBG_HDMV, "play_at(list %d, item %d, mark %d): "
+        BD_DEBUG(DBG_HDMV, "play_at(list %d, item %d, mark %d): "
               "playlist not given in movie object (link commands not allowed)\n",
               playlist, playitem, playmark);
         return -1;
     }
 
-    DEBUG(DBG_HDMV, "play_at(list %d, item %d, mark %d)\n",
+    BD_DEBUG(DBG_HDMV, "play_at(list %d, item %d, mark %d)\n",
           playlist, playitem, playmark);
 
     if (playlist >= 0) {
@@ -412,11 +421,11 @@ static int _play_at(HDMV_VM *p, int playlist, int playitem, int playmark)
 static int _play_stop(HDMV_VM *p)
 {
     if (!p->ig_object) {
-        DEBUG(DBG_HDMV, "_play_stop() not allowed in movie object\n");
+        BD_DEBUG(DBG_HDMV, "_play_stop() not allowed in movie object\n");
         return -1;
     }
 
-    DEBUG(DBG_HDMV, "_play_stop()\n");
+    BD_DEBUG(DBG_HDMV, "_play_stop()\n");
     _queue_event(p, HDMV_EVENT_PLAY_STOP, 0);
     return 0;
 }
@@ -427,7 +436,7 @@ static int _play_stop(HDMV_VM *p)
 
 static void _set_stream(HDMV_VM *p, uint32_t dst, uint32_t src)
 {
-    DEBUG(DBG_HDMV, "_set_stream(0x%x, 0x%x)\n", dst, src);
+    BD_DEBUG(DBG_HDMV, "_set_stream(0x%x, 0x%x)\n", dst, src);
 
     /* primary audio stream */
     if (dst & 0x80000000) {
@@ -467,7 +476,7 @@ static void _set_stream(HDMV_VM *p, uint32_t dst, uint32_t src)
 
 static void _set_sec_stream(HDMV_VM *p, uint32_t dst, uint32_t src)
 {
-    DEBUG(DBG_HDMV, "_set_sec_stream(0x%x, 0x%x)\n", dst, src);
+    BD_DEBUG(DBG_HDMV, "_set_sec_stream(0x%x, 0x%x)\n", dst, src);
 
     uint32_t disp_v_flag   = (dst >> 30) & 1;
     uint32_t disp_a_flag   = (src >> 30) & 1;
@@ -590,7 +599,7 @@ static void _set_nv_timer(HDMV_VM *p, uint32_t dst, uint32_t src)
 
   if (!timeout) {
     /* cancel timer */
-    p->nv_timer.time.tv_sec = 0;
+    p->nv_timer.time = 0;
 
     bd_psr_write(p->regs, PSR_NAV_TIMER, 0);
 
@@ -599,17 +608,17 @@ static void _set_nv_timer(HDMV_VM *p, uint32_t dst, uint32_t src)
 
   /* validate params */
   if (mobj_id >= p->movie_objects->num_objects) {
-      DEBUG(DBG_HDMV|DBG_CRIT, "_set_nv_timer(): invalid object id (%d) !\n", mobj_id);
+      BD_DEBUG(DBG_HDMV|DBG_CRIT, "_set_nv_timer(): invalid object id (%d) !\n", mobj_id);
       return;
   }
   if (timeout > 300) {
-      DEBUG(DBG_HDMV|DBG_CRIT, "_set_nv_timer(): invalid timeout (%d) !\n", timeout);
+      BD_DEBUG(DBG_HDMV|DBG_CRIT, "_set_nv_timer(): invalid timeout (%d) !\n", timeout);
       return;
   }
 
   /* set expiration time */
-  gettimeofday(&p->nv_timer.time, NULL);
-  p->nv_timer.time.tv_sec += timeout;
+  p->nv_timer.time = time(NULL);
+  p->nv_timer.time += timeout;
 
   p->nv_timer.mobj_id = mobj_id;
 
@@ -620,29 +629,21 @@ static void _set_nv_timer(HDMV_VM *p, uint32_t dst, uint32_t src)
  * Commenting out to disable "‘_check_nv_timer’ defined but not used" warning
 static int _check_nv_timer(HDMV_VM *p)
 {
-    if (p->nv_timer.time.tv_sec > 0) {
-        struct timeval now;
-        gettimeofday(&now, NULL);
+    if (p->nv_timer.time > 0) {
+        time_t now = time(NULL);
 
-        if (now.tv_sec > p->nv_timer.time.tv_sec ||
-            ( now.tv_sec  == p->nv_timer.time.tv_sec &&
-              now.tv_usec >= p->nv_timer.time.tv_usec)) {
-
-            DEBUG(DBG_HDMV, "navigation timer expired, jumping to object %d\n", p->nv_timer.mobj_id);
+        if (now >= p->nv_timer.time) {
+            BD_DEBUG(DBG_HDMV, "navigation timer expired, jumping to object %d\n", p->nv_timer.mobj_id);
 
             bd_psr_write(p->regs, PSR_NAV_TIMER, 0);
 
-            p->nv_timer.time.tv_sec = 0;
+            p->nv_timer.time = 0;
             _jump_object(p, p->nv_timer.mobj_id);
 
             return 0;
         }
 
-        unsigned int timeout = p->nv_timer.time.tv_sec - now.tv_sec;
-        if (p->nv_timer.time.tv_usec < now.tv_usec)
-            timeout ++;
-
-        bd_psr_write(p->regs, PSR_NAV_TIMER, timeout);
+        bd_psr_write(p->regs, PSR_NAV_TIMER, (p->nv_timer.time - now));
     }
 
     return -1;
@@ -662,7 +663,7 @@ static void _hdmv_trace_cmd(int pc, MOBJ_CMD *cmd)
 
         dst += mobj_sprint_cmd(dst, cmd);
 
-        DEBUG(DBG_HDMV, "%s\n", buf);
+        BD_DEBUG(DBG_HDMV, "%s\n", buf);
     }
 }
 
@@ -682,7 +683,7 @@ static void _hdmv_trace_res(uint32_t new_src, uint32_t new_dst, uint32_t orig_sr
             }
             dst += sprintf(dst, "]");
 
-            DEBUG(DBG_HDMV, "%s\n", buf);
+            BD_DEBUG(DBG_HDMV, "%s\n", buf);
         }
     }
 }
@@ -740,20 +741,20 @@ static int _hdmv_step(HDMV_VM *p)
             switch (insn->sub_grp) {
                 case BRANCH_GOTO:
                     if (insn->op_cnt > 1) {
-                        DEBUG(DBG_HDMV|DBG_CRIT, "[too many operands in BRANCH/GOTO opcode 0x%08x] ", *(uint32_t*)insn);
+                        BD_DEBUG(DBG_HDMV|DBG_CRIT, "[too many operands in BRANCH/GOTO opcode 0x%08x] ", *(uint32_t*)insn);
                     }
                     switch (insn->branch_opt) {
                         case INSN_NOP:                      break;
                         case INSN_GOTO:  p->pc   = dst - 1; break;
                         case INSN_BREAK: p->pc   = 1 << 17; break;
                         default:
-                            DEBUG(DBG_HDMV|DBG_CRIT, "[unknown BRANCH/GOTO option in opcode 0x%08x] ", *(uint32_t*)insn);
+                            BD_DEBUG(DBG_HDMV|DBG_CRIT, "[unknown BRANCH/GOTO option in opcode 0x%08x] ", *(uint32_t*)insn);
                             break;
                     }
                     break;
                 case BRANCH_JUMP:
                     if (insn->op_cnt > 1) {
-                        DEBUG(DBG_HDMV|DBG_CRIT, "[too many operands in BRANCH/JUMP opcode 0x%08x] ", *(uint32_t*)insn);
+                        BD_DEBUG(DBG_HDMV|DBG_CRIT, "[too many operands in BRANCH/JUMP opcode 0x%08x] ", *(uint32_t*)insn);
                     }
                     switch (insn->branch_opt) {
                         case INSN_JUMP_TITLE:  _jump_title(p, dst); break;
@@ -762,7 +763,7 @@ static int _hdmv_step(HDMV_VM *p)
                         case INSN_JUMP_OBJECT: if (!_jump_object(p, dst)) { inc_pc = 0; } break;
                         case INSN_CALL_OBJECT: if (!_call_object(p, dst)) { inc_pc = 0; } break;
                         default:
-                            DEBUG(DBG_HDMV|DBG_CRIT, "[unknown BRANCH/JUMP option in opcode 0x%08x] ", *(uint32_t*)insn);
+                            BD_DEBUG(DBG_HDMV|DBG_CRIT, "[unknown BRANCH/JUMP option in opcode 0x%08x] ", *(uint32_t*)insn);
                             break;
                     }
                     break;
@@ -775,23 +776,23 @@ static int _hdmv_step(HDMV_VM *p)
                         case INSN_LINK_PI:      _play_at(p,  -1, dst,  -1); break;
                         case INSN_LINK_MK:      _play_at(p,  -1,  -1, dst); break;
                         default:
-                            DEBUG(DBG_HDMV|DBG_CRIT, "[unknown BRANCH/PLAY option in opcode 0x%08x] ", *(uint32_t*)insn);
+                            BD_DEBUG(DBG_HDMV|DBG_CRIT, "[unknown BRANCH/PLAY option in opcode 0x%08x] ", *(uint32_t*)insn);
                             break;
                     }
                     break;
 
                 default:
-                    DEBUG(DBG_HDMV|DBG_CRIT, "[unknown BRANCH subgroup in opcode 0x%08x] ", *(uint32_t*)insn);
+                    BD_DEBUG(DBG_HDMV|DBG_CRIT, "[unknown BRANCH subgroup in opcode 0x%08x] ", *(uint32_t*)insn);
                     break;
             }
             break; /* INSN_GROUP_BRANCH */
 
         case INSN_GROUP_CMP:
             if (insn->op_cnt < 2) {
-                DEBUG(DBG_HDMV|DBG_CRIT, "missing operand in BRANCH/JUMP opcode 0x%08x] ", *(uint32_t*)insn);
+                BD_DEBUG(DBG_HDMV|DBG_CRIT, "missing operand in BRANCH/JUMP opcode 0x%08x] ", *(uint32_t*)insn);
             }
             switch (insn->cmp_opt) {
-                case INSN_BC: p->pc += !(dst &  src); break;
+                case INSN_BC: p->pc += !!(dst & ~src); break;
                 case INSN_EQ: p->pc += !(dst == src); break;
                 case INSN_NE: p->pc += !(dst != src); break;
                 case INSN_GE: p->pc += !(dst >= src); break;
@@ -799,7 +800,7 @@ static int _hdmv_step(HDMV_VM *p)
                 case INSN_LE: p->pc += !(dst <= src); break;
                 case INSN_LT: p->pc += !(dst <  src); break;
                 default:
-                    DEBUG(DBG_HDMV|DBG_CRIT, "[unknown COMPARE option in opcode 0x%08x] ", *(uint32_t*)insn);
+                    BD_DEBUG(DBG_HDMV|DBG_CRIT, "[unknown COMPARE option in opcode 0x%08x] ", *(uint32_t*)insn);
                     break;
             }
             break; /* INSN_GROUP_CMP */
@@ -811,7 +812,7 @@ static int _hdmv_step(HDMV_VM *p)
                     uint32_t dst0 = dst;
 
                     if (insn->op_cnt < 2) {
-                        DEBUG(DBG_HDMV|DBG_CRIT, "missing operand in SET/SET opcode 0x%08x] ", *(uint32_t*)insn);
+                        BD_DEBUG(DBG_HDMV|DBG_CRIT, "missing operand in SET/SET opcode 0x%08x] ", *(uint32_t*)insn);
                     }
                     switch (insn->set_opt) {
                         case INSN_MOVE:   dst  = src;         break;
@@ -830,7 +831,7 @@ static int _hdmv_step(HDMV_VM *p)
                         case INSN_SHL:    dst <<= src;        break;
                         case INSN_SHR:    dst >>= src;        break;
                         default:
-                            DEBUG(DBG_HDMV|DBG_CRIT, "[unknown SET option in opcode 0x%08x] ", *(uint32_t*)insn);
+                            BD_DEBUG(DBG_HDMV|DBG_CRIT, "[unknown SET option in opcode 0x%08x] ", *(uint32_t*)insn);
                             break;
                     }
 
@@ -855,18 +856,18 @@ static int _hdmv_step(HDMV_VM *p)
                         case INSN_STILL_ON:        _set_still_mode (p,   1);      break;
                         case INSN_STILL_OFF:       _set_still_mode (p,   0);      break;
                         default:
-                            DEBUG(DBG_HDMV|DBG_CRIT, "[unknown SETSYSTEM option in opcode 0x%08x] ", *(uint32_t*)insn);
+                            BD_DEBUG(DBG_HDMV|DBG_CRIT, "[unknown SETSYSTEM option in opcode 0x%08x] ", *(uint32_t*)insn);
                             break;
                     }
                     break;
                 default:
-                    DEBUG(DBG_HDMV|DBG_CRIT, "[unknown SET subgroup in opcode 0x%08x] ", *(uint32_t*)insn);
+                    BD_DEBUG(DBG_HDMV|DBG_CRIT, "[unknown SET subgroup in opcode 0x%08x] ", *(uint32_t*)insn);
                     break;
             }
             break; /* INSN_GROUP_SET */
 
         default:
-            DEBUG(DBG_HDMV|DBG_CRIT, "[unknown group in opcode 0x%08x] ", *(uint32_t*)insn);
+            BD_DEBUG(DBG_HDMV|DBG_CRIT, "[unknown group in opcode 0x%08x] ", *(uint32_t*)insn);
             break;
     }
 
@@ -882,23 +883,20 @@ static int _hdmv_step(HDMV_VM *p)
 
 int hdmv_vm_select_object(HDMV_VM *p, int object)
 {
-    if (object >= 0) {
-        if (object >= p->movie_objects->num_objects) {
-            DEBUG(DBG_HDMV|DBG_CRIT, "hdmv_vm_select_object(): invalid object reference (%d) !\n", object);
-            return -1;
-        }
+    int result;
+    bd_mutex_lock(&p->mutex);
 
-        _free_ig_object(p);
+    result = _jump_object(p, object);
 
-        p->pc     = 0;
-        p->object = &p->movie_objects->objects[object];
-    }
-
-    return 0;
+    bd_mutex_unlock(&p->mutex);
+    return result;
 }
 
 int hdmv_vm_set_object(HDMV_VM *p, int num_nav_cmds, void *nav_cmds)
 {
+    int result = -1;
+    bd_mutex_lock(&p->mutex);
+
     p->object = NULL;
 
     _free_ig_object(p);
@@ -909,48 +907,69 @@ int hdmv_vm_set_object(HDMV_VM *p, int num_nav_cmds, void *nav_cmds)
         ig_object->cmds     = calloc(num_nav_cmds, sizeof(MOBJ_CMD));
         memcpy(ig_object->cmds, nav_cmds, num_nav_cmds * sizeof(MOBJ_CMD));
 
-#if 0
-        /* ??? */
-        if (!p->ig_object && p->object) {
-            _suspend_object(p);
-        }
-#endif
         p->pc        = 0;
         p->ig_object = ig_object;
         p->object    = ig_object;
+
+        result = 0;
     }
 
-    return 0;
+    bd_mutex_unlock(&p->mutex);
+
+    return result;
 }
 
 int hdmv_vm_get_event(HDMV_VM *p, HDMV_EVENT *ev)
 {
-    return _get_event(p, ev);
+    int result;
+    bd_mutex_lock(&p->mutex);
+
+    result = _get_event(p, ev);
+
+    bd_mutex_unlock(&p->mutex);
+    return result;
 }
 
 int hdmv_vm_running(HDMV_VM *p)
 {
-    return !!p->object;
+    int result;
+    bd_mutex_lock(&p->mutex);
+
+    result = !!p->object;
+
+    bd_mutex_unlock(&p->mutex);
+    return result;
 }
 
 int hdmv_vm_resume(HDMV_VM *p)
 {
-    return _resume_object(p);
+    int result;
+    bd_mutex_lock(&p->mutex);
+
+    result = _resume_object(p);
+
+    bd_mutex_unlock(&p->mutex);
+    return result;
 }
 
 int hdmv_vm_suspend(HDMV_VM *p)
 {
+    int result = -1;
+    bd_mutex_lock(&p->mutex);
+
     if (p->object && !p->ig_object) {
         _suspend_object(p);
-        return 0;
+        result = 0;
     }
-    return -1;
+
+    bd_mutex_unlock(&p->mutex);
+    return result;
 }
 
 /* terminate program after MAX_LOOP instructions */
 #define MAX_LOOP 1000000
 
-int hdmv_vm_run(HDMV_VM *p, HDMV_EVENT *ev)
+static int _vm_run(HDMV_VM *p, HDMV_EVENT *ev)
 {
     int max_loop = MAX_LOOP;
 
@@ -961,7 +980,7 @@ int hdmv_vm_run(HDMV_VM *p, HDMV_EVENT *ev)
 
     /* valid program ? */
     if (!p->object) {
-        DEBUG(DBG_HDMV|DBG_CRIT, "hdmv_vm_run(): no object selected\n");
+        BD_DEBUG(DBG_HDMV|DBG_CRIT, "hdmv_vm_run(): no object selected\n");
         return -1;
     }
 
@@ -969,7 +988,7 @@ int hdmv_vm_run(HDMV_VM *p, HDMV_EVENT *ev)
 
         /* terminated ? */
         if (p->pc >= p->object->num_cmds) {
-            DEBUG(DBG_HDMV, "terminated with PC=%d\n", p->pc);
+            BD_DEBUG(DBG_HDMV, "terminated with PC=%d\n", p->pc);
             p->object = NULL;
             ev->event = HDMV_EVENT_END;
 
@@ -993,9 +1012,18 @@ int hdmv_vm_run(HDMV_VM *p, HDMV_EVENT *ev)
         }
     }
 
-    DEBUG(DBG_HDMV|DBG_CRIT, "hdmv_vm: infinite program ? terminated after %d instructions.\n", MAX_LOOP);
+    BD_DEBUG(DBG_HDMV|DBG_CRIT, "hdmv_vm: infinite program ? terminated after %d instructions.\n", MAX_LOOP);
     p->object = NULL;
     return -1;
 }
 
+int hdmv_vm_run(HDMV_VM *p, HDMV_EVENT *ev)
+{
+    int result;
+    bd_mutex_lock(&p->mutex);
 
+    result = _vm_run(p, ev);
+
+    bd_mutex_unlock(&p->mutex);
+    return result;
+}

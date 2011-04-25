@@ -15,6 +15,7 @@ using namespace std;
 #include <QRect>
 #include <QThread>
 
+#include "mythtvexp.h"
 #include "mythdeque.h"
 #include "tv.h"
 #include "videoouttypes.h"
@@ -59,7 +60,7 @@ class PlayerThread : public QThread
     MythPlayer *m_player;
 };
 
-class MPUBLIC PlayerContext
+class MTV_PUBLIC PlayerContext
 {
   public:
     PlayerContext(const QString &inUseID = QString("Unknown"));
@@ -181,7 +182,6 @@ class MPUBLIC PlayerContext
     int                 ff_rew_index;
     /// Caches value of ff_rew_speeds[ff_rew_index]
     int                 ff_rew_speed;
-    bool                paused;
     TVState             playingState;
 
     bool                errored;

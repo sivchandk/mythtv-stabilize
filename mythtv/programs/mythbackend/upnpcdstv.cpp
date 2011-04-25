@@ -314,7 +314,7 @@ void UPnpCDSTv::AddItem( const UPnpCDSRequest    *pRequest,
 
     QString sName      = sTitle + ": " + (sSubtitle.isEmpty() ? sDescription : sSubtitle);
 
-    QString sURIBase   = QString( "http://%1:%2/Myth/" )
+    QString sURIBase   = QString( "http://%1:%2/Content/" )
                             .arg( m_mapBackendIp  [ sHostName ] )
                             .arg( m_mapBackendPort[ sHostName ] );
 
@@ -372,7 +372,7 @@ void UPnpCDSTv::AddItem( const UPnpCDSRequest    *pRequest,
     // ----------------------------------------------------------------------
 
     StorageGroup sg(sStorageGrp, sHostName);
-    QString sFilePath = sg.FindRecordingFile(sBaseName);
+    QString sFilePath = sg.FindFile(sBaseName);
     QString sMimeType;
 
     if ( QFile::exists(sFilePath) )

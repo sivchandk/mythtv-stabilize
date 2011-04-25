@@ -1,9 +1,6 @@
 #ifndef SCHEDULER_H_
 #define SCHEDULER_H_
 
-// POSIX headers
-#include <pthread.h>
-
 // C++ headers
 #include <deque>
 #include <vector>
@@ -15,6 +12,7 @@ using namespace std;
 #include <QString>
 #include <QMutex>
 #include <QMap>
+#include <QThread>
 
 // MythTV headers
 #include "recordinginfo.h"
@@ -33,16 +31,30 @@ typedef deque<RecordingInfo*> RecList;
 typedef RecList::const_iterator RecConstIter;
 typedef RecList::iterator RecIter;
 
+class Scheduler;
+
+class ScheduleThread : public QThread
+{
+    Q_OBJECT
+  public:
+    ScheduleThread() : m_parent(NULL) {}
+    void SetParent(Scheduler *parent) { m_parent = parent; }
+    void run(void);
+  private:
+    Scheduler *m_parent;
+};
+
 class Scheduler : public QObject
 {
     Q_OBJECT
 
+    friend class ScheduleThread;
   public:
     Scheduler(bool runthread, QMap<int, EncoderLink *> *tvList,
               QString recordTbl = "record", Scheduler *master_sched = NULL);
     ~Scheduler();
 
-    void SetExpirer(AutoExpire *autoExpirer) { expirer = autoExpirer; }
+    void SetExpirer(AutoExpire *autoExpirer) { m_expirer = autoExpirer; }
 
     void Reschedule(int recordid);
     void AddRecording(const RecordingInfo&);
@@ -86,7 +98,6 @@ class Scheduler : public QObject
 
   protected:
     void RunScheduler(void);
-    static void *SchedulerThread(void *param);
 
   private:
     QString recordTable;
@@ -160,6 +171,7 @@ class Scheduler : public QObject
     QMap<QString, RecList> titlelistmap;
     InputGroupMap igrp;
 
+    QDateTime schedTime;
     bool reclist_changed;
 
     bool specsched;
@@ -168,12 +180,11 @@ class Scheduler : public QObject
     QMap<int, bool> schedAfterStartMap;
 
     QMap<int, EncoderLink *> *m_tvList;
-    AutoExpire *expirer;
+    AutoExpire *m_expirer;
 
     QMap<QString, bool> recPendingList;
 
-    pthread_t schedThread;
-    bool threadrunning;
+    ScheduleThread schedThread;
 
     MainServer *m_mainServer;
 

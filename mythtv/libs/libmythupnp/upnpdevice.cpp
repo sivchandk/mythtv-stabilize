@@ -24,6 +24,7 @@
 #include "upnp.h"
 #include "upnpdevice.h"
 #include "httpcomms.h"
+#include "mythverbose.h"
 
 // MythDB
 #include "mythdb.h"
@@ -353,7 +354,7 @@ void UPnpDeviceDesc::GetValidXML(
 //    os.setEncoding( QTextStream::UnicodeUTF8 );
 
     os << "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
-          "<root xmlns=\"urn:schemas-upnp-org:device-1-0\">\n"
+          "<root xmlns=\"urn:schemas-upnp-org:device-1-0\"  xmlns:mythtv=\"mythtv.org\">\n"
             "<specVersion>\n"
               "<major>1</major>\n"
               "<minor>0</minor>\n"
@@ -387,8 +388,8 @@ void UPnpDeviceDesc::OutputDevice( QTextStream &os,
     // ----------------------------------------------------------------------
 
     if (pDevice == &m_rootDevice)
-        sFriendlyName = UPnp::g_pConfig->GetValue( "UPnP/FriendlyName",
-                                                   sFriendlyName  );
+        sFriendlyName = UPnp::GetConfiguration()->GetValue( "UPnP/FriendlyName",
+                                                            sFriendlyName  );
 
     os << "<device>\n";
     os << FormatValue( "deviceType"   , pDevice->m_sDeviceType );
@@ -701,7 +702,7 @@ QString UPnpDeviceDesc::GetHostName()
                     "UPnpDeviceDesc: Error, could not determine host name."
                     + ENO);
 
-        return UPnp::g_pConfig->GetValue( "Settings/HostName",
+        return UPnp::GetConfiguration()->GetValue( "Settings/HostName",
                                           QString( localHostName ));
     }
 

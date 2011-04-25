@@ -154,8 +154,8 @@ bool ProgLister::Create()
     connect(m_progList, SIGNAL(itemClicked(MythUIButtonListItem*)),
             this,       SLOT(  HandleClicked()));
 
-    m_progList->SetLCDTitles(
-        tr("Program List"), "title|channel|shortstarttimedate");
+    m_progList->SetLCDTitles(tr("Program List"), "title|channel|shortstarttimedate");
+    m_progList->SetSearchFields("titlesubtitle");
 
     BuildFocusList();
 
@@ -728,7 +728,8 @@ void ProgLister::DeleteOldSeries(bool ok)
         return;
 
     MSqlQuery query(MSqlQuery::InitCon());
-    query.prepare("DELETE FROM oldrecorded WHERE title = :TITLE");
+    query.prepare("DELETE FROM oldrecorded "
+                  "WHERE title = :TITLE AND future = 0");
     query.bindValue(":TITLE", pi->GetTitle());
     if (!query.exec())
         MythDB::DBError("ProgLister::DeleteOldSeries -- delete", query);

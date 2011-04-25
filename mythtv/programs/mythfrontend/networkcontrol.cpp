@@ -1,4 +1,4 @@
-# include <unistd.h>
+#include <unistd.h>
 
 #include <QCoreApplication>
 #include <QRegExp>
@@ -216,7 +216,8 @@ NetworkControl::NetworkControl() :
     keyTextMap[Qt::Key_Bar]             = "|";
 
     stopCommandThread = false;
-    pthread_create(&command_thread, NULL, CommandThread, this);
+    command_thread.SetParent(this);
+    command_thread.start();
 
     gCoreContext->addListener(this);
 
@@ -245,7 +246,7 @@ NetworkControl::~NetworkControl(void)
     ncLock.lock();
     ncCond.wakeOne();
     ncLock.unlock();
-    pthread_join(command_thread, NULL);
+    command_thread.wait();
 }
 
 bool NetworkControl::listen(const QHostAddress & address, quint16 port)
@@ -259,12 +260,12 @@ bool NetworkControl::listen(const QHostAddress & address, quint16 port)
     return false;
 }
 
-void *NetworkControl::CommandThread(void *param)
+void NetworkCommandThread::run(void)
 {
-    NetworkControl *networkControl = static_cast<NetworkControl *>(param);
-    networkControl->RunCommandThread();
+    if (!m_parent)
+        return;
 
-    return NULL;
+    m_parent->RunCommandThread();
 }
 
 void NetworkControl::RunCommandThread(void)
@@ -905,14 +906,11 @@ QString NetworkControl::processQuery(NetworkCommand *nc)
     }
     else if (is_abbrev("version", nc->getArg(1)))
     {
-        extern const char *myth_source_version;
-        extern const char *myth_source_path;
-
         int dbSchema = gCoreContext->GetNumSetting("DBSchemaVer");
 
         return QString("VERSION: %1/%2 %3 %4 QT/%5 DBSchema/%6")
-                       .arg(myth_source_version)
-                       .arg(myth_source_path)
+                       .arg(MYTH_SOURCE_VERSION)
+                       .arg(MYTH_SOURCE_PATH)
                        .arg(MYTH_BINARY_VERSION)
                        .arg(MYTH_PROTO_VERSION)
                        .arg(QT_VERSION_STR)
@@ -1170,8 +1168,7 @@ QString NetworkControl::processHelp(NetworkCommand *nc)
     {
         helpText +=
             "screenshot               - Takes a screenshot and saves it as screenshot.png\r\n"
-            "screenshot FILENAME      - Saves the screenshot as FILENAME\r\n"
-            "screenshot FILENAME WxH  - Saves the screenshot as a WxH size image\r\n";
+            "screenshot WxH           - Saves the screenshot as a WxH size image\r\n";
     }
     else if (command == "exit")
     {
@@ -1500,92 +1497,30 @@ QString NetworkControl::listChannels(const uint start, const uint limit) const
 
 QString NetworkControl::saveScreenshot(NetworkCommand *nc)
 {
-    QString outFile = GetConfDir() + "/screenshot.png";
     int width = 0;
     int height = 0;
 
-    QString location = GetMythUI()->GetCurrentLocation();
-
-    if (location != "Playback")
+    if (nc->getArgCount() == 2)
     {
-        if (nc->getArgCount() >= 2)
-            outFile = nc->getArg(1);
-
-        if (nc->getArgCount() >= 3)
+        QStringList size = nc->getArg(1).split('x');
+        if (size.size() == 2)
         {
-            QStringList size = nc->getArg(2).split('x');
             width  = size[0].toInt();
             height = size[1].toInt();
         }
-
-        MythMainWindow *window = GetMythMainWindow();
-        emit window->remoteScreenShot(outFile, width, height);
-        return "OK";
     }
 
-    QString result;
-    int64_t frameNumber = 150;
-
-    gotAnswer = false;
-    QString message = QString("NETWORK_CONTROL QUERY POSITION");
-    MythEvent me(message);
-    gCoreContext->dispatch(me);
-
-    QTime timer;
-    timer.start();
-    while (timer.elapsed() < 2000  && !gotAnswer)
-        usleep(10000);
-
-    if (gotAnswer)
+    MythMainWindow *window = GetMythMainWindow();
+    QStringList args;
+    if (width && height)
     {
-        QStringList results = answer.simplified().split(" ");
-        if (results.size() < 8)
-            return "ERROR: Invalid network control command";
-
-        uint chanid = results[5].toUInt();
-        QDateTime recstartts = myth_dt_from_string(results[6]);
-        ProgramInfo pginfo(chanid, recstartts);
-        if (!pginfo.GetChanID())
-            return "ERROR: Unable to find program info for current program";
-
-        if (nc->getArgCount() >= 4)
-            outFile = nc->getArg(3);
-
-        if (nc->getArgCount() >= 5)
-        {
-            QStringList size = nc->getArg(4).split('x');
-            width  = size[0].toInt();
-            height = size[1].toInt();
-        }
-        else
-        {
-            width = -1;
-            height = -1;
-        }
-
-        frameNumber = results[7].toLongLong();
-
-        PreviewGenerator *previewgen = new PreviewGenerator(
-            &pginfo, QString(), PreviewGenerator::kForceLocal);
-        previewgen->SetPreviewTimeAsFrameNumber(frameNumber);
-        previewgen->SetOutputFilename(outFile);
-        previewgen->SetOutputSize(QSize(width, height));
-        bool ok = previewgen->Run();
-        previewgen->deleteLater();
-
-        QString str = "ERROR: Unable to generate screenshot, check logs";
-        if (ok)
-        {
-            str = QString("OK %1x%2")
-                .arg((width > 0) ? width : 64).arg((height > 0) ? height : 64);
-        }
-
-        return str;
+        args << QString::number(width);
+        args << QString::number(height);
     }
-    else
-        return "ERROR: Timed out waiting for reply from player";
-
-    return "ERROR: Unknown reason";
+    MythEvent* me = new MythEvent(MythEvent::MythEventMessage,
+                                  ACTION_SCREENSHOT, args);
+    qApp->postEvent(window, me);
+    return "OK";
 }
 
 QString NetworkCommand::getFrom(int arg)

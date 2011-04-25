@@ -397,6 +397,8 @@ bool ClassicCommDetector::go()
 
     emit breathe();
 
+    player->ResetTotalDuration();
+
     while (!player->GetEof())
     {
         struct timeval startTime;
@@ -747,7 +749,7 @@ void ClassicCommDetector::ProcessFrame(VideoFrame *frame,
     int rightDarkCol = width - commDetectBorder - 1;
     FrameInfoEntry fInfo;
 
-    if (!frame || frame_number == -1 || frame->codec != FMT_YV12)
+    if (!frame || !(frame->buf) || frame_number == -1 || frame->codec != FMT_YV12)
     {
         VERBOSE(VB_COMMFLAG, "CommDetect: Invalid video frame or codec, "
                 "unable to process frame.");

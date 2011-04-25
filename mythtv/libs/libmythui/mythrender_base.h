@@ -5,22 +5,27 @@
 
 typedef enum
 {
-    kMasterUI    = 0,
-    kMasterVideo = 1,
-} RenderMaster;
+    kRenderUnknown = 0,
+    kRenderDirect3D9,
+    kRenderVDPAU,
+    kRenderOpenGL1,
+    kRenderOpenGL2,
+    kRenderOpenGL2ES,
+} RenderType;
 
 class MythRender
 {
   public:
-    MythRender() : m_master(kMasterUI), m_size(QSize()), m_errored(false) { }
+    MythRender(RenderType type)
+      : m_type(type), m_size(QSize()), m_errored(false) { }
     virtual  ~MythRender() { }
 
-    void  SetMaster(RenderMaster master) { m_master = master; }
+    RenderType Type(void)                { return m_type;     }
     bool  IsErrored(void) const          { return m_errored;  }
     QSize GetSize(void) const            { return m_size;     }
 
   protected:
-    RenderMaster  m_master;
+    RenderType    m_type;
     QSize         m_size;
     bool          m_errored;
 };

@@ -18,7 +18,6 @@ INSTALLS += target
 
 LIBS += -lmythavformat
 LIBS += -lmythavcodec
-LIBS += -lmythavcore
 LIBS += -lmythavutil
 LIBS += -ltag -logg -lvorbisfile -lvorbis -lvorbisenc -lFLAC -lmp3lame
 
@@ -82,6 +81,8 @@ mingw {
     # libcdaudio needs ...
     LIBS += -lwsock32
 }
+
+DEFINES += MPLUGIN_API
 
 use_hidesyms {
     QMAKE_CXXFLAGS += -fvisibility=hidden

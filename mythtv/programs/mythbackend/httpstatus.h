@@ -16,6 +16,7 @@
 #include <QMap>
 
 #include "httpserver.h"
+#include "programinfo.h"
 
 typedef enum 
 {
@@ -66,6 +67,17 @@ class HttpStatus : public HttpServerExtension
         int     PrintMachineInfo  ( QTextStream &os, QDomElement info );
         int     PrintMiscellaneousInfo ( QTextStream &os, QDomElement info );
 
+        void    FillProgramInfo   ( QDomDocument *pDoc,
+                                    QDomNode     &node,
+                                    ProgramInfo  *pInfo,
+                                    bool          bIncChannel = true,
+                                    bool          bDetails    = true );
+
+        void    FillChannelInfo   ( QDomElement  &channel,
+                                    ProgramInfo  *pInfo,
+                                    bool          bDetails = true );
+
+
     public:
                  HttpStatus( QMap<int, EncoderLink *> *tvList, Scheduler *sched,
                              AutoExpire *expirer, bool bIsMaster );
@@ -74,6 +86,8 @@ class HttpStatus : public HttpServerExtension
         void     SetMainServer(MainServer *mainServer)
                     { m_pMainServer = mainServer; }
 
+        virtual QStringList GetBasePaths();
+        
         bool     ProcessRequest( HttpWorkerThread *pThread,
                                  HTTPRequest *pRequest );
 };

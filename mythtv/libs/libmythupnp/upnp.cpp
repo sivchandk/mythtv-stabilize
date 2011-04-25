@@ -3,10 +3,10 @@
 // Created     : Oct. 24, 2005
 //
 // Purpose     : UPnp Main Class
-//                                                                            
+//
 // Copyright (c) 2005 David Blain <mythtv@theblains.net>
-//                                          
-// This library is free software; you can redistribute it and/or 
+//
+// This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
 // License as published by the Free Software Foundation; either
 // version 2.1 of the License, or at your option any later version of the LGPL.
@@ -22,6 +22,8 @@
 //////////////////////////////////////////////////////////////////////////////
 
 #include "upnp.h"
+#include "mythverbose.h"
+
 #include "upnptaskcache.h"
 #include "multicast.h"
 #include "broadcast.h"
@@ -31,9 +33,6 @@
 //////////////////////////////////////////////////////////////////////////////
 
 UPnpDeviceDesc   UPnp::g_UPnpDeviceDesc;
-TaskQueue       *UPnp::g_pTaskQueue     = NULL;
-SSDP            *UPnp::g_pSSDP          = NULL;
-SSDPCache        UPnp::g_SSDPCache;
 QStringList      UPnp::g_IPAddrList;
 
 Configuration   *UPnp::g_pConfig        = NULL;
@@ -82,6 +81,21 @@ void UPnp::SetConfiguration( Configuration *pConfig )
 //
 //////////////////////////////////////////////////////////////////////////////
 
+Configuration *UPnp::GetConfiguration()
+{
+    // If someone is asking for a config and it's NULL, create a 
+    // new XmlConfiguration since we don't have database info yet.
+    
+    if (g_pConfig == NULL)
+        g_pConfig = new XmlConfiguration( "config.xml" );
+
+    return g_pConfig;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//
+//////////////////////////////////////////////////////////////////////////////
+
 bool UPnp::Initialize( int nServicePort, HttpServer *pHttpServer )
 {
     QStringList sList;
@@ -116,50 +130,13 @@ bool UPnp::Initialize( QStringList &sIPAddrList, int nServicePort, HttpServer *p
     m_nServicePort = nServicePort;
 
     // ----------------------------------------------------------------------
-    // Initialize & Start the global Task Queue Processing Thread
-    // ----------------------------------------------------------------------
-
-    VERBOSE(VB_UPNP, "UPnp::Initialize - Starting TaskQueue");
-
-    g_pTaskQueue = new TaskQueue();
-    g_pTaskQueue->start();
-
-    // ----------------------------------------------------------------------
     // Register any HttpServerExtensions
     // ----------------------------------------------------------------------
 
     m_pHttpServer->RegisterExtension(
             new SSDPExtension( m_nServicePort, m_pHttpServer->m_sSharePath));
 
-    // ----------------------------------------------------------------------
-    // Add Task to keep SSDPCache purged of stale entries.  
-    // ----------------------------------------------------------------------
-
-    UPnp::g_pTaskQueue->AddTask( new SSDPCacheTask() );
-
-    // ----------------------------------------------------------------------
-    // Create the SSDP (Upnp Discovery) Thread.
-    // ----------------------------------------------------------------------
-
-    VERBOSE(VB_UPNP, "UPnp::Initialize - Creating SSDP Thread at port "
-                     + QString::number(m_nServicePort));
-
-    g_pSSDP = new SSDP( m_nServicePort );
-
     VERBOSE(VB_UPNP, "UPnp::Initialize - End");
-
-    return true;
-}
-
-bool UPnp::InitializeSSDPOnly( void )
-{
-    VERBOSE(VB_UPNP, "UPnp::InitializeSSDPOnly - Creating SSDP Thread at port "
-                     + QString::number(m_nServicePort));
-
-    g_pSSDP = new SSDP( m_nServicePort );
-    g_pSSDP->start();
-
-    VERBOSE(VB_UPNP, "UPnp::InitializeSSDPOnly - End");
 
     return true;
 }
@@ -170,13 +147,13 @@ bool UPnp::InitializeSSDPOnly( void )
 
 void UPnp::Start()
 {
-    if (g_pSSDP != NULL)
-    {
-        VERBOSE(VB_UPNP, "UPnp::Start - Starting SSDP Thread (Multicast)");
-        g_pSSDP->start();
-        VERBOSE(VB_UPNP, "UPnp::Start - Enabling Notifications");
-        g_pSSDP->EnableNotifications();
-    }
+    VERBOSE(VB_UPNP, "UPnp::Start - Enabling SSDP Notifications");
+    // ----------------------------------------------------------------------
+    // Turn on Device Announcements 
+    // (this will also create/startup SSDP if not already done)
+    // ----------------------------------------------------------------------
+
+    SSDP::Instance()->EnableNotifications( m_nServicePort );
 
     VERBOSE(VB_UPNP, "UPnp::Start - Returning");
 }
@@ -187,26 +164,9 @@ void UPnp::Start()
 
 void UPnp::CleanUp()
 {
-    if (g_pSSDP)
-    {
-        VERBOSE(VB_UPNP, "UPnp::CleanUp() - disabling SSDP notifications");
+    VERBOSE(VB_UPNP, "UPnp::CleanUp() - disabling SSDP notifications");
 
-        delete g_pSSDP;
-        g_pSSDP = NULL;
-        VERBOSE(VB_UPNP, "UPnp::CleanUp() - deleted SSDP");
-    }
-
-    // ----------------------------------------------------------------------
-    // Clear the Task Queue & terminate Thread
-    // ----------------------------------------------------------------------
-
-    if (g_pTaskQueue)
-    {
-        g_pTaskQueue->Clear();
-
-        delete g_pTaskQueue;
-        g_pTaskQueue = NULL;
-    }
+    SSDP::Instance()->DisableNotifications();
 
     if (g_pConfig)
     {
@@ -214,23 +174,6 @@ void UPnp::CleanUp()
         g_pConfig = NULL;
     }
 
-} 
-
-//////////////////////////////////////////////////////////////////////////////
-//
-//////////////////////////////////////////////////////////////////////////////
-
-SSDPCacheEntries *UPnp::Find( const QString &sURI )
-{
-    return g_SSDPCache.Find( sURI );
-}
-
-//////////////////////////////////////////////////////////////////////////////
-//
-//////////////////////////////////////////////////////////////////////////////
-DeviceLocation *UPnp::Find( const QString &sURI, const QString &sUSN )
-{
-    return g_SSDPCache.Find( sURI, sUSN );
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -251,23 +194,23 @@ QString UPnp::GetResultDesc( UPnPResultCode eCode )
     switch( eCode )
     {
         case UPnPResult_Success                     : return "Success";
-        case UPnPResult_InvalidAction               : return "Invalid Action"; 
-        case UPnPResult_InvalidArgs                 : return "Invalid Args"; 
-        case UPnPResult_ActionFailed                : return "Action Failed"; 
-        case UPnPResult_ArgumentValueInvalid        : return "Argument Value Invalid"; 
-        case UPnPResult_ArgumentValueOutOfRange     : return "Argument Value Out Of Range"; 
-        case UPnPResult_OptionalActionNotImplemented: return "Optional Action Not Implemented"; 
-        case UPnPResult_OutOfMemory                 : return "Out Of Memory"; 
-        case UPnPResult_HumanInterventionRequired   : return "Human Intervention Required"; 
-        case UPnPResult_StringArgumentTooLong       : return "String Argument Too Long"; 
-        case UPnPResult_ActionNotAuthorized         : return "Action Not Authorized"; 
-        case UPnPResult_SignatureFailure            : return "Signature Failure"; 
-        case UPnPResult_SignatureMissing            : return "Signature Missing"; 
-        case UPnPResult_NotEncrypted                : return "Not Encrypted"; 
-        case UPnPResult_InvalidSequence             : return "Invalid Sequence"; 
-        case UPnPResult_InvalidControlURL           : return "Invalid Control URL"; 
-        case UPnPResult_NoSuchSession               : return "No Such Session"; 
-        case UPnPResult_MS_AccessDenied             : return "Access Denied"; 
+        case UPnPResult_InvalidAction               : return "Invalid Action";
+        case UPnPResult_InvalidArgs                 : return "Invalid Args";
+        case UPnPResult_ActionFailed                : return "Action Failed";
+        case UPnPResult_ArgumentValueInvalid        : return "Argument Value Invalid";
+        case UPnPResult_ArgumentValueOutOfRange     : return "Argument Value Out Of Range";
+        case UPnPResult_OptionalActionNotImplemented: return "Optional Action Not Implemented";
+        case UPnPResult_OutOfMemory                 : return "Out Of Memory";
+        case UPnPResult_HumanInterventionRequired   : return "Human Intervention Required";
+        case UPnPResult_StringArgumentTooLong       : return "String Argument Too Long";
+        case UPnPResult_ActionNotAuthorized         : return "Action Not Authorized";
+        case UPnPResult_SignatureFailure            : return "Signature Failure";
+        case UPnPResult_SignatureMissing            : return "Signature Missing";
+        case UPnPResult_NotEncrypted                : return "Not Encrypted";
+        case UPnPResult_InvalidSequence             : return "Invalid Sequence";
+        case UPnPResult_InvalidControlURL           : return "Invalid Control URL";
+        case UPnPResult_NoSuchSession               : return "No Such Session";
+        case UPnPResult_MS_AccessDenied             : return "Access Denied";
 
         case UPnPResult_CDS_NoSuchObject            : return "No Such Object";
         case UPnPResult_CDS_InvalidCurrentTagValue  : return "Invalid CurrentTagValue";
@@ -303,10 +246,10 @@ QString UPnp::GetResultDesc( UPnPResultCode eCode )
 }
 
 //////////////////////////////////////////////////////////////////////////////
-// 
+//
 //////////////////////////////////////////////////////////////////////////////
 
-void UPnp::FormatErrorResponse( HTTPRequest   *pRequest, 
+void UPnp::FormatErrorResponse( HTTPRequest   *pRequest,
                                 UPnPResultCode  eCode,
                                 const QString &msg )
 {
@@ -314,7 +257,7 @@ void UPnp::FormatErrorResponse( HTTPRequest   *pRequest,
 
     if (pRequest != NULL)
     {
-        QString sDetails = ""; 
+        QString sDetails = "";
 
         if (pRequest->m_bSOAPRequest)
             sDetails = "<UPnPResult xmlns=\"urn:schemas-upnp-org:control-1-0\">";
@@ -327,14 +270,39 @@ void UPnp::FormatErrorResponse( HTTPRequest   *pRequest,
                        .arg( eCode )
                        .arg( HTTPRequest::Encode( sMsg ) );
 
-        if (pRequest->m_bSOAPRequest)     
+        if (pRequest->m_bSOAPRequest)
             sDetails += "</UPnPResult>";
 
 
         pRequest->FormatErrorResponse ( true,   // -=>TODO: Should make this dynamic
-                                        "UPnPResult", 
+                                        "UPnPResult",
                                         sDetails );
     }
     else
         VERBOSE( VB_IMPORTANT, "UPnp::FormatErrorResponse : Response not created - pRequest == NULL" );
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//
+//////////////////////////////////////////////////////////////////////////////
+
+void UPnp::FormatRedirectResponse( HTTPRequest   *pRequest,
+                                   const QString &hostName )
+{
+    pRequest->m_eResponseType     = ResponseTypeOther;
+    pRequest->m_nResponseStatus   = 301;
+
+    QStringList sItems = pRequest->m_sRawRequest.split( ' ' );
+
+    QString sUrl = "http://" + pRequest->m_mapHeaders[ "host" ] + sItems[1];
+
+    QUrl url( sUrl );
+
+    url.setHost( hostName );
+
+    pRequest->m_mapRespHeaders[ "Location" ] = url.toString();
+
+    VERBOSE( VB_UPNP, QString( "Sending http redirect to: %1").arg( url.toString() ) );
+
+    pRequest->SendResponse();
 }

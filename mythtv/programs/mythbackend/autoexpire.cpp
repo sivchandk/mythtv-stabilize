@@ -49,6 +49,18 @@ extern AutoExpire *expirer;
  */
 #define SPACE_TOO_BIG_KB 3*1024*1024
 
+/// \brief This calls AutoExpire::RunExpirer() from within a new thread.
+void ExpireThread::run(void)
+{
+    m_parent->RunExpirer();
+}
+
+/// \brief This calls AutoExpire::RunUpdate() from within a new thread.
+void UpdateThread::run(void)
+{
+    m_parent->RunUpdate();
+}
+
 /** \class AutoExpire
  *  \brief Used to expire recordings to make space for new recordings.
  */
@@ -58,36 +70,29 @@ extern AutoExpire *expirer;
  *
  *  \param tvList    EncoderLink list of all recorders
  */
-AutoExpire::AutoExpire(QMap<int, EncoderLink *> *tvList)
+AutoExpire::AutoExpire(QMap<int, EncoderLink *> *tvList) :
+    encoderList(tvList),
+    expire_thread(new ExpireThread(this)),
+    desired_freq(15),
+    expire_thread_run(true),
+    main_server(NULL),
+    update_pending(false)
 {
-    encoderList = tvList;
-    expire_thread_running = true;
-
-    Init();
-
-    pthread_create(&expire_thread, NULL, ExpirerThread, this);
+    expire_thread->start();
     gCoreContext->addListener(this);
 }
 
 /** \fn AutoExpire::AutoExpire()
  *  \brief Creates AutoExpire class
  */
-AutoExpire::AutoExpire(void)
+AutoExpire::AutoExpire() :
+    encoderList(NULL),
+    expire_thread(NULL),
+    desired_freq(15),
+    expire_thread_run(false),
+    main_server(NULL),
+    update_pending(false)
 {
-    encoderList = NULL;
-    expire_thread_running = false;
-    Init();
-}
-
-/** \fn AutoExpire::Init()
- *  \brief Inits member vars
- */
-void AutoExpire::Init(void)
-{
-    mainServer         = NULL;
-
-    desired_freq       = 15;
-    update_pending     = false;
 }
 
 /** \fn AutoExpire::~AutoExpire()
@@ -95,19 +100,24 @@ void AutoExpire::Init(void)
  */
 AutoExpire::~AutoExpire()
 {
-    instance_lock.lock();
-    while (update_pending)
-        instance_cond.wait(&instance_lock);
-    instance_lock.unlock();
+    {
+        QMutexLocker locker(&instance_lock);
+        expire_thread_run = false;
+        instance_cond.wakeAll();
+    }
 
-    if (expire_thread_running)
+    {
+        QMutexLocker locker(&instance_lock);
+        while (update_pending)
+            instance_cond.wait(&instance_lock);
+    }
+
+    if (expire_thread)
     {
         gCoreContext->removeListener(this);
-        expire_thread_running = false;
-        pthread_kill(expire_thread, SIGALRM); // try to speed up join..
-        VERBOSE(VB_IMPORTANT, LOC + "Warning: Stopping auto expire thread "
-                "can take several seconds. Please be patient.");
-        pthread_join(expire_thread, NULL);
+        expire_thread->wait();
+        delete expire_thread;
+        expire_thread = NULL;
     }
 }
 
@@ -118,6 +128,7 @@ AutoExpire::~AutoExpire()
 
 size_t AutoExpire::GetDesiredSpace(int fsID) const
 {
+    QMutexLocker locker(&instance_lock);
     if (desired_space.contains(fsID))
         return desired_space[fsID];
     return 0;
@@ -131,8 +142,11 @@ void AutoExpire::CalcParams()
     VERBOSE(VB_FILE, LOC + "CalcParams()");
 
     vector<FileSystemInfo> fsInfos;
-    if (mainServer)
-        mainServer->GetFilesystemInfos(fsInfos);
+
+    instance_lock.lock();
+    if (main_server)
+        main_server->GetFilesystemInfos(fsInfos);
+    instance_lock.unlock();
 
     if (fsInfos.empty())
     {
@@ -256,8 +270,7 @@ void AutoExpire::CalcParams()
     instance_lock.unlock();
 }
 
-/** \fn AutoExpire::RunExpirer()
- *  \brief This contains the main loop for the auto expire process.
+/** \brief This contains the main loop for the auto expire process.
  *
  *   Responsible for cleanup of old LiveTV programs as well as deleting as
  *   many recordings that are expirable as necessary to
@@ -271,21 +284,26 @@ void AutoExpire::RunExpirer(void)
     QDateTime curTime;
     QDateTime next_expire = QDateTime::currentDateTime().addSecs(60);
 
+    QMutexLocker locker(&instance_lock);
+
     // wait a little for main server to come up and things to settle down
-    sleep(20);
+    Sleep(20 * 1000);
 
     timer.start();
 
-    while (expire_thread_running)
+    while (expire_thread_run)
     {
         curTime = QDateTime::currentDateTime();
         // recalculate auto expire parameters
         if (curTime >= next_expire)
+        {
+            locker.unlock();
             CalcParams();
-
+            locker.relock();
+            if (!expire_thread_run)
+                break;
+        }
         timer.restart();
-
-        instance_lock.lock();
 
         UpdateDontExpireSet();
 
@@ -310,24 +328,27 @@ void AutoExpire::RunExpirer(void)
             ExpireRecordings();
         }
 
-        instance_lock.unlock();
-
-        Sleep(60 - (timer.elapsed() / 1000));
+        Sleep(60 * 1000 - timer.elapsed());
     }
 }
 
 /** \fn AutoExpire::Sleep(int sleepTime)
- *  \brief Sleeps for sleepTime minutes; unless the expire thread
- *         is told to quit, then stops sleeping within 5 seconds.
+ *  \brief Sleeps for sleepTime milliseconds; unless the expire thread
+ *         is told to quit. Must be called with instance_lock held.
+ *
+ *  \note Will release instance_lock!
  */
 void AutoExpire::Sleep(int sleepTime)
 {
-    int minSleep = 5, timeExpended = 0;
-    while (expire_thread_running && timeExpended < sleepTime)
+    if (sleepTime <= 0)
+        return;
+
+    QDateTime little_tm = QDateTime::currentDateTime().addMSecs(sleepTime);
+    int timeleft = sleepTime;
+    while (expire_thread_run && (timeleft > 0))
     {
-        if (timeExpended > (sleepTime - minSleep))
-            minSleep = sleepTime - timeExpended;
-        timeExpended += minSleep - (int)sleep(minSleep);
+        instance_cond.wait(&instance_lock, timeleft);
+        timeleft = QDateTime::currentDateTime().secsTo(little_tm) * 1000;
     }
 }
 
@@ -370,8 +391,8 @@ void AutoExpire::ExpireRecordings(void)
 
     VERBOSE(VB_FILE, LOC + "ExpireRecordings()");
 
-    if (mainServer)
-        mainServer->GetFilesystemInfos(fsInfos);
+    if (main_server)
+        main_server->GetFilesystemInfos(fsInfos);
 
     if (fsInfos.empty())
     {
@@ -494,7 +515,7 @@ void AutoExpire::ExpireRecordings(void)
                    ((size_t)max(0LL, fsit->freeSpaceKB) < desired_space[fsit->fsID]))
             {
                 ProgramInfo *p = *it;
-                it++;
+                ++it;
 
                 VERBOSE(VB_FILE, QString("        Checking %1 => %2")
                         .arg(p->toString(ProgramInfo::kRecordingKey))
@@ -606,17 +627,6 @@ void AutoExpire::SendDeleteMessages(pginfolist_t &deleteList)
 
         ++it; // move on to next program
     }
-}
-
-/** \fn AutoExpire::ExpirerThread(void *)
- *  \brief This calls RunExpirer() from within a new pthread.
- */
-void *AutoExpire::ExpirerThread(void *param)
-{
-    AutoExpire *expirer = static_cast<AutoExpire *>(param);
-    expirer->RunExpirer();
-
-    return NULL;
 }
 
 /** \fn AutoExpire::ExpireEpisodesOverMax()
@@ -997,22 +1007,22 @@ void AutoExpire::FillDBOrdered(pginfolist_t &expireList, int expMethod)
     }
 }
 
-/** \fn SpawnUpdateThread(void*)
- *  \brief This is used by Update(QMap<int, EncoderLink*> *, bool)
+/** \brief This is used by Update(QMap<int, EncoderLink*> *, bool)
  *         to run CalcParams(vector<EncoderLink*>).
  *
  *  \param autoExpireInstance AutoExpire instance on which to call CalcParams.
  */
-void *SpawnUpdateThread(void *autoExpireInstance)
+void AutoExpire::RunUpdate(void)
 {
-    sleep(5);
-    AutoExpire *ae = static_cast<AutoExpire*>(autoExpireInstance);
-    ae->CalcParams();
-    ae->instance_lock.lock();
-    ae->update_pending = false;
-    ae->instance_cond.wakeAll();
-    ae->instance_lock.unlock();
-    return NULL;
+    QMutexLocker locker(&instance_lock);
+    Sleep(5 * 1000);
+    locker.unlock();
+    CalcParams();
+    locker.relock();
+    update_pending = false;
+    update_thread->deleteLater();
+    update_thread = NULL;
+    instance_cond.wakeAll();
 }
 
 /**
@@ -1032,14 +1042,15 @@ void AutoExpire::Update(int encoder, int fsID, bool immediately)
         return;
 
     // make sure there is only one update pending
-    expirer->instance_lock.lock();
+    QMutexLocker locker(&expirer->instance_lock);
     while (expirer->update_pending)
         expirer->instance_cond.wait(&expirer->instance_lock);
     expirer->update_pending = true;
 
     if (encoder > 0)
     {
-        QString msg = QString("Cardid %1: is starting a recording on").arg(encoder);
+        QString msg = QString("Cardid %1: is starting a recording on")
+                      .arg(encoder);
         if (fsID == -1)
             msg.append(" an unknown fsID soon.");
         else
@@ -1049,26 +1060,23 @@ void AutoExpire::Update(int encoder, int fsID, bool immediately)
         expirer->used_encoders[encoder] = fsID;
     }
 
-    expirer->instance_lock.unlock();
-
     // do it..
     if (immediately)
     {
+        locker.unlock();
         expirer->CalcParams();
-        expirer->instance_lock.lock();
+        locker.relock();
         expirer->update_pending = false;
         expirer->instance_cond.wakeAll();
-        expirer->instance_lock.unlock();
     }
     else
     {
-        // create thread to do work
-        pthread_attr_t attr;
-        pthread_attr_init(&attr);
-        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-        pthread_create(&expirer->update_thread, &attr,
-                       SpawnUpdateThread, expirer);
-        pthread_attr_destroy(&attr);
+        // create thread to do work, unless one is running still
+        if (!expirer->update_thread)
+        {
+            expirer->update_thread = new UpdateThread(expirer);
+            expirer->update_thread->start();
+        }
     }
 }
 

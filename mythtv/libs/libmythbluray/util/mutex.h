@@ -32,6 +32,9 @@
 #   error no mutex support found
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #if defined(_WIN32)
 
@@ -74,7 +77,7 @@ static inline int bd_mutex_init(BD_MUTEX *p)
     p->lock_count = 0;
 
     if (pthread_mutex_init(&p->mutex, NULL)) {
-        DEBUG(DBG_BLURAY|DBG_CRIT, "bd_mutex_init() failed !");
+        BD_DEBUG(DBG_BLURAY|DBG_CRIT, "bd_mutex_init() failed !");
         return -1;
     }
 
@@ -84,7 +87,7 @@ static inline int bd_mutex_init(BD_MUTEX *p)
 static inline int bd_mutex_destroy(BD_MUTEX *p)
 {
     if (pthread_mutex_destroy(&p->mutex)) {
-        DEBUG(DBG_BLURAY|DBG_CRIT, "bd_mutex_destroy() failed !");
+        BD_DEBUG(DBG_BLURAY|DBG_CRIT, "bd_mutex_destroy() failed !");
         return -1;
     }
     return 0;
@@ -99,7 +102,7 @@ static int bd_mutex_lock(BD_MUTEX *p)
     }
 
     if (pthread_mutex_lock(&p->mutex)) {
-        DEBUG(DBG_BLURAY|DBG_CRIT, "bd_mutex_lock() failed !");
+        BD_DEBUG(DBG_BLURAY|DBG_CRIT, "bd_mutex_lock() failed !");
         return -1;
     }
 
@@ -112,7 +115,7 @@ static int bd_mutex_lock(BD_MUTEX *p)
 static int bd_mutex_unlock(BD_MUTEX *p)
 {
     if (!pthread_equal(p->owner, pthread_self())) {
-        DEBUG(DBG_BLURAY|DBG_CRIT, "bd_mutex_unlock(): not owner !");
+        BD_DEBUG(DBG_BLURAY|DBG_CRIT, "bd_mutex_unlock(): not owner !");
         return -1;
     }
 
@@ -126,7 +129,7 @@ static int bd_mutex_unlock(BD_MUTEX *p)
     p->owner = (pthread_t)-1;
 
     if (pthread_mutex_unlock(&p->mutex)) {
-        DEBUG(DBG_BLURAY|DBG_CRIT, "bd_mutex_unlock() failed !");
+        BD_DEBUG(DBG_BLURAY|DBG_CRIT, "bd_mutex_unlock() failed !");
         return -1;
     }
 
@@ -135,5 +138,8 @@ static int bd_mutex_unlock(BD_MUTEX *p)
 
 #endif // HAVE_PTHREAD_H
 
+#ifdef __cplusplus
+};
+#endif
 
 #endif // LIBBLURAY_MUTEX_H_

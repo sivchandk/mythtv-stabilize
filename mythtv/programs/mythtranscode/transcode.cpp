@@ -36,7 +36,8 @@ using namespace std;
 class AudioReencodeBuffer : public AudioOutput
 {
  public:
-    AudioReencodeBuffer(AudioFormat audio_format, int audio_channels)
+    AudioReencodeBuffer(AudioFormat audio_format, int audio_channels,
+                        bool passthru)
     {
         Reset();
         const AudioSettings settings(audio_format, audio_channels, 0, 0, false);
@@ -48,9 +49,10 @@ class AudioReencodeBuffer : public AudioOutput
         memset(ab_len, 0, sizeof(ab_len));
         memset(ab_offset, 0, sizeof(ab_offset));
         memset(ab_time, 0, sizeof(ab_time));
+        m_initpassthru = passthru;
     }
 
-   ~AudioReencodeBuffer()
+    ~AudioReencodeBuffer()
     {
         delete [] audiobuffer;
     }
@@ -59,16 +61,15 @@ class AudioReencodeBuffer : public AudioOutput
     virtual void Reconfigure(const AudioSettings &settings)
     {
         ClearError();
+
+        m_passthru      = settings.use_passthru;
+        channels        = settings.channels;
         bytes_per_frame = channels *
-                           AudioOutputSettings::SampleSize(settings.format);
-
-        channels = settings.channels;
-
-        if ((uint)settings.channels > 2)
-            Error(QString("Invalid channel count %1").arg(channels));
+            AudioOutputSettings::SampleSize(settings.format);
+        eff_audiorate   = settings.samplerate;
     }
 
-    // dsprate is in 100 * samples/second
+    // dsprate is in 100 * frames/second
     virtual void SetEffDsp(int dsprate)
     {
         eff_audiorate = (dsprate / 100);
@@ -83,26 +84,33 @@ class AudioReencodeBuffer : public AudioOutput
     // timecode is in milliseconds.
     virtual bool AddFrames(void *buffer, int frames, int64_t timecode)
     {
+        return AddData(buffer, frames * bytes_per_frame, timecode, frames);
+    }
+
+    // timecode is in milliseconds.
+    virtual bool AddData(void *buffer, int len, int64_t timecode, int frames)
+    {
         int freebuf = bufsize - audiobuffer_len;
 
-        if (frames * bytes_per_frame > freebuf)
+        if (len > freebuf)
         {
-            bufsize += frames * bytes_per_frame - freebuf;
+            bufsize += len - freebuf;
             unsigned char *tmpbuf = new unsigned char[bufsize];
             memcpy(tmpbuf, audiobuffer, audiobuffer_len);
             delete [] audiobuffer;
             audiobuffer = tmpbuf;
         }
 
-        ab_len[ab_count] = frames * bytes_per_frame;
+        ab_len[ab_count] = len;
         ab_offset[ab_count] = audiobuffer_len;
 
         memcpy(audiobuffer + audiobuffer_len, buffer,
-               frames * bytes_per_frame);
-        audiobuffer_len += frames * bytes_per_frame;
+               len);
+        audiobuffer_len += len;
 
-        // last_audiotime is at the end of the sample
-        last_audiotime = timecode + frames * 1000 / eff_audiorate;
+        // last_audiotime is at the end of the frame
+        last_audiotime = timecode + frames * 1000 /
+            eff_audiorate;
 
         ab_time[ab_count] = last_audiotime;
         ab_count++;
@@ -113,10 +121,6 @@ class AudioReencodeBuffer : public AudioOutput
     virtual void SetTimecode(int64_t timecode)
     {
         last_audiotime = timecode;
-    }
-    virtual bool CanPassthrough(int, int) const
-    {
-        return false;
     }
     virtual bool IsPaused(void) const
     {
@@ -205,6 +209,12 @@ class AudioReencodeBuffer : public AudioOutput
     virtual void bufferOutputData(bool){ return; }
     virtual int readOutputData(unsigned char*, int ){ return 0; }
 
+    /**
+     * Test if we can output digital audio
+     */
+    virtual bool CanPassthrough(int, int, int, int) const
+        { return m_initpassthru; }
+
     int bufsize;
     int ab_count;
     int ab_len[128];
@@ -213,6 +223,8 @@ class AudioReencodeBuffer : public AudioOutput
     unsigned char *audiobuffer;
     int audiobuffer_len, channels, bits, bytes_per_frame, eff_audiorate;
     long long last_audiotime;
+private:
+    bool                m_passthru, m_initpassthru;
 };
 
 Transcode::Transcode(ProgramInfo *pginfo) :
@@ -363,7 +375,9 @@ int Transcode::TranscodeFile(
     const QString &profileName,
     bool honorCutList, bool framecontrol,
     int jobID, QString fifodir,
-    frm_dir_map_t &deleteMap)
+    frm_dir_map_t &deleteMap,
+    int AudioTrackNo,
+    bool passthru)
 {
     QDateTime curtime = QDateTime::currentDateTime();
     QDateTime statustime = curtime;
@@ -391,7 +405,8 @@ int Transcode::TranscodeFile(
         statustime = statustime.addSecs(5);
     }
 
-    AudioOutput *audioOutput = new AudioReencodeBuffer(FORMAT_NONE, 0);
+    AudioOutput *audioOutput = new AudioReencodeBuffer(FORMAT_NONE, 0,
+                                                       passthru);
     AudioReencodeBuffer *arb = ((AudioReencodeBuffer*)audioOutput);
     player->GetAudio()->SetAudioOutput(audioOutput);
     player->SetTranscoding(true);
@@ -402,6 +417,12 @@ int Transcode::TranscodeFile(
         if (player_ctx)
             delete player_ctx;
         return REENCODE_ERROR;
+    }
+
+    if (AudioTrackNo > -1)
+    {
+        VERBOSE(VB_GENERAL, QString("Set audiotrack number to %1").arg(AudioTrackNo));
+        player->GetDecoder()->SetTrack(kTrackTypeAudio, AudioTrackNo);
     }
 
     long long total_frame_count = player->GetTotalFrameCount();
@@ -428,12 +449,19 @@ int Transcode::TranscodeFile(
             }
             else
             {
+                if (cutStr.isEmpty())
+                    cutStr += "0-";
                 cutStr += QString("%1").arg((long)it.key());
                 new_frame_count -= (it.key() - lastStart);
             }
         }
         if (cutStr.isEmpty())
             cutStr = "Is Empty";
+        else if (cutStr.endsWith('-') && (total_frame_count > lastStart))
+        {
+            new_frame_count -= (total_frame_count - lastStart);
+            cutStr += QString("%1").arg(total_frame_count);
+        }
         VERBOSE(VB_GENERAL, QString("Cutlist        : %1").arg(cutStr));
         VERBOSE(VB_GENERAL, QString("Original Length: %1 frames")
                                     .arg((long)total_frame_count));

@@ -3,8 +3,6 @@
 
 #include <stdint.h>
 
-#include <pthread.h>
-
 #include <vector>
 using namespace std;
 
@@ -15,6 +13,8 @@ using namespace std;
 #include <QSet>
 #include <QMap>
 #include <QDateTime>
+#include <QThread>
+#include <QPointer>
 
 class ProgramInfo;
 class EncoderLink;
@@ -34,10 +34,36 @@ enum ExpireMethodType {
     emNormalDeletedPrograms = 10003
 };
 
+class AutoExpire;
+
+class ExpireThread : public QThread
+{
+    Q_OBJECT
+  public:
+    ExpireThread(AutoExpire *p) : m_parent(p) {}
+    virtual ~ExpireThread() { wait(); }
+    virtual void run(void);
+  private:
+    QPointer<AutoExpire> m_parent;
+};
+
+class UpdateThread : public QThread
+{
+    Q_OBJECT
+  public:
+    UpdateThread(AutoExpire *p) : m_parent(p) {}
+    virtual ~UpdateThread() { wait(); }
+    virtual void run(void);
+  private:
+    QPointer<AutoExpire> m_parent;
+};
+
 class AutoExpire : public QObject
 {
     Q_OBJECT
 
+    friend class ExpireThread;
+    friend class UpdateThread;
   public:
     AutoExpire(QMap<int, EncoderLink *> *encoderList);
     AutoExpire(void);
@@ -55,17 +81,19 @@ class AutoExpire : public QObject
     static void Update(int encoder, int fsID, bool immediately);
     static void Update(bool immediately) { Update(0, -1, immediately); }
 
-    void SetMainServer(MainServer *ms) { mainServer = ms; }
+    void SetMainServer(MainServer *ms)
+    {
+        QMutexLocker locker(&instance_lock);
+        main_server = ms;
+    }
 
     QMap<int, EncoderLink *> *encoderList;
 
   protected:
     void RunExpirer(void);
-    static void *ExpirerThread(void *param);
+    void RunUpdate(void);
 
   private:
-    void Init(void);
-
     void ExpireLiveTV(int type);
     void ExpireOldDeleted(void);
     void ExpireRecordings(void);
@@ -74,7 +102,7 @@ class AutoExpire : public QObject
     void FillExpireList(pginfolist_t &expireList);
     void FillDBOrdered(pginfolist_t &expireList, int expMethod);
     void SendDeleteMessages(pginfolist_t &deleteList);
-    void Sleep(int sleepTime);
+    void Sleep(int sleepTime /*ms*/);
 
     void UpdateDontExpireSet(void);
     bool IsInDontExpireSet(uint chanid, const QDateTime &recstartts) const;
@@ -84,23 +112,21 @@ class AutoExpire : public QObject
     // main expire info
     QSet<QString> dont_expire_set;
     QSet<QString> deleted_set;
-    pthread_t     expire_thread;
-    uint          desired_freq;
-    bool          expire_thread_running;
+    ExpireThread *expire_thread;     // protected by instance_lock
+    uint          desired_freq;      // protected by instance_lock
+    bool          expire_thread_run; // protected by instance_lock
 
-    QMap<int, uint64_t> desired_space;
-    QMap<int, int>      used_encoders;
+    QMap<int, uint64_t> desired_space; // protected by instance_lock
+    QMap<int, int>      used_encoders; // protected by instance_lock
 
-    QMutex         instance_lock;
-    QWaitCondition instance_cond;
+    mutable QMutex instance_lock;
+    QWaitCondition instance_cond; // protected by instance_lock
 
-    MainServer *mainServer;
+    MainServer   *main_server;    // protected by instance_lock
 
     // update info
-    bool          update_pending;
-    pthread_t     update_thread;
-
-    friend void *SpawnUpdateThread(void *param);
+    bool          update_pending; // protected by instance_lock
+    UpdateThread *update_thread;
 };
 
 #endif

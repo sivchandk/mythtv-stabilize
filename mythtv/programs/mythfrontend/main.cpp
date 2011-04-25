@@ -3,7 +3,6 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <cerrno>
-#include <pthread.h>
 
 #include <iostream>
 using namespace std;
@@ -28,6 +27,7 @@ using namespace std;
 #include "manualschedule.h"
 #include "playbackbox.h"
 #include "themechooser.h"
+#include "setupwizard_general.h"
 #include "customedit.h"
 #include "viewscheduled.h"
 #include "programrecpriority.h"
@@ -36,12 +36,14 @@ using namespace std;
 #include "audiooutput.h"
 #include "globalsettings.h"
 #include "audiogeneralsettings.h"
+#include "grabbersettings.h"
 #include "profilegroup.h"
 #include "playgroup.h"
 #include "networkcontrol.h"
 #include "dvdringbuffer.h"
 #include "scheduledrecording.h"
 #include "mythsystemevent.h"
+#include "hardwareprofile.h"
 
 #include "compat.h"  // For SIG* on MinGW
 #include "exitcodes.h"
@@ -70,6 +72,7 @@ using namespace std;
 #include "mythdirs.h"
 #include "mythdb.h"
 #include "backendconnectionmanager.h"
+#include "themechooser.h"
 
 static ExitPrompter   *exitPopup = NULL;
 static MythThemedMenu *menu;
@@ -167,8 +170,10 @@ namespace
         delete gContext;
         gContext = NULL;
 
+#ifndef _MSC_VER
         signal(SIGHUP, SIG_DFL);
         signal(SIGUSR1, SIG_DFL);
+#endif
     }
 
     class CleanupGuard
@@ -580,6 +585,26 @@ static void TVMenuCallback(void *data, QString &selection)
         else
             delete tp;
     }
+    else if (sel == "settings setupwizard")
+    {
+        MythScreenStack *mainStack = GetMythMainWindow()->GetMainStack();
+        GeneralSetupWizard *sw = new GeneralSetupWizard(mainStack, "setupwizard");
+
+        if (sw->Create())
+            mainStack->AddScreen(sw);
+        else
+            delete sw;
+    }
+    else if (sel == "settings grabbers")
+    {
+        MythScreenStack *mainStack = GetMythMainWindow()->GetMainStack();
+        GrabberSettings *gs = new GrabberSettings(mainStack, "grabbersettings");
+
+        if (gs->Create())
+            mainStack->AddScreen(gs);
+        else
+            delete gs;
+    }
     else if (sel == "screensetupwizard")
     {
        startAppearWiz();
@@ -862,7 +887,7 @@ static int reloadTheme(void)
         VERBOSE(VB_IMPORTANT, QString("Couldn't find theme '%1'")
                 .arg(themename));
         cleanup();
-        return FRONTEND_BUGGY_EXIT_NO_THEME;
+        return GENERIC_EXIT_NO_THEME;
     }
 
     MythTranslation::reload();
@@ -879,7 +904,7 @@ static int reloadTheme(void)
     GetMythMainWindow()->SetEffectsEnabled(true);
 
     if (!RunMenu(themedir, themename) && !resetTheme(themedir, themename))
-        return FRONTEND_BUGGY_EXIT_NO_THEME;
+        return GENERIC_EXIT_NO_THEME;
 
     LCD::SetupLCD();
     if (LCD *lcd = LCD::Get())
@@ -898,9 +923,22 @@ static void reloadTheme_void(void)
         exit(err);
 }
 
-static void getScreenShot(void)
+static void setDebugShowBorders(void)
 {
-    (void) GetMythMainWindow()->screenShot();
+    MythPainter *p = GetMythPainter();
+    p->SetDebugMode(!p->ShowBorders(), p->ShowTypeNames());
+
+    if (GetMythMainWindow()->GetMainStack()->GetTopScreen())
+        GetMythMainWindow()->GetMainStack()->GetTopScreen()->SetRedraw();
+}
+
+static void setDebugShowNames(void)
+{
+    MythPainter *p = GetMythPainter();
+    p->SetDebugMode(p->ShowBorders(), !p->ShowTypeNames());
+
+    if (GetMythMainWindow()->GetMainStack()->GetTopScreen())
+        GetMythMainWindow()->GetMainStack()->GetTopScreen()->SetRedraw();
 }
 
 static void InitJumpPoints(void)
@@ -935,8 +973,10 @@ static void InitJumpPoints(void)
      REG_JUMP(QT_TRANSLATE_NOOP("MythControls", "Previously Recorded"),
          "", "", startPrevious);
 
-     REG_JUMPEX(QT_TRANSLATE_NOOP("MythControls", "ScreenShot"),
-         "", "", getScreenShot, false);
+     REG_JUMPEX(QT_TRANSLATE_NOOP("MythControls", "Toggle Show Widget Borders"),
+         "", "", setDebugShowBorders, false);
+     REG_JUMPEX(QT_TRANSLATE_NOOP("MythControls", "Toggle Show Widget Names"),
+         "", "", setDebugShowNames, false);
 
     TV::InitKeys();
 
@@ -968,65 +1008,6 @@ static int internal_media_init()
     REG_MEDIAPLAYER("Internal", QT_TRANSLATE_NOOP("MythControls",
         "MythTV's native media player."), internal_play_media);
     return 0;
-}
-
-static void *run_priv_thread(void *data)
-{
-    VERBOSE(VB_PLAYBACK, QString("user: %1 effective user: %2 run_priv_thread")
-                            .arg(getuid()).arg(geteuid()));
-
-    (void)data;
-    while (true)
-    {
-        gCoreContext->waitPrivRequest();
-
-        for (MythPrivRequest req = gCoreContext->popPrivRequest();
-             true; req = gCoreContext->popPrivRequest())
-        {
-            bool done = false;
-            switch (req.getType())
-            {
-            case MythPrivRequest::MythRealtime:
-                if (gCoreContext->GetNumSetting("RealtimePriority", 1))
-                {
-                    pthread_t *target_thread = (pthread_t *)(req.getData());
-                    // Raise the given thread to realtime priority
-                    struct sched_param sp = {1};
-                    if (target_thread)
-                    {
-                        int status = pthread_setschedparam(
-                            *target_thread, SCHED_FIFO, &sp);
-                        if (status)
-                        {
-                            // perror("pthread_setschedparam");
-                            VERBOSE(VB_GENERAL, "Realtime priority would"
-                                                " require SUID as root.");
-                        }
-                        else
-                            VERBOSE(VB_GENERAL, "Using realtime priority.");
-                    }
-                    else
-                    {
-                        VERBOSE(VB_IMPORTANT, "Unexpected NULL thread ptr for"
-                                              " MythPrivRequest::MythRealtime");
-                    }
-                }
-                else
-                    VERBOSE(VB_GENERAL, "The realtime priority"
-                                        " setting is not enabled.");
-                break;
-            case MythPrivRequest::MythExit:
-                pthread_exit(NULL);
-                break;
-            case MythPrivRequest::PrivEnd:
-                done = true; // queue is empty
-                break;
-            }
-            if (done)
-                break; // from processing the current queue
-        }
-    }
-    return NULL; // will never happen
 }
 
 static void CleanupMyOldInUsePrograms(void)
@@ -1118,6 +1099,7 @@ int main(int argc, char **argv)
         kCLPGetSettings          |
         kCLPQueryVersion         |
         kCLPVerbose              |
+        kCLPNoUPnP               |
 #ifdef USING_X11
         kCLPDisplay              |
 #endif // USING_X11
@@ -1132,7 +1114,7 @@ int main(int argc, char **argv)
         if (arg == "-h" || arg == "--help" || arg == "--usage")
         {
             ShowUsage(cmdline);
-            return FRONTEND_EXIT_OK;
+            return GENERIC_EXIT_OK;
         }
     }
 
@@ -1141,9 +1123,9 @@ int main(int argc, char **argv)
         if (cmdline.PreParse(argc, argv, argpos, cmdline_err))
         {
             if (cmdline_err)
-                return FRONTEND_EXIT_INVALID_CMDLINE;
+                return GENERIC_EXIT_INVALID_CMDLINE;
             if (cmdline.WantsToExit())
-                return FRONTEND_EXIT_OK;
+                return GENERIC_EXIT_OK;
         }
     }
 
@@ -1154,19 +1136,18 @@ int main(int argc, char **argv)
 #endif
     QApplication a(argc, argv);
 
+    QCoreApplication::setApplicationName(MYTH_APPNAME_MYTHFRONTEND);
+
     QString pluginname;
 
     QFileInfo finfo(a.argv()[0]);
 
     QString binname = finfo.baseName();
 
-    extern const char *myth_source_version;
-    extern const char *myth_source_path;
-
     VERBOSE(VB_IMPORTANT, QString("%1 version: %2 [%3] www.mythtv.org")
-                            .arg(binname)
-                            .arg(myth_source_path)
-                            .arg(myth_source_version));
+                            .arg(MYTH_APPNAME_MYTHFRONTEND)
+                            .arg(MYTH_SOURCE_PATH)
+                            .arg(MYTH_SOURCE_VERSION));
 
     bool ResetSettings = false;
 
@@ -1195,7 +1176,7 @@ int main(int argc, char **argv)
                 {
                     cerr << "Invalid or missing argument"
                             " to -l/--logfile option\n";
-                    return FRONTEND_EXIT_INVALID_CMDLINE;
+                    return GENERIC_EXIT_INVALID_CMDLINE;
                 }
                 else
                 {
@@ -1205,15 +1186,15 @@ int main(int argc, char **argv)
             else
             {
                 cerr << "Missing argument to -l/--logfile option\n";
-                return FRONTEND_EXIT_INVALID_CMDLINE;
+                return GENERIC_EXIT_INVALID_CMDLINE;
             }
         }
         else if (cmdline.Parse(a.argc(), a.argv(), argpos, cmdline_err))
         {
             if (cmdline_err)
-                return FRONTEND_EXIT_INVALID_CMDLINE;
+                return GENERIC_EXIT_INVALID_CMDLINE;
             if (cmdline.WantsToExit())
-                return FRONTEND_EXIT_OK;
+                return GENERIC_EXIT_OK;
         }
     }
     QMap<QString,QString> settingsOverride = cmdline.GetSettingsOverride();
@@ -1225,9 +1206,9 @@ int main(int argc, char **argv)
         else
         {
             VERBOSE(VB_IMPORTANT, QString("%1 version: %2 [%3] www.mythtv.org")
-                                    .arg(binname)
-                                    .arg(myth_source_path)
-                                    .arg(myth_source_version));
+                                    .arg(MYTH_APPNAME_MYTHFRONTEND)
+                                    .arg(MYTH_SOURCE_PATH)
+                                    .arg(MYTH_SOURCE_VERSION));
 
             signal(SIGHUP, &log_rotate_handler);
         }
@@ -1249,7 +1230,16 @@ int main(int argc, char **argv)
     CleanupGuard callCleanup(cleanup);
 
     gContext = new MythContext(MYTH_BINARY_VERSION);
-    g_pUPnp  = new MediaRenderer();
+
+    if (cmdline.IsUPnPEnabled())
+    {
+        g_pUPnp  = new MediaRenderer();
+        if (!g_pUPnp->initialized())
+        {
+            delete g_pUPnp;
+            g_pUPnp = NULL;
+        }
+    }
 
     // Override settings as early as possible to cover bootstrapped screens
     // such as the language prompt
@@ -1265,10 +1255,10 @@ int main(int argc, char **argv)
         }
     }
 
-    if (!gContext->Init(true, g_pUPnp, bPromptForBackend, bBypassAutoDiscovery))
+    if (!gContext->Init(true, bPromptForBackend, bBypassAutoDiscovery))
     {
         VERBOSE(VB_IMPORTANT, "Failed to init MythContext, exiting.");
-        return FRONTEND_EXIT_NO_MYTHCONTEXT;
+        return GENERIC_EXIT_NO_MYTHCONTEXT;
     }
 
     if (!GetMythDB()->HaveSchema())
@@ -1276,8 +1266,6 @@ int main(int argc, char **argv)
         if (!InitializeMythSchema())
             return GENERIC_EXIT_DB_ERROR;
     }
-
-    gCoreContext->SetAppName(binname);
 
     for(int argpos = 1; argpos < a.argc(); ++argpos)
     {
@@ -1314,12 +1302,12 @@ int main(int argc, char **argv)
         {
             if (cmdline_err)
             {
-                return FRONTEND_EXIT_INVALID_CMDLINE;
+                return GENERIC_EXIT_INVALID_CMDLINE;
             }
 
             if (cmdline.WantsToExit())
             {
-                return FRONTEND_EXIT_OK;
+                return GENERIC_EXIT_OK;
             }
         }
         else if ((argpos + 1 == a.argc()) &&
@@ -1331,7 +1319,7 @@ int main(int argc, char **argv)
         {
             cerr << "Invalid argument: " << a.argv()[argpos] << endl;
             ShowUsage(cmdline);
-            return FRONTEND_EXIT_INVALID_CMDLINE;
+            return GENERIC_EXIT_INVALID_CMDLINE;
         }
     }
 
@@ -1346,7 +1334,7 @@ int main(int argc, char **argv)
                 .arg(*it).arg(value);
             cout << out.toLocal8Bit().constData() << endl;
         }
-        return FRONTEND_EXIT_OK;
+        return GENERIC_EXIT_OK;
     }
 
     QString fileprefix = GetConfDir();
@@ -1364,24 +1352,9 @@ int main(int argc, char **argv)
         gCoreContext->SaveSetting("Language", "");
         gCoreContext->SaveSetting("Country", "");
 
-        return FRONTEND_EXIT_OK;
+        return GENERIC_EXIT_OK;
     }
 
-    // Create privileged thread, then drop privs
-    pthread_t priv_thread;
-    bool priv_thread_created = true;
-
-    VERBOSE(VB_PLAYBACK, QString("user: %1 effective user: %2 before "
-                            "privileged thread").arg(getuid()).arg(geteuid()));
-    int status = pthread_create(&priv_thread, NULL, run_priv_thread, NULL);
-    VERBOSE(VB_PLAYBACK, QString("user: %1 effective user: %2 after "
-                            "privileged thread").arg(getuid()).arg(geteuid()));
-    if (status)
-    {
-        VERBOSE(VB_IMPORTANT, QString("Warning: ") +
-                "Failed to create priveledged thread." + ENO);
-        priv_thread_created = false;
-    }
     setuid(getuid());
 
     VERBOSE(VB_IMPORTANT,
@@ -1400,7 +1373,7 @@ int main(int argc, char **argv)
     {
         VERBOSE(VB_IMPORTANT, QString("Couldn't find theme '%1'")
                 .arg(themename));
-        return FRONTEND_EXIT_NO_THEME;
+        return GENERIC_EXIT_NO_THEME;
     }
 
     GetMythUI()->LoadQtConfig();
@@ -1411,18 +1384,27 @@ int main(int argc, char **argv)
     {
         VERBOSE(VB_IMPORTANT, QString("Couldn't find theme '%1'")
                 .arg(themename));
-        return FRONTEND_EXIT_NO_THEME;
+        return GENERIC_EXIT_NO_THEME;
     }
 
     MythMainWindow *mainWindow = GetMythMainWindow();
     mainWindow->Init();
     mainWindow->setWindowTitle(QObject::tr("MythTV Frontend"));
 
+    // We must reload the translation after a language change and this
+    // also means clearing the cached/loaded theme strings, so reload the
+    // theme which also triggers a translation reload
+    if (LanguageSelection::prompt())
+    {
+        if (!reloadTheme())
+            return GENERIC_EXIT_NO_THEME;
+    }
+
     if (!UpgradeTVDatabaseSchema(upgradeAllowed))
     {
         VERBOSE(VB_IMPORTANT,
                 "Couldn't upgrade database to new schema, exiting.");
-        return FRONTEND_EXIT_DB_OUTOFDATE;
+        return GENERIC_EXIT_DB_OUTOFDATE;
     }
 
     WriteDefaults();
@@ -1432,12 +1414,6 @@ int main(int argc, char **argv)
     mainWindow->ResetKeys();
 
     InitJumpPoints();
-
-    // We must reload the translation after a language change and this
-    // also means clearing the cached/loaded theme strings, so reload the
-    // theme which also triggers a translation reload
-    if (LanguageSelection::prompt())
-        GetMythMainWindow()->JumpTo("Reload Theme");
 
     internal_media_init();
 
@@ -1453,10 +1429,10 @@ int main(int argc, char **argv)
         {
             qApp->exec();
 
-            return FRONTEND_EXIT_OK;
+            return GENERIC_EXIT_OK;
         }
         else
-            return FRONTEND_EXIT_INVALID_CMDLINE;
+            return GENERIC_EXIT_INVALID_CMDLINE;
     }
 
     MediaMonitor *mon = MediaMonitor::GetMediaMonitor();
@@ -1477,15 +1453,29 @@ int main(int argc, char **argv)
                     .arg(networkPort));
     }
 
+#ifdef __linux__
+#ifdef CONFIG_BINDINGS_PYTHON
+    HardwareProfile *profile = new HardwareProfile();
+    if (profile && profile->NeedsUpdate())
+        profile->SubmitProfile();
+    delete profile;
+#endif
+#endif
+
     if (!RunMenu(themedir, themename) && !resetTheme(themedir, themename))
     {
-        return FRONTEND_EXIT_NO_THEME;
+        return GENERIC_EXIT_NO_THEME;
     }
 
+#ifndef _MSC_VER
     // Setup handler for USR1 signals to reload theme
     signal(SIGUSR1, &signal_USR1_handler);
     // Setup handler for USR2 signals to restart LIRC
     signal(SIGUSR2, &signal_USR2_handler);
+#endif
+    ThemeUpdateChecker *themeUpdateChecker = NULL;
+    if (gCoreContext->GetNumSetting("ThemeUpdateNofications", 1))
+        themeUpdateChecker = new ThemeUpdateChecker();
 
     MythSystemEventHandler *sysEventHandler = new MythSystemEventHandler();
     GetMythMainWindow()->RegisterSystemEventHandler(sysEventHandler);
@@ -1499,18 +1489,15 @@ int main(int argc, char **argv)
 
     PreviewGeneratorQueue::TeardownPreviewGeneratorQueue();
 
+    if (themeUpdateChecker)
+        delete themeUpdateChecker;
+
     delete sysEventHandler;
 
     pmanager->DestroyAllPlugins();
 
     if (mon)
         mon->deleteLater();
-
-    if (priv_thread_created)
-    {
-        gCoreContext->addPrivRequest(MythPrivRequest::MythExit, NULL);
-        pthread_join(priv_thread, NULL);
-    }
 
     delete networkControl;
 

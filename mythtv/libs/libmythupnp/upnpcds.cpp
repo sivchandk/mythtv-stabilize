@@ -26,6 +26,7 @@
 #include "upnp.h"
 #include "upnpcds.h"
 #include "upnputil.h"
+#include "mythverbose.h"
 
 #define DIDL_LITE_BEGIN "<DIDL-Lite xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\" xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\">"
 #define DIDL_LITE_END   "</DIDL-Lite>";
@@ -65,7 +66,7 @@ UPnpCDS::UPnpCDS( UPnpDevice *pDevice, const QString &sSharePath )
     m_root.m_eType      = OT_Container;
     m_root.m_sId        = "0";
     m_root.m_sParentId  = "-1";
-    m_root.m_sTitle     = "MythTv";
+    m_root.m_sTitle     = "MythTV";
     m_root.m_sClass     = "object.container";
     m_root.m_bRestricted= true;
     m_root.m_bSearchable= true;
@@ -76,7 +77,7 @@ UPnpCDS::UPnpCDS( UPnpDevice *pDevice, const QString &sSharePath )
 
     SetValue< unsigned short >( "SystemUpdateID", 1 );
 
-    QString sUPnpDescPath = UPnp::g_pConfig->GetValue( "UPnP/DescXmlPath", sSharePath );
+    QString sUPnpDescPath = UPnp::GetConfiguration()->GetValue( "UPnP/DescXmlPath", sSharePath );
 
     m_sServiceDescFileName = sUPnpDescPath + "CDS_scpd.xml";
     m_sControlUrl          = "/CDS_Control";
@@ -149,6 +150,15 @@ void UPnpCDS::UnregisterExtension( UPnpCDSExtension *pExtension )
         delete pExtension;
         m_extensions.removeAll(pExtension);
     }
+}
+
+/////////////////////////////////////////////////////////////////////////////
+//
+/////////////////////////////////////////////////////////////////////////////
+
+QStringList UPnpCDS::GetBasePaths() 
+{ 
+    return Eventing::GetBasePaths() << m_sControlUrl; 
 }
 
 /////////////////////////////////////////////////////////////////////////////

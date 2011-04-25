@@ -91,6 +91,7 @@ bool ViewScheduled::Create()
             SLOT(selected(MythUIButtonListItem*)));
 
     m_schedulesList->SetLCDTitles(tr("Scheduled Recordings"), "shortstarttimedate|channel|titlesubtitle|card");
+    m_schedulesList->SetSearchFields("titlesubtitle");
 
     if (m_groupList)
     {
@@ -413,7 +414,8 @@ void ViewScheduled::FillList()
                  recstatus == rsOffLine   ||
                  recstatus == rsTunerBusy ||
                  recstatus == rsFailed    ||
-                 recstatus == rsAborted)
+                 recstatus == rsAborted   ||
+                 recstatus == rsMissed)
             state = "error";
         else if (recstatus == rsWillRecord)
         {

@@ -23,9 +23,9 @@
 
 // MythTV headers
 #include "httpstatus.h"
-#include "mythxml.h"
 
 #include "mythcorecontext.h"
+#include "mythversion.h"
 #include "decodeencode.h"
 #include "mythdbcon.h"
 #include "compat.h"
@@ -38,6 +38,7 @@
 #include "cardutil.h"
 #include "mythsystem.h"
 #include "exitcodes.h"
+#include "jobqueue.h"
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -71,12 +72,21 @@ HttpStatus::~HttpStatus()
 
 HttpStatusMethod HttpStatus::GetMethod( const QString &sURI )
 {
-    if (sURI.isEmpty()                 ) return( HSM_GetStatusHTML   );
+    if (sURI == "Status"               ) return( HSM_GetStatusHTML   );
     if (sURI == "GetStatusHTML"        ) return( HSM_GetStatusHTML   );
     if (sURI == "GetStatus"            ) return( HSM_GetStatusXML    );
     if (sURI == "xml"                  ) return( HSM_GetStatusXML    );
 
     return( HSM_Unknown );
+}
+
+/////////////////////////////////////////////////////////////////////////////
+//
+/////////////////////////////////////////////////////////////////////////////
+
+QStringList HttpStatus::GetBasePaths()
+{
+    return QStringList( "/Status" );
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -90,8 +100,11 @@ bool HttpStatus::ProcessRequest( HttpWorkerThread * /* pThread */,
     {
         if (pRequest)
         {
-            if (pRequest->m_sBaseUrl != "/")
+            if ((pRequest->m_sBaseUrl     != "/Status" ) &&
+                (pRequest->m_sResourceUrl != "/Status" ))
+            {
                 return( false );
+            }
 
             switch( GetMethod( pRequest->m_sMethod ))
             {
@@ -128,7 +141,9 @@ void HttpStatus::GetStatusXML( HTTPRequest *pRequest )
 
     pRequest->m_eResponseType   = ResponseTypeXML;
     pRequest->m_mapRespHeaders[ "Cache-Control" ] = "no-cache=\"Ext\", max-age = 5000";
-    pRequest->m_response << doc.toString();
+
+    QTextStream stream( &pRequest->m_response );
+    stream << doc.toString();
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -144,7 +159,8 @@ void HttpStatus::GetStatusHTML( HTTPRequest *pRequest )
 
     FillStatusXML( &doc );
 
-    PrintStatus( pRequest->m_response, &doc );
+    QTextStream stream( &pRequest->m_response );
+    PrintStatus( stream, &doc );
 }
 
 void HttpStatus::FillStatusXML( QDomDocument *pDoc )
@@ -219,7 +235,7 @@ void HttpStatus::FillStatusXML( QDomDocument *pDoc )
 
                     if (pInfo)
                     {
-                        MythXML::FillProgramInfo(pDoc, encoder, pInfo);
+                        FillProgramInfo(pDoc, encoder, pInfo);
                         delete pInfo;
                     }
 
@@ -255,7 +271,7 @@ void HttpStatus::FillStatusXML( QDomDocument *pDoc )
              QDateTime::currentDateTime()))
         {
             iNumRecordings++;
-            MythXML::FillProgramInfo(pDoc, scheduled, *itProg);
+            FillProgramInfo(pDoc, scheduled, *itProg);
         }
     }
 
@@ -314,7 +330,7 @@ void HttpStatus::FillStatusXML( QDomDocument *pDoc )
         QDomText textNode = pDoc->createTextNode((*it).comment);
         job.appendChild(textNode);
 
-        MythXML::FillProgramInfo(pDoc, job, &pginfo);
+        FillProgramInfo(pDoc, job, &pginfo);
     }
 
     jobqueue.setAttribute( "count", jobs.size() );
@@ -536,93 +552,16 @@ void HttpStatus::PrintStatus( QTextStream &os, QDomDocument *pDoc )
        << "<head>\r\n"
        << "  <meta http-equiv=\"Content-Type\""
        << "content=\"text/html; charset=UTF-8\" />\r\n"
-       << "  <style type=\"text/css\" title=\"Default\" media=\"all\">\r\n"
-       << "  <!--\r\n"
-       << "  body {\r\n"
-       << "    background-color:#fff;\r\n"
-       << "    font:11px verdana, arial, helvetica, sans-serif;\r\n"
-       << "    margin:20px;\r\n"
-       << "  }\r\n"
-       << "  h1 {\r\n"
-       << "    font-size:28px;\r\n"
-       << "    font-weight:900;\r\n"
-       << "    color:#ccc;\r\n"
-       << "    letter-spacing:0.5em;\r\n"
-       << "    margin-bottom:30px;\r\n"
-       << "    width:650px;\r\n"
-       << "    text-align:center;\r\n"
-       << "  }\r\n"
-       << "  h2 {\r\n"
-       << "    font-size:18px;\r\n"
-       << "    font-weight:800;\r\n"
-       << "    color:#360;\r\n"
-       << "    border:none;\r\n"
-       << "    letter-spacing:0.3em;\r\n"
-       << "    padding:0px;\r\n"
-       << "    margin-bottom:10px;\r\n"
-       << "    margin-top:0px;\r\n"
-       << "  }\r\n"
-       << "  hr {\r\n"
-       << "    display:none;\r\n"
-       << "  }\r\n"
-       << "  div.content {\r\n"
-       << "    width:650px;\r\n"
-       << "    border-top:1px solid #000;\r\n"
-       << "    border-right:1px solid #000;\r\n"
-       << "    border-bottom:1px solid #000;\r\n"
-       << "    border-left:10px solid #000;\r\n"
-       << "    padding:10px;\r\n"
-       << "    margin-bottom:30px;\r\n"
-       << "    -moz-border-radius:8px 0px 0px 8px;\r\n"
-       << "  }\r\n"
-       << "  div.schedule a {\r\n"
-       << "    display:block;\r\n"
-       << "    color:#000;\r\n"
-       << "    text-decoration:none;\r\n"
-       << "    padding:.2em .8em;\r\n"
-       << "    border:thin solid #fff;\r\n"
-       << "    width:350px;\r\n"
-       << "  }\r\n"
-       << "  div.schedule a span {\r\n"
-       << "    display:none;\r\n"
-       << "  }\r\n"
-       << "  div.schedule a:hover {\r\n"
-       << "    background-color:#F4F4F4;\r\n"
-       << "    border-top:thin solid #000;\r\n"
-       << "    border-bottom:thin solid #000;\r\n"
-       << "    border-left:thin solid #000;\r\n"
-       << "    cursor:default;\r\n"
-       << "  }\r\n"
-       << "  div.schedule a:hover span {\r\n"
-       << "    display:block;\r\n"
-       << "    position:absolute;\r\n"
-       << "    background-color:#F4F4F4;\r\n"
-       << "    color:#000;\r\n"
-       << "    left:400px;\r\n"
-       << "    margin-top:-20px;\r\n"
-       << "    width:280px;\r\n"
-       << "    padding:5px;\r\n"
-       << "    border:thin dashed #000;\r\n"
-       << "  }\r\n"
-       << "  div.loadstatus {\r\n"
-       << "    width:325px;\r\n"
-       << "    height:7em;\r\n"
-       << "  }\r\n"
-       << "  .jobfinished { color: #0000ff; }\r\n"
-       << "  .jobaborted { color: #7f0000; }\r\n"
-       << "  .joberrored { color: #ff0000; }\r\n"
-       << "  .jobrunning { color: #005f00; }\r\n"
-       << "  .jobqueued  {  }\r\n"
-       << "  -->\r\n"
-       << "  </style>\r\n"
+       << "  <link rel=\"stylesheet\" href=\"/css/Status.css\" type=\"text/css\">\r\n"
        << "  <title>MythTV Status - "
        << docElem.attribute( "date", qdtNow.toString(shortdateformat)  )
        << " "
        << docElem.attribute( "time", qdtNow.toString(timeformat) ) << " - "
        << docElem.attribute( "version", MYTH_BINARY_VERSION ) << "</title>\r\n"
        << "</head>\r\n"
-       << "<body>\r\n\r\n"
-       << "  <h1>MythTV Status</h1>\r\n";
+       << "<body bgcolor=\"#fff\">\r\n"
+       << "<div class=\"status\">\r\n"
+       << "  <h1 class=\"status\">MythTV Status</h1>\r\n";
 
     int nNumEncoders = 0;
 
@@ -662,7 +601,7 @@ void HttpStatus::PrintStatus( QTextStream &os, QDomDocument *pDoc )
     if (!node.isNull())
         PrintMiscellaneousInfo( os, node.toElement());
 
-    os << "\r\n</body>\r\n</html>\r\n";
+    os << "\r\n</div>\r\n</body>\r\n</html>\r\n";
 
 }
 
@@ -679,7 +618,7 @@ int HttpStatus::PrintEncoderStatus( QTextStream &os, QDomElement encoders )
         return 0;
 
     os << "  <div class=\"content\">\r\n"
-       << "    <h2>Encoder Status</h2>\r\n";
+       << "    <h2 class=\"status\">Encoder Status</h2>\r\n";
 
     QDomNode node = encoders.firstChild();
 
@@ -827,7 +766,7 @@ int HttpStatus::PrintScheduled( QTextStream &os, QDomElement scheduled )
     int     nNumRecordings= scheduled.attribute( "count", "0" ).toInt();
 
     os << "  <div class=\"content\">\r\n"
-       << "    <h2>Schedule</h2>\r\n";
+       << "    <h2 class=\"status\">Schedule</h2>\r\n";
 
     if (nNumRecordings == 0)
     {
@@ -953,7 +892,7 @@ int HttpStatus::PrintJobQueue( QTextStream &os, QDomElement jobs )
     int nNumJobs= jobs.attribute( "count", "0" ).toInt();
 
     os << "  <div class=\"content\">\r\n"
-       << "    <h2>Job Queue</h2>\r\n";
+       << "    <h2 class=\"status\">Job Queue</h2>\r\n";
 
     if (nNumJobs != 0)
     {
@@ -1097,7 +1036,7 @@ int HttpStatus::PrintMachineInfo( QTextStream &os, QDomElement info )
         return( 0 );
 
     os << "<div class=\"content\">\r\n"
-       << "    <h2>Machine Information</h2>\r\n";
+       << "    <h2 class=\"status\">Machine Information</h2>\r\n";
 
     // load average ---------------------
 
@@ -1348,7 +1287,7 @@ int HttpStatus::PrintMiscellaneousInfo( QTextStream &os, QDomElement info )
         QString display, linebreak;
         //QString name, value;
         os << "<div class=\"content\">\r\n"
-           << "    <h2>Miscellaneous</h2>\r\n";
+           << "    <h2 class=\"status\">Miscellaneous</h2>\r\n";
         for (unsigned int i = 0; i < count; i++)
         {
             QDomNode node = nodes.item(i);
@@ -1384,5 +1323,141 @@ int HttpStatus::PrintMiscellaneousInfo( QTextStream &os, QDomElement info )
 
     return( 1 );
 }
+
+void HttpStatus::FillProgramInfo(QDomDocument *pDoc,
+                                 QDomNode     &node,
+                                 ProgramInfo  *pInfo,
+                                 bool          bIncChannel /* = true */,
+                                 bool          bDetails    /* = true */)
+{
+    if ((pDoc == NULL) || (pInfo == NULL))
+        return;
+
+    // Build Program Element
+
+    QDomElement program = pDoc->createElement( "Program" );
+    node.appendChild( program );
+
+    program.setAttribute( "startTime"   ,
+                          pInfo->GetScheduledStartTime(ISODate));
+    program.setAttribute( "endTime"     , pInfo->GetScheduledEndTime(ISODate));
+    program.setAttribute( "title"       , pInfo->GetTitle()   );
+    program.setAttribute( "subTitle"    , pInfo->GetSubtitle());
+    program.setAttribute( "category"    , pInfo->GetCategory());
+    program.setAttribute( "catType"     , pInfo->GetCategoryType());
+    program.setAttribute( "repeat"      , pInfo->IsRepeat()   );
+
+    if (bDetails)
+    {
+
+        program.setAttribute( "seriesId"    , pInfo->GetSeriesID()     );
+        program.setAttribute( "programId"   , pInfo->GetProgramID()    );
+        program.setAttribute( "stars"       , pInfo->GetStars()        );
+        program.setAttribute( "fileSize"    ,
+                              QString::number( pInfo->GetFilesize() ));
+        program.setAttribute( "lastModified",
+                              pInfo->GetLastModifiedTime(ISODate) );
+        program.setAttribute( "programFlags", pInfo->GetProgramFlags() );
+        program.setAttribute( "hostname"    , pInfo->GetHostname() );
+
+        if (pInfo->GetOriginalAirDate().isValid())
+            program.setAttribute( "airdate"  , pInfo->GetOriginalAirDate()
+                                               .toString(Qt::ISODate) );
+
+        QDomText textNode = pDoc->createTextNode( pInfo->GetDescription() );
+        program.appendChild( textNode );
+
+    }
+
+    if ( bIncChannel )
+    {
+        // Build Channel Child Element
+
+        QDomElement channel = pDoc->createElement( "Channel" );
+        program.appendChild( channel );
+
+        FillChannelInfo( channel, pInfo, bDetails );
+    }
+
+    // Build Recording Child Element
+
+    if ( pInfo->GetRecordingStatus() != rsUnknown )
+    {
+        QDomElement recording = pDoc->createElement( "Recording" );
+        program.appendChild( recording );
+
+        recording.setAttribute( "recStatus"     ,
+                                pInfo->GetRecordingStatus()   );
+        recording.setAttribute( "recPriority"   ,
+                                pInfo->GetRecordingPriority() );
+        recording.setAttribute( "recStartTs"    ,
+                                pInfo->GetRecordingStartTime(ISODate) );
+        recording.setAttribute( "recEndTs"      ,
+                                pInfo->GetRecordingEndTime(ISODate) );
+
+        if (bDetails)
+        {
+            recording.setAttribute( "recordId"      ,
+                                    pInfo->GetRecordingRuleID() );
+            recording.setAttribute( "recGroup"      ,
+                                    pInfo->GetRecordingGroup() );
+            recording.setAttribute( "playGroup"     ,
+                                    pInfo->GetPlaybackGroup() );
+            recording.setAttribute( "recType"       ,
+                                    pInfo->GetRecordingRuleType() );
+            recording.setAttribute( "dupInType"     ,
+                                    pInfo->GetDuplicateCheckSource() );
+            recording.setAttribute( "dupMethod"     ,
+                                    pInfo->GetDuplicateCheckMethod() );
+            recording.setAttribute( "encoderId"     ,
+                                    pInfo->GetCardID() );
+            const RecordingInfo ri(*pInfo);
+            recording.setAttribute( "recProfile"    ,
+                                    ri.GetProgramRecordingProfile());
+            //recording.setAttribute( "preRollSeconds", m_nPreRollSeconds );
+        }
+    }
+}
+
+/////////////////////////////////////////////////////////////////////////////
+//
+/////////////////////////////////////////////////////////////////////////////
+
+void HttpStatus::FillChannelInfo( QDomElement &channel,
+                                  ProgramInfo *pInfo,
+                                  bool         bDetails  /* = true */ )
+{
+    if (pInfo)
+    {
+/*
+        QString sHostName = gCoreContext->GetHostName();
+        QString sPort     = gCoreContext->GetSettingOnHost( "BackendStatusPort",
+                                                        sHostName);
+        QString sIconURL  = QString( "http://%1:%2/getChannelIcon?ChanId=%3" )
+                                   .arg( sHostName )
+                                   .arg( sPort )
+                                   .arg( pInfo->chanid );
+*/
+
+        channel.setAttribute( "chanId"     , pInfo->GetChanID() );
+        channel.setAttribute( "chanNum"    , pInfo->GetChanNum());
+        channel.setAttribute( "callSign"   , pInfo->GetChannelSchedulingID());
+        //channel.setAttribute( "iconURL"    , sIconURL           );
+        channel.setAttribute( "channelName", pInfo->GetChannelName());
+
+        if (bDetails)
+        {
+            channel.setAttribute( "chanFilters",
+                                  pInfo->GetChannelPlaybackFilters() );
+            channel.setAttribute( "sourceId"   , pInfo->GetSourceID()    );
+            channel.setAttribute( "inputId"    , pInfo->GetInputID()     );
+            channel.setAttribute( "commFree"   ,
+                                  (pInfo->IsCommercialFree()) ? 1 : 0 );
+        }
+    }
+}
+
+
+
 
 // vim:set shiftwidth=4 tabstop=4 expandtab:

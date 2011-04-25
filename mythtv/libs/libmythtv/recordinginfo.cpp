@@ -92,15 +92,17 @@ RecordingInfo::RecordingInfo(
     bool _commfree,
     uint _subtitleType,
     uint _videoproperties,
-    uint _audioproperties) :
+    uint _audioproperties,
+    bool _future) :
     ProgramInfo(
         _title, _subtitle, _description, _category,
         _chanid, _chanstr, _chansign, _channame, QString(),
         _recgroup, _playgroup,
         _startts, _endts, _recstartts, _recendts,
         _seriesid, _programid),
-    oldrecstatus(rsUnknown),
+    oldrecstatus(_oldrecstatus),
     savedrecstatus(rsUnknown),
+    future(_future),
     record(NULL)
 {
     hostname = _hostname;
@@ -123,12 +125,6 @@ RecordingInfo::RecordingInfo(
     programflags |= _reactivate ? FL_REACTIVATE : 0;
     programflags &= ~FL_CHANCOMMFREE;
     programflags |= _commfree ? FL_CHANCOMMFREE : 0;
-
-    oldrecstatus = _oldrecstatus;
-
-    recstatus = (oldrecstatus == rsAborted ||
-                 oldrecstatus == rsNotListed ||
-                 _reactivate) ? rsUnknown : oldrecstatus;
 
     recordid = _recordid;
     parentid = _parentid;
@@ -196,6 +192,7 @@ RecordingInfo::RecordingInfo(
         _seriesid, _programid),
     oldrecstatus(rsUnknown),
     savedrecstatus(rsUnknown),
+    future(false),
     record(NULL)
 {
     recpriority = _recpriority;
@@ -226,6 +223,7 @@ RecordingInfo::RecordingInfo(
     bool genUnknown, uint maxHours, LoadStatus *status) :
     oldrecstatus(rsUnknown),
     savedrecstatus(rsUnknown),
+    future(false),
     record(NULL)
 {
     ProgramList schedList;
@@ -368,6 +366,7 @@ void RecordingInfo::clone(const RecordingInfo &other,
     {
         oldrecstatus   = other.oldrecstatus;
         savedrecstatus = other.savedrecstatus;
+        future         = other.future;
     }
 }
 
@@ -391,6 +390,7 @@ void RecordingInfo::clone(const ProgramInfo &other,
 
     oldrecstatus   = rsUnknown;
     savedrecstatus = rsUnknown;
+    future         = false;
 }
 
 void RecordingInfo::clear(void)
@@ -402,6 +402,7 @@ void RecordingInfo::clear(void)
 
     oldrecstatus = rsUnknown;
     savedrecstatus = rsUnknown;
+    future = false;
 }
 
 
@@ -608,30 +609,37 @@ void RecordingInfo::ApplyStorageGroupChange(const QString &newstoragegroup)
     SendUpdateEvent();
 }
 
-/** \fn RecordingInfo::ApplyRecordRecTitleChange(const QString &newTitle, const QString &newSubtitle)
- *  \brief Sets the recording title and subtitle, both in this RecordingInfo
- *         and in the database.
+/** \fn RecordingInfo::ApplyRecordRecTitleChange(const QString &newTitle, const QString &newSubtitle, const QString &newDescription)
+ *  \brief Sets the recording title, subtitle, and description both in this
+ *         RecordingInfo and in the database.
  *  \param newTitle New recording title.
  *  \param newSubtitle New recording subtitle
+ *  \param newDescription New recording description
  */
-void RecordingInfo::ApplyRecordRecTitleChange(const QString &newTitle, const QString &newSubtitle)
+void RecordingInfo::ApplyRecordRecTitleChange(const QString &newTitle,
+        const QString &newSubtitle, const QString &newDescription)
 {
     MSqlQuery query(MSqlQuery::InitCon());
+    QString sql = "UPDATE recorded SET title = :TITLE, subtitle = :SUBTITLE ";
+    if (newDescription != NULL)
+        sql += ", description = :DESCRIPTION ";
+    sql += " WHERE chanid = :CHANID AND starttime = :START ;";
 
-    query.prepare("UPDATE recorded"
-                  " SET title = :TITLE, subtitle = :SUBTITLE"
-                  " WHERE chanid = :CHANID"
-                  " AND starttime = :START ;");
+    query.prepare(sql);
     query.bindValue(":TITLE", newTitle);
     query.bindValue(":SUBTITLE", newSubtitle);
+    if (newDescription != NULL)
+        query.bindValue(":DESCRIPTION", newDescription);
     query.bindValue(":CHANID", chanid);
-    query.bindValue(":START", recstartts.toString("yyyyMMddhhmmss"));
+    query.bindValue(":START", recstartts);
 
     if (!query.exec())
         MythDB::DBError("RecTitle update", query);
 
     title = newTitle;
     subtitle = newSubtitle;
+    if (newDescription != NULL)
+        description = newDescription;
 
     SendUpdateEvent();
 }
@@ -1057,6 +1065,11 @@ void RecordingInfo::FinishedRecording(bool prematurestop)
     {
         recstatus = rsRecorded;
 
+        uint starttime = recstartts.toTime_t();
+        uint endtime   = recendts.toTime_t();
+        int64_t duration = ((int64_t)endtime - (int64_t)starttime) * 1000000;
+        SaveTotalDuration(duration);
+
         QString msg = "Finished recording";
         QString msg_subtitle = subtitle.isEmpty() ? "" :
                                         QString(" \"%1\"").arg(subtitle);
@@ -1117,27 +1130,33 @@ void RecordingInfo::ReactivateRecording(void)
 /**
  *  \brief Adds recording history, creating "record" it if necessary.
  */
-void RecordingInfo::AddHistory(bool resched, bool forcedup)
+void RecordingInfo::AddHistory(bool resched, bool forcedup, bool future)
 {
     bool dup = (GetRecordingStatus() == rsRecorded || forcedup);
-    RecStatusType rs = (GetRecordingStatus() == rsCurrentRecording) ?
-        rsPreviousRecording : GetRecordingStatus();
-    oldrecstatus = GetRecordingStatus();
+    RecStatusType rs = (GetRecordingStatus() == rsCurrentRecording &&
+                        !future) ? rsPreviousRecording : GetRecordingStatus();
+    VERBOSE(VB_SCHEDULE, QString("AddHistory: %1/%2, %3, %4, %5/%6")
+            .arg(int(rs)).arg(int(oldrecstatus)).arg(future).arg(dup)
+            .arg(GetScheduledStartTime().toString()).arg(GetTitle()));
+    if (!future)
+        oldrecstatus = GetRecordingStatus();
     if (dup)
         SetReactivated(false);
+    uint erecid = parentid ? parentid : recordid;
 
     MSqlQuery result(MSqlQuery::InitCon());
 
     result.prepare("REPLACE INTO oldrecorded (chanid,starttime,"
                    "endtime,title,subtitle,description,category,"
                    "seriesid,programid,findid,recordid,station,"
-                   "rectype,recstatus,duplicate,reactivate) "
+                   "rectype,recstatus,duplicate,reactivate,future) "
                    "VALUES(:CHANID,:START,:END,:TITLE,:SUBTITLE,:DESC,"
                    ":CATEGORY,:SERIESID,:PROGRAMID,:FINDID,:RECORDID,"
-                   ":STATION,:RECTYPE,:RECSTATUS,:DUPLICATE,:REACTIVATE);");
+                   ":STATION,:RECTYPE,:RECSTATUS,:DUPLICATE,:REACTIVATE,"
+                   ":FUTURE);");
     result.bindValue(":CHANID", chanid);
-    result.bindValue(":START", startts.toString(Qt::ISODate));
-    result.bindValue(":END", endts.toString(Qt::ISODate));
+    result.bindValue(":START", startts);
+    result.bindValue(":END", endts);
     result.bindValue(":TITLE", title);
     result.bindValue(":SUBTITLE", subtitle);
     result.bindValue(":DESC", description);
@@ -1145,12 +1164,13 @@ void RecordingInfo::AddHistory(bool resched, bool forcedup)
     result.bindValue(":SERIESID", seriesid);
     result.bindValue(":PROGRAMID", programid);
     result.bindValue(":FINDID", findid);
-    result.bindValue(":RECORDID", recordid);
+    result.bindValue(":RECORDID", erecid);
     result.bindValue(":STATION", chansign);
     result.bindValue(":RECTYPE", rectype);
     result.bindValue(":RECSTATUS", rs);
     result.bindValue(":DUPLICATE", dup);
     result.bindValue(":REACTIVATE", IsReactivated());
+    result.bindValue(":FUTURE", future);
 
     if (!result.exec())
         MythDB::DBError("addHistory", result);
@@ -1159,7 +1179,7 @@ void RecordingInfo::AddHistory(bool resched, bool forcedup)
     {
         result.prepare("REPLACE INTO oldfind (recordid, findid) "
                        "VALUES(:RECORDID,:FINDID);");
-        result.bindValue(":RECORDID", recordid);
+        result.bindValue(":RECORDID", erecid);
         result.bindValue(":FINDID", findid);
 
         if (!result.exec())
@@ -1177,6 +1197,8 @@ void RecordingInfo::AddHistory(bool resched, bool forcedup)
  */
 void RecordingInfo::DeleteHistory(void)
 {
+    uint erecid = parentid ? parentid : recordid;
+
     MSqlQuery result(MSqlQuery::InitCon());
 
     result.prepare("DELETE FROM oldrecorded WHERE title = :TITLE AND "
@@ -1192,7 +1214,7 @@ void RecordingInfo::DeleteHistory(void)
     {
         result.prepare("DELETE FROM oldfind WHERE "
                        "recordid = :RECORDID AND findid = :FINDID");
-        result.bindValue(":RECORDID", recordid);
+        result.bindValue(":RECORDID", erecid);
         result.bindValue(":FINDID", findid);
 
         if (!result.exec())
@@ -1214,6 +1236,8 @@ void RecordingInfo::DeleteHistory(void)
  */
 void RecordingInfo::ForgetHistory(void)
 {
+    uint erecid = parentid ? parentid : recordid;
+
     MSqlQuery result(MSqlQuery::InitCon());
 
     result.prepare("UPDATE recorded SET duplicate = 0 "
@@ -1254,7 +1278,7 @@ void RecordingInfo::ForgetHistory(void)
     {
         result.prepare("DELETE FROM oldfind WHERE "
                        "recordid = :RECORDID AND findid = :FINDID");
-        result.bindValue(":RECORDID", recordid);
+        result.bindValue(":RECORDID", erecid);
         result.bindValue(":FINDID", findid);
 
         if (!result.exec())
@@ -1274,7 +1298,7 @@ void RecordingInfo::SetDupHistory(void)
     MSqlQuery result(MSqlQuery::InitCon());
 
     result.prepare("UPDATE oldrecorded SET duplicate = 1 "
-                   "WHERE duplicate = 0 "
+                   "WHERE future = 0 AND duplicate = 0 "
                    "AND title = :TITLE AND "
                    "((programid = '' AND subtitle = :SUBTITLE"
                    "  AND description = :DESC) OR "

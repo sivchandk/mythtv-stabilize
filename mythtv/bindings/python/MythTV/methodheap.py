@@ -9,7 +9,7 @@ from exceptions import *
 from logging import MythLog
 from connections import FEConnection, XMLConnection
 from utility import databaseSearch, datetime
-from database import DBCache
+from database import DBCache, DBData
 from system import SystemEvent
 from mythproto import BEEvent, FileOps, Program, FreeSpace
 from dataheap import *
@@ -18,6 +18,9 @@ from datetime import timedelta
 from weakref import proxy
 from urllib import urlopen
 import re
+
+class CaptureCard( DBData ):
+    pass
 
 class MythBE( FileOps ):
     __doc__ = FileOps.__doc__+"""
@@ -49,7 +52,7 @@ class MythBE( FileOps ):
                                     and dictionary of filenames with sizes
     """
 
-    locked_tuners = []
+    locked_tuners = {}
 
     def __del__(self):
         self.freeTuner()
@@ -109,51 +112,77 @@ class MythBE( FileOps ):
         Returns an ID of -2 if tuner is locked
                          -1 if no tuner could be found
         """
-        local = True
         cmd = 'LOCK_TUNER'
+        be = self
+
         if id is not None:
+            card = None
+            try:
+                # pull information from database to confirm existance
+                card = CaptureCard(id)
+            except MythError:
+                raise MythError("Capture card %s not found" % id)
+
             cmd += ' %d' % id
-            res = self.getRecorderDetails(id).hostname
-            if res != self.localname():
-                local = False
+            if card.hostname != be.hostname:
+                # connect to slave backend if needed
+                be = MythBE(card.hostname, db=self.db)
 
-        res = ''
-        if local:
-            res = self.backendCommand(cmd).split(BACKEND_SEP)
-        else:
-            myth = MythTV(res)
-            res = myth.backendCommand(cmd).split(BACKEND_SEP)
-            myth.close()
-        res[0] = int(res[0])
-        if res[0] > 0:
-            self.locked_tuners.append(res[0])
+        res = be.backendCommand(cmd).split(BACKEND_SEP)
+        err = int(res[0])
+
+        if err > 0:
+            # success, store tuner and return device nodes
+            self.locked_tuners[err] = be.hostname
             return tuple(res[1:])
-        return res[0]
 
+        # return failure mode
+        return err
 
     def freeTuner(self,id=None):
         """
         Frees a requested tuner ID
         If no ID given, free all tuners listed as used by this class instance
         """
-        def free(self,id):
-            res = self.getRecorderDetails(id).hostname
-            if res == self.localname():
-                self.backendCommand('FREE_TUNER %d' % id)
-            else:
-                myth = MythTV(res)
-                myth.backendCommand('FREE_TUNER %d' % id)
-                myth.close()
+        tunerlist = {}
 
-        if id is None:
-            for i in xrange(len(self.locked_tuners)):
-                free(self,self.locked_tuners.pop())
+        if id is not None:
+            id = int(id)
+            if id in self.locked_tuners:
+                # tuner is known, pop from list
+                tunerlist[id] = self.locked_tuners.pop(id)
+
+            else:
+                # tuner is not known, find hostname
+                try:
+                    card = CaptureCard(id)
+                except MythError:
+                    raise MythError("Capture card %s not found" % id)
+                tunerlist[id] = card.hostname
         else:
+            # use the stored list
+            tunerlist = self.locked_tuners
+
+        hosts = {self.hostname:self}
+
+        while True:
             try:
-                self.locked_tuners.remove(id)
-            except:
-                pass
-            free(self,id)
+                # get a tuner
+                id, host = tunerlist.popitem()
+
+                # get the backend connection
+                be = None
+                if host in hosts:
+                    be = hosts[host]
+                else:
+                    be = MythBE(host, db=self.db)
+                    hosts[host] = be
+
+                # unlock the tuner
+                be.backendCommand('FREE_TUNER %d' % id)
+            except KeyError:
+                # out of tuners
+                break
 
     def getCurrentRecording(self, recorder):
         """
@@ -189,7 +218,7 @@ class MythBE( FileOps ):
         """
         Returns a list of all Program objects which have already recorded
         """
-        return self._getSortedPrograms('QUERY_RECORDINGS Play')
+        return self._getSortedPrograms('QUERY_RECORDINGS Ascending')
 
     def getExpiring(self):
         """
@@ -923,13 +952,13 @@ class MythXML( XMLConnection ):
 
     def getHosts(self):
         """Returns a list of unique hostnames found in the settings table."""
-        tree = self._queryTree('GetHosts')
-        return [child.text for child in tree.find('Hosts').getchildren()]
+        return self._request('Myth/GetHosts')\
+                                        .readJSON()['StringList']['Values']
 
     def getKeys(self):
         """Returns a list of unique keys found in the settings table."""
-        tree = self._queryTree('GetKeys')
-        return [child.text for child in tree.find('Keys').getchildren()]
+        return self._request('Myth/GetKeys')\
+                                        .readJSON()['StringList']['Values']
 
     def getSetting(self, key, hostname=None, default=None):
         """Retrieves a setting from the backend."""
@@ -938,8 +967,8 @@ class MythXML( XMLConnection ):
             args['HostName'] = hostname
         if default:
             args['Default'] = default
-        tree = self._queryTree('GetSetting', **args)
-        return tree.find('Values').find('Value').text
+        return self._request('Myth/GetSetting', **args)\
+                         .readJSON()['SettingList']['Settings'][0]['Value']
 
     def getProgramGuide(self, starttime, endtime, startchan, numchan=None):
         """
@@ -955,11 +984,11 @@ class MythXML( XMLConnection ):
         else:
             args['NumOfChannels'] = 1
 
-        tree = self._queryTree('GetProgramGuide', **args)
-        for chan in tree.find('ProgramGuide').find('Channels').getchildren():
-            chanid = int(chan.attrib['chanId'])
-            for guide in chan.getchildren():
-                yield Guide.fromEtree((chanid, guide), self.db)
+        dat = self._request('Guide/GetProgramGuide', **args).readJSON()
+        for chan in dat['ProgramGuide']['Channels']:
+            for prog in chan['Programs']:
+                prog['ChanId'] = chan['ChanId']
+                yield Guide.fromJSON(prog, self.db)
 
     def getProgramDetails(self, chanid, starttime):
         """
@@ -967,37 +996,38 @@ class MythXML( XMLConnection ):
         """
         starttime = datetime.duck(starttime)
         args = {'ChanId': chanid, 'StartTime': starttime.isoformat()}
-        tree = self._queryTree('GetProgramDetails', **args)
-        prog = tree.find('ProgramDetails').find('Program')
-        return Program.fromEtree(prog, self.db)
+        return Program.fromJSON(
+                self._request('Guide/GetProgramDetails', **args)\
+                    .readJSON()['Program'],
+                db=self.db)
 
     def getChannelIcon(self, chanid):
         """Returns channel icon as a data string"""
-        return self._query('GetChannelIcon', ChanId=chanid)
+        return self._request('Guide/GetChannelIcon', ChanId=chanid).read()
 
     def getRecorded(self, descending=True):
         """
         Returns a list of Program objects for recorded shows on the backend.
         """
-        tree = self._queryTree('GetRecorded', Descending=descending)
-        for prog in tree.find('Recorded').find('Programs').getchildren():
-            yield Program.fromEtree(prog, self.db)
+        for prog in self._request('Dvr/GetRecorded', Descending=descending)\
+                    .readJSON()['ProgramList']['Programs']:
+            yield Program.fromJSON(prog, self.db)
 
     def getExpiring(self):
         """
         Returns a list of Program objects for expiring shows on the backend.
         """
-        tree = self._queryTree('GetExpiring')
-        for prog in tree.find('Expiring').find('Programs').getchildren():
-            yield Program.fromEtree(prog, self.db)
+        for prog in self._request('Dvr/GetExpiring')\
+                    .readJSON()['ProgramList']['Programs']:
+            yield Program.fromJSON(prog, self.db)
 
-    def getInternetSources(self):
-        for grabber in self._queryTree('GetInternetSources').\
-                        find('InternetContent').findall('grabber'):
-            yield InternetSource.fromEtree(grabber, self)
+#    def getInternetSources(self):
+#        for grabber in self._queryTree('GetInternetSources').\
+#                        find('InternetContent').findall('grabber'):
+#            yield InternetSource.fromEtree(grabber, self)
 
     def getInternetContentUrl(self, grabber, videocode):
-        return "mythflash://%s:%s/Myth/GetInternetContent?Grabber=%s&videocode=%s" \
+        return "mythflash://%s:%s/InternetContent/GetInternetContent?Grabber=%s&videocode=%s" \
             % (self.host, self.port, grabber, videocode)
 
     def getPreviewImage(self, chanid, starttime, width=None, \
@@ -1008,7 +1038,7 @@ class MythXML( XMLConnection ):
         if height: args['Height'] = height
         if secsin: args['SecsIn'] = secsin
 
-        return self._query('GetPreviewImage', **args)
+        return self._result('Content/GetPreviewImage', **args).read()
 
 class MythVideo( VideoSchema, DBCache ):
     """

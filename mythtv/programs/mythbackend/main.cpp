@@ -1,61 +1,49 @@
-// POSIX headers
-#include <sys/time.h>     // for setpriority
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <libgen.h>
-#include <signal.h>
-
-#include "mythconfig.h"
-#if CONFIG_DARWIN
-    #include <sys/aio.h>    // O_SYNC
-#endif
-
-// C headers
-#include <cstdlib>
-#include <cerrno>
-
-// C++ headers
-#include <iostream>
-#include <fstream>
-using namespace std;
-
 #ifndef _WIN32
 #include <QCoreApplication>
 #else
 #include <QApplication>
 #endif
 
-#include <QFile>
 #include <QFileInfo>
+#include <QRegExp>
+#include <QThread>
+#include <QFile>
 #include <QDir>
 #include <QMap>
-#include <QRegExp>
 
-#include "tv_rec.h"
+#include "mythcommandlineparser.h"
 #include "scheduledrecording.h"
-#include "autoexpire.h"
-#include "scheduler.h"
-#include "mainserver.h"
-#include "remoteutil.h"
-#include "housekeeper.h"
-
+#include "previewgenerator.h"
 #include "mythcorecontext.h"
+#include "mythsystemevent.h"
+#include "backendcontext.h"
+#include "main_helpers.h"
+#include "storagegroup.h"
+#include "housekeeper.h"
+#include "mediaserver.h"
 #include "mythverbose.h"
 #include "mythversion.h"
-#include "mythdb.h"
+#include "programinfo.h"
+#include "autoexpire.h"
+#include "mainserver.h"
+#include "remoteutil.h"
 #include "exitcodes.h"
+#include "scheduler.h"
+#include "jobqueue.h"
+#include "dbcheck.h"
 #include "compat.h"
+#include "mythdb.h"
+#include "tv_rec.h"
+
+/*
 #include "storagegroup.h"
 #include "programinfo.h"
 #include "dbcheck.h"
 #include "jobqueue.h"
 #include "mythcommandlineparser.h"
 #include "mythsystemevent.h"
-
-#include "backendcontext.h"
-#include "main_helpers.h"
+.r26134
+*/
 
 #define LOC      QString("MythBackend: ")
 #define LOC_WARN QString("MythBackend, Warning: ")
@@ -106,10 +94,10 @@ int main(int argc, char **argv)
         if (cmdline.PreParse(argc, argv, argpos, cmdline_err))
         {
             if (cmdline_err)
-                return BACKEND_EXIT_INVALID_CMDLINE;
+                return GENERIC_EXIT_INVALID_CMDLINE;
 
             if (cmdline.WantsToExit())
-                return BACKEND_EXIT_OK;
+                return GENERIC_EXIT_OK;
         }
     }
 
@@ -122,26 +110,24 @@ int main(int argc, char **argv)
     // such as socket notifications :[
     QApplication a(argc, argv);
 #endif
-
-    QFileInfo finfo(a.argv()[0]);
-    QString binname = finfo.baseName();
+    QCoreApplication::setApplicationName(MYTH_APPNAME_MYTHBACKEND);
 
     for (int argpos = 1; argpos < a.argc(); ++argpos)
     {
         if (cmdline.Parse(a.argc(), a.argv(), argpos, cmdline_err))
         {
             if (cmdline_err)
-                return BACKEND_EXIT_INVALID_CMDLINE;
+                return GENERIC_EXIT_INVALID_CMDLINE;
 
             if (cmdline.WantsToExit())
-                return BACKEND_EXIT_OK;
+                return GENERIC_EXIT_OK;
         }
         else
         {
             cerr << "Invalid argument: " << a.argv()[argpos] << endl;
             QByteArray help = cmdline.GetHelpString(true).toLocal8Bit();
             cout << help.constData();
-            return BACKEND_EXIT_INVALID_CMDLINE;
+            return GENERIC_EXIT_INVALID_CMDLINE;
         }
     }
 
@@ -158,31 +144,36 @@ int main(int argc, char **argv)
     CleanupGuard callCleanup(cleanup);
 
     int exitCode = setup_basics(cmdline);
-    if (BACKEND_EXIT_OK != exitCode)
+    if (exitCode != GENERIC_EXIT_OK)
         return exitCode;
 
     {
-        extern const char *myth_source_version;
-        extern const char *myth_source_path;
         QString versionStr = QString("%1 version: %2 [%3] www.mythtv.org")
-            .arg(basename(argv[0])).arg(myth_source_path)
-            .arg(myth_source_version);
+            .arg(MYTH_APPNAME_MYTHBACKEND).arg(MYTH_SOURCE_PATH)
+            .arg(MYTH_SOURCE_VERSION);
         VERBOSE(VB_IMPORTANT, versionStr);
     }
 
     gContext = new MythContext(MYTH_BINARY_VERSION);
-    gCoreContext->SetAppName(binname);
 
     if (cmdline.HasBackendCommand())
     {
         if (!setup_context(cmdline))
-            return BACKEND_EXIT_NO_MYTHCONTEXT;
+            return GENERIC_EXIT_NO_MYTHCONTEXT;
         return handle_command(cmdline);
     }
 
-    ///////////////////////////////////////////
+    /////////////////////////////////////////////////////////////////////////
+    // Not sure we want to keep running the backend when there is an error.
+    // Currently, it keeps repeating the same error over and over.
+    // Removing loop until reason for having it is understood.
+    //
+    //while (true)
+    //{
+        exitCode = run_backend(cmdline);
+    //}
 
-    return run_backend(cmdline);
+    return exitCode;
 }
 
 /* vim: set expandtab tabstop=4 shiftwidth=4: */

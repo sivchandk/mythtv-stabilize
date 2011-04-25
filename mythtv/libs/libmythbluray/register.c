@@ -255,6 +255,17 @@ void bd_psr_save_state(BD_REGISTERS *p)
     bd_psr_unlock(p);
 }
 
+void bd_psr_reset_backup_registers(BD_REGISTERS *p)
+{
+    bd_psr_lock(p);
+
+    /* init backup registers to default */
+    memcpy(p->psr + 36, bd_psr_init + 36, sizeof(uint32_t) * 5);
+    memcpy(p->psr + 42, bd_psr_init + 42, sizeof(uint32_t) * 3);
+
+    bd_psr_unlock(p);
+}
+
 void bd_psr_restore_state(BD_REGISTERS *p)
 {
     uint32_t old_psr[BD_PSR_COUNT];
@@ -303,7 +314,7 @@ void bd_psr_restore_state(BD_REGISTERS *p)
 int bd_gpr_write(BD_REGISTERS *p, int reg, uint32_t val)
 {
     if (reg < 0 || reg > BD_GPR_COUNT) {
-        DEBUG(DBG_BLURAY, "bd_gpr_write(%d): invalid register\n", reg);
+        BD_DEBUG(DBG_BLURAY, "bd_gpr_write(%d): invalid register\n", reg);
         return -1;
     }
 
@@ -314,7 +325,7 @@ int bd_gpr_write(BD_REGISTERS *p, int reg, uint32_t val)
 uint32_t bd_gpr_read(BD_REGISTERS *p, int reg)
 {
     if (reg < 0 || reg > BD_GPR_COUNT) {
-        DEBUG(DBG_BLURAY, "bd_gpr_read(%d): invalid register\n", reg);
+        BD_DEBUG(DBG_BLURAY, "bd_gpr_read(%d): invalid register\n", reg);
         return -1;
     }
 
@@ -330,7 +341,7 @@ uint32_t bd_psr_read(BD_REGISTERS *p, int reg)
     uint32_t val;
 
     if (reg < 0 || reg > BD_PSR_COUNT) {
-        DEBUG(DBG_BLURAY, "bd_psr_read(%d): invalid register\n", reg);
+        BD_DEBUG(DBG_BLURAY, "bd_psr_read(%d): invalid register\n", reg);
         return -1;
     }
 
@@ -346,21 +357,21 @@ uint32_t bd_psr_read(BD_REGISTERS *p, int reg)
 int bd_psr_setting_write(BD_REGISTERS *p, int reg, uint32_t val)
 {
     if (reg < 0 || reg > BD_PSR_COUNT) {
-        DEBUG(DBG_BLURAY, "bd_psr_write(%d, %d): invalid register\n", reg, val);
+        BD_DEBUG(DBG_BLURAY, "bd_psr_write(%d, %d): invalid register\n", reg, val);
         return -1;
     }
 
     if (p->psr[reg] == val) {
-        DEBUG(DBG_BLURAY, "bd_psr_write(%d, %d): no change in value\n", reg, val);
+        BD_DEBUG(DBG_BLURAY, "bd_psr_write(%d, %d): no change in value\n", reg, val);
         return 0;
     }
 
     bd_psr_lock(p);
 
     if (bd_psr_name[reg]) {
-        DEBUG(DBG_BLURAY, "bd_psr_write(): PSR%-4d (%s) 0x%x -> 0x%x\n", reg, bd_psr_name[reg], p->psr[reg], val);
+        BD_DEBUG(DBG_BLURAY, "bd_psr_write(): PSR%-4d (%s) 0x%x -> 0x%x\n", reg, bd_psr_name[reg], p->psr[reg], val);
     } else {
-        DEBUG(DBG_BLURAY, "bd_psr_write(): PSR%-4d 0x%x -> 0x%x\n", reg, p->psr[reg], val);
+        BD_DEBUG(DBG_BLURAY, "bd_psr_write(): PSR%-4d 0x%x -> 0x%x\n", reg, p->psr[reg], val);
     }
 
     if (p->num_cb) {
@@ -394,7 +405,7 @@ int bd_psr_write(BD_REGISTERS *p, int reg, uint32_t val)
         (reg >= 15 && reg <= 20) ||
         (reg >= 29 && reg <= 31) ||
         (reg >= 48 && reg <= 61)) {
-      DEBUG(DBG_BLURAY, "bd_psr_write(%d, %d): read-only register !\n", reg, val);
+      BD_DEBUG(DBG_BLURAY, "bd_psr_write(%d, %d): read-only register !\n", reg, val);
       return -2;
   }
 
