@@ -4,8 +4,7 @@
 Provides connection cache and data handlers for accessing the backend.
 """
 
-from static import PROTO_VERSION, BACKEND_SEP, RECSTATUS, AUDIO_PROPS, \
-                   VIDEO_PROPS, SUBTITLE_TYPES
+from static import *
 from exceptions import MythError, MythDBError, MythBEError, MythFileError
 from logging import MythLog
 from altdict import DictData
@@ -969,6 +968,105 @@ class Program( DictData, RECSTATUS, AUDIO_PROPS, VIDEO_PROPS, \
         return fe.send('play','program %d %s' % \
                     (self.chanid, self.recstartts.isoformat()))
 
+class Job( DictData, JOBTYPE, JOBCMD, JOBFLAG, JOBSTATUS ):
+    """
+    Job(id) -> Job object
+    """
+    _field_order = ['id',           'chanid',   'starttime',
+                    'inserttime',   'type',     'cmds',
+                    'flags',        'status',   'statustime',
+                    'hostname',     'args',     'comment',
+                    'schedruntime']
+    _field_type = [0, 0, 4, 4, 0, 0, 0, 0, 4, 3, 3, 3, 4]
+    _db = None
+    _be = None
+    _local = None
+
+    @classmethod
+    def fromProgram(cls, prog, type):
+        db = prog._db
+        be = BECache(db=db)
+
+        raw = be.backendCommand("QUERY_JOBQUEUE GET_INFO %d %s %d" % \
+                    (str(prog.chanid), prog.recstartts.mythformat, type))
+        if raw == '-1':
+            raise MythError("Invalid job")
+        return cls(raw.split(BACKEND_SEP), db, be)
+
+    @classmethod
+    def fromID(cls, id, db=None):
+        if db is None:
+            db = DBCache()
+        be = BECache(db=db)
+
+        raw = be.backendCommand("QUERY_JOBQUEUE GET_INFO " +str(id))
+        if raw == '-1':
+            raise MythError("Invalid job")
+        return cls(raw.split(BACKEND_SEP), db, be)
+
+    @classmethod
+    def new(cls, db=None):
+        obj = cls(dict(zip(cls._field_order,
+                            [-1, 0, datetime(1,1,1), datetime(1,1,1),
+                             0, 0, 0, 0,
+                             datetime(1,1,1), "", "", "", datetime(1,1,1)])),
+                  db=db, _process=False)
+        obj._local = True
+        return obj
+
+    def __init__(self, raw, db=None, be=None, _process=True):
+        if db is None:
+            db = DBCache()
+        self._db = db
+
+        if be is None:
+            be = BECache(db=db)
+        self._be = be
+
+        DictData.__init__(self, raw, _process=_process)
+        self._local = False
+
+    def _send_mesg(self, message, process_response=False):
+        l = ["QUERY_JOBQUEUE "+message]
+        l += self._deprocess()
+
+        res = self._be.backendCommand(BACKEND_SEP.join(l))
+
+        if (res == -1) or (res.startswith("ERROR")):
+            raise MythError("jobqueue command failed")
+        if process_response:
+            self.update(self._process(res.split(BACKEND_SEP)))
+
+    def queue(self):
+        if not self._local:
+            raise MythError("Pre-existing job cannot be added to queue.")
+        self._send_mesg("QUEUE_JOB", true)
+        self._local = False
+
+    def pause(self):
+        if self._local:
+            raise MythError("Only existing jobs can be paused.")
+        self._send_mesg("PAUSE_JOB")
+
+    def stop(self):
+        if self._local:
+            raise MythError("Only existing jobs can be stopped.")
+        self._send_mesg("STOP_JOB")
+
+    def restart(self):
+        if self._local:
+            raise MythError("Only existing jobs can be restarted.")
+        self._send_mesg("RESTART_JOB")
+
+    def _push(self):
+        if self._local:
+            raise MythError("Only existing jobs can be pushed.")
+        self._send_mesg("SEND_INFO")
+
+    def _pull(self):
+        if self._local:
+            raise MythError("Only existing jobs can be pulled.")
+        
 
 class EventLock( BEEvent ):
     def __init__(self, regex, backend=None, db=None):

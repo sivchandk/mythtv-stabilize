@@ -9,10 +9,10 @@ __all_system__      = ['System', 'Grabber', 'Metadata', 'VideoMetadata', \
                        'MusicMetadata', 'GameMetadata', 'InternetMetadata', \
                        'SystemEvent']
 
-__all_proto__       = ['findfile', 'ftopen', 'FreeSpace', 'Program']
+__all_proto__       = ['findfile', 'ftopen', 'FreeSpace', 'Program', 'Job']
 
 __all_data__        = ['Record', 'Recorded', 'RecordedProgram', 'OldRecorded', \
-                       'Job', 'Channel', 'Guide', 'Video', 'VideoGrabber', \
+                       'Channel', 'Guide', 'Video', 'VideoGrabber', \
                        'InternetContent', 'InternetContentArticles', \
                        'InternetSource', 'Song', 'Album', 'Artist', \
                        'MusicPlaylist', 'MusicDirectory']

@@ -454,10 +454,11 @@ class OldRecorded( DBDataWrite, RECSTATUS, CMPRecord ):
         """OldRecorded entries cannot be deleted"""
         return
 
+"""
 class Job( DBDataWrite, JOBTYPE, JOBCMD, JOBFLAG, JOBSTATUS ):
-    """
+    ""
     Job(id=None, db=None) -> Job object
-    """
+    ""
     _table = 'jobqueue'
     _logmodule = 'Python Jobqueue'
     _defaults = {'id':None,     'inserttime':datetime.now(),
@@ -473,12 +474,12 @@ class Job( DBDataWrite, JOBTYPE, JOBCMD, JOBFLAG, JOBSTATUS ):
         return str(self).encode('utf-8')
 
     def setComment(self,comment):
-        """Job.setComment(comment) -> None, updates comment"""
+        ""Job.setComment(comment) -> None, updates comment""
         self.comment = comment
         self.update()
 
     def setStatus(self,status):
-        """Job.setStatus(Status) -> None, updates status"""
+        ""Job.setStatus(Status) -> None, updates status""
         self.status = status
         self.update()
 
@@ -519,6 +520,7 @@ class Job( DBDataWrite, JOBTYPE, JOBCMD, JOBFLAG, JOBSTATUS ):
         if flags:
             job.flags = flags
         job.create()
+"""
 
 class Channel( DBDataWrite ):
     """Channel(chanid=None, db=None) -> Channel object"""

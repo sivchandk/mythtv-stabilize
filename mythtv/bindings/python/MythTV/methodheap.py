@@ -720,15 +720,16 @@ class MythDB( DBCache ):
             return ('oldrecorded.%s=%%s' % key, datetime.duck(value), 0)
         return None
 
+    """
     @databaseSearch
     def searchJobs(self, init=False, key=None, value=None):
-        """
+        ""
         obj.searchJobs(**kwars) -> list of Job objects
 
         Supports the following keywords:
             chanid,     starttime,  type,       status,     hostname,
             title,      subtitle,   flags,      olderthan,  newerthan
-        """
+        ""
         if init:
             init.table = 'jobqueue'
             init.handler = Job
@@ -750,6 +751,7 @@ class MythDB( DBCache ):
         if key == 'newerthan':
             return ('jobqueue.inserttime<%s', datetime.duck(value), 0)
         return None
+    """
 
     @databaseSearch
     def searchGuide(self, init=False, key=None, value=None):
