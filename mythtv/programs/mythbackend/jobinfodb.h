@@ -9,14 +9,10 @@ using namespace std;
 class JobInfoDB : public JobInfo
 {
   public:
-    JobInfoDB(int id) :
-        JobInfo(id) {};
-    JobInfoDB(const JobInfoDB &other) :
-        JobInfo(other) {};
-    JobInfoDB(uint chanid, QDateTime &starttime, int jobType) :
-        JobInfo(chanid, starttime, jobType) {};
-    JobInfoDB(ProgramInfo &pginfo, int jobType) :
-        JobInfo(pginfo, jobType) {};
+    JobInfoDB(int id);
+    JobInfoDB(const JobInfoDB &other);
+    JobInfoDB(uint chanid, QDateTime &starttime, int jobType);
+    JobInfoDB(ProgramInfo &pginfo, int jobType);
     JobInfoDB(int jobType, uint chanid, const QDateTime &starttime,
                QString args, QString comment, QString host,
                int flags, int status, QDateTime schedruntime) :

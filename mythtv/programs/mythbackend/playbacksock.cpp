@@ -37,6 +37,8 @@ PlaybackSock::PlaybackSock(MainServer *parent, MythSocket *lsock,
         local = true;
     else
         local = false;
+
+    sock->UpRef();
 }
 
 PlaybackSock::~PlaybackSock()

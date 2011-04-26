@@ -15,13 +15,16 @@ typedef QMap<int, JobInfoRun*> JobMap;
 
 class JobSocketHandler : public SocketRequestHandler
 {
+    Q_OBJECT
   public:
+    JobSocketHandler();
    ~JobSocketHandler();
 
     bool HandleQuery(MythSocket *socket, QStringList &commands,
                                 QStringList &slist);
     QString GetHandlerName(void)            { return "JOBQUEUE"; }
     void SetParent(MythSocketManager *parent);
+    void connectionClosed(MythSocket *sock);
 
   protected slots:
     void MasterReconnect(void);

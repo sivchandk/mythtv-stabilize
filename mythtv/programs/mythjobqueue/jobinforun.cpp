@@ -365,8 +365,8 @@ QString JobInfoRun::GetJobCommand(void)
     if (!m_command.isEmpty())
         return m_command;
 
-    ProgramInfo *pginfo;
-    uint transcoder;
+    ProgramInfo *pginfo = NULL;
+    uint transcoder = 0;
     if (IsRecording())
     {
         pginfo = GetPGInfo();

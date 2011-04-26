@@ -57,6 +57,7 @@ class MainServer : public SocketRequestHandler
     bool HandleQuery(MythSocket *socket, QStringList &commands,
                      QStringList &slist);
     void SetParent(MythSocketManager *parent);
+    void connectionClosed(MythSocket *socket);
 
   protected slots:
     void reconnectTimeout(void);

@@ -6,6 +6,33 @@
 #include "jobinfo.h"
 #include "jobinfodb.h"
 
+JobInfoDB::JobInfoDB(int id)
+{
+    m_jobid = id;
+    QueryObject();
+}
+
+JobInfoDB::JobInfoDB(const JobInfoDB &other)
+{
+    clone(other);
+}
+
+JobInfoDB::JobInfoDB(uint chanid, QDateTime &starttime, int jobType)
+{
+    m_chanid = chanid;
+    m_starttime = starttime;
+    m_jobType = jobType;
+    QueryObject();
+}
+
+JobInfoDB::JobInfoDB(ProgramInfo &pginfo, int jobType)
+{
+    m_chanid = pginfo.GetChanID();
+    m_starttime = pginfo.GetRecordingStartTime();
+    m_jobType = jobType;
+    QueryObject();
+}
+
 bool JobInfoDB::QueryObject(void)
 {
     MSqlQuery query(MSqlQuery::InitCon());
@@ -69,11 +96,17 @@ bool JobInfoDB::SaveObject(void)
 
     MSqlQuery query(MSqlQuery::InitCon());
 
-    query.prepare("UPDATE jobqueue (chanid, starttime, inserttime, type, "
-                                   "cmds, flags, status, statustime, "
-                                   "hostname, args, comment, schedruntime) "
-                  "VALUES (:CHANID, :STARTTIME, :TYPE, :CMDS, :FLAGS, "
-                          ":STATUS, :HOSTNAME, :ARGS, :COMMENT, :SCHEDRUNTIME) "
+    query.prepare("UPDATE jobqueue SET "
+                    "chanid=:CHANID, "
+                    "starttime=:STARTTIME, "
+                    "type=:TYPE, "
+                    "cmds=:CMDS, "
+                    "flags=:FLAGS, "
+                    "status=:STATUS, "
+                    "hostname=:HOSTNAME, "
+                    "args=:ARGS, "
+                    "comment=:COMMENT, "
+                    "schedruntime=:SCHEDRUNTIME "
                   "WHERE id = :JOBID;");
 
     query.bindValue(":JOBID",       m_jobid);
@@ -99,8 +132,11 @@ bool JobInfoDB::SaveObject(void)
 
 bool JobInfoDB::Queue(void)
 {
-    if (m_jobid)
+    if (isValid())
+    {
+        VERBOSE(VB_JOBQUEUE, "Refusing to queue a pre-existing job.");
         return false;
+    }
 
     MSqlQuery query(MSqlQuery::InitCon());
 
@@ -223,7 +259,7 @@ bool JobInfoDB::Run(MythSocket *socket)
     SetHost(socket);
 
     QStringList sl;
-    sl << "COMMAND_JOBQUEUE" << "RUN";
+    sl << "COMMAND_JOBQUEUE RUN";
     ToStringList(sl);
 
     if (!socket->SendReceiveStringList(sl) ||
@@ -245,7 +281,7 @@ bool JobInfoDB::Pause(void)
     }
 
     QStringList sl;
-    sl << "COMMAND_JOBQUEUE" << "PAUSE";
+    sl << "COMMAND_JOBQUEUE PAUSE";
     ToStringList(sl);
 
     if (!m_hostSocket->SendReceiveStringList(sl) ||
@@ -267,7 +303,7 @@ bool JobInfoDB::Resume(void)
     }
 
     QStringList sl;
-    sl << "COMMAND_JOBQUEUE" << "RESUME";
+    sl << "COMMAND_JOBQUEUE RESUME";
     ToStringList(sl);
 
     if (!m_hostSocket->SendReceiveStringList(sl) ||
@@ -289,7 +325,7 @@ bool JobInfoDB::Stop(void)
     }
 
     QStringList sl;
-    sl << "COMMAND_JOBQUEUE" << "STOP";
+    sl << "COMMAND_JOBQUEUE STOP";
     ToStringList(sl);
 
     if (!m_hostSocket->SendReceiveStringList(sl) ||
@@ -311,7 +347,7 @@ bool JobInfoDB::Restart(void)
     }
 
     QStringList sl;
-    sl << "COMMAND_JOBQUEUE" << "RESTART";
+    sl << "COMMAND_JOBQUEUE RESTART";
     ToStringList(sl);
 
     if (!m_hostSocket->SendReceiveStringList(sl) ||

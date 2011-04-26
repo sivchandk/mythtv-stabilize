@@ -186,7 +186,7 @@ MythCoreContext::~MythCoreContext()
     d = NULL;
 }
 
-bool MythCoreContext::SetupCommandSocket(MythSocket *serverSock,
+bool MythCoreContext::SetupSocket(MythSocket *serverSock,
                                          const QString &announcement,
                                          uint timeout_in_ms,
                                          bool &proto_mismatch)
@@ -312,7 +312,7 @@ MythSocket *MythCoreContext::ConnectCommandSocket(
         int sleepms = 0;
         if (m_serverSock->connect(hostname, port))
         {
-            if (SetupCommandSocket(
+            if (SetupSocket(
                     m_serverSock, announce, setup_timeout, proto_mismatch))
             {
                 break;
@@ -407,24 +407,19 @@ MythSocket *MythCoreContext::ConnectEventSocket(const QString &hostname,
         return NULL;
     }
 
+    
+    const QString str = QString("ANN Monitor %1 %2")
+                            .arg(d->m_localHostname).arg(true);
+
     m_eventSock->Lock();
 
-    QString str = QString("ANN Monitor %1 %2")
-        .arg(d->m_localHostname).arg(true);
-    QStringList strlist(str);
-    m_eventSock->writeStringList(strlist);
-    if (!m_eventSock->readStringList(strlist) || strlist.empty() ||
-        (strlist[0] == "ERROR"))
+    bool proto_mismatch = false;
+    uint timeout = MythSocket::kShortTimeout;
+    if (!SetupSocket(m_eventSock, str, timeout, proto_mismatch))
     {
-        if (!strlist.empty())
-            VERBOSE(VB_IMPORTANT, LOC_ERR + "Problem connecting "
-                    "event socket to master backend");
-        else
-            VERBOSE(VB_IMPORTANT, LOC_ERR + "Timeout connecting "
-                    "event socket to master backend");
-
+        VERBOSE(VB_IMPORTANT, LOC_ERR + "Failed to connect event "
+                "socket to master backend");
         m_eventSock->DownRef();
-        m_eventSock->Unlock();
         m_eventSock = NULL;
         return NULL;
     }

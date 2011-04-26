@@ -59,7 +59,7 @@ class JobQueueSocket : public QObject
 class JobScheduler : public SocketRequestHandler
 {
   public:
-    JobScheduler(void) {};
+    JobScheduler(void);
    ~JobScheduler() {};
 
     bool HandleAnnounce(MythSocket *socket, QStringList &commands,
@@ -67,6 +67,8 @@ class JobScheduler : public SocketRequestHandler
     bool HandleQuery(MythSocket *socket, QStringList &commands,
                      QStringList &slist);
     void connectionClosed(MythSocket *socket);
+
+    QString GetHandlerName(void) { return "JOBMANAGER"; }
 
     bool             RestartScheduler(void);
     JobHostList     *GetConnectedQueues(void);
@@ -80,8 +82,13 @@ class JobScheduler : public SocketRequestHandler
     JobInfoDB   *GetJobByProgram(uint chanid, QDateTime starttime, int jobType);
     JobInfoDB   *GetJobByProgram(ProgramInfo *pginfo, int jobType);
 
+    void SyncWithDB(void);
+
   private:
     bool HandleGetInfo(MythSocket *socket, QStringList &commands);
+    bool HandleGetJobList(MythSocket *socket);
+    bool HandleGetHostList(MythSocket *socket);
+    bool HandleRunScheduler(MythSocket *socket);
     bool HandleQueueJob(MythSocket *socket, JobInfoDB &tmpjob);
     bool HandleSendInfo(MythSocket *socket, JobInfoDB &tmpjob, JobInfoDB *job);
     bool HandlePauseJob(MythSocket *socket, JobInfoDB *job);
@@ -109,7 +116,7 @@ class JobSchedulerPrivate : public QThread
     void stop(void);
 
   protected:
-    virtual void DoJobScheduling(void) {};
+    virtual void DoJobScheduling(void);
     JobScheduler   *m_parent;
 
   private:
@@ -122,6 +129,9 @@ class JobSchedulerPrivate : public QThread
 
 class JobSchedulerCF : public JobSchedulerPrivate
 {
+  public:
+    JobSchedulerCF(JobScheduler *parent) :
+        JobSchedulerPrivate(parent) {}
   protected:
     void DoJobScheduling(void);
 };

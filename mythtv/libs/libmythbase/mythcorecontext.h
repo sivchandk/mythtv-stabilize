@@ -74,8 +74,8 @@ class MBASE_PUBLIC MythCoreContext : public MythObservable, public MythSocketCBs
 
     MythSocket *ConnectEventSocket(const QString &hostname, int port);
 
-    bool SetupCommandSocket(MythSocket *serverSock, const QString &announcement,
-                            uint timeout_in_ms, bool &proto_mismatch);
+    bool SetupSocket(MythSocket *serverSock, const QString &announcement,
+                     uint timeout_in_ms, bool &proto_mismatch);
 
     bool CheckProtoVersion(MythSocket *socket,
                            uint timeout_ms = kMythSocketLongTimeout,

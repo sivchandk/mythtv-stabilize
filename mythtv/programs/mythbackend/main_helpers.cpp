@@ -715,6 +715,8 @@ int run_backend(const MythCommandLineParser &cmdline)
         return GENERIC_EXIT_SETUP_ERROR;
     }
 
+    FileTransferHandler *fileServer = new FileTransferHandler();
+
     if (ismaster)
     {
         if (runsched)
@@ -723,6 +725,8 @@ int run_backend(const MythCommandLineParser &cmdline)
             int err = sched->GetError();
             if (err)
                 return err;
+
+            sched->SetFileServer(fileServer);
 
             if (!cmdline.IsSchedulerEnabled())
                 sched->DisableScheduling();
@@ -734,6 +738,7 @@ int run_backend(const MythCommandLineParser &cmdline)
         if (cmdline.IsAutoExpirerEnabled())
         {
             expirer = new AutoExpire(&tvList);
+            expirer->SetFileServer(fileServer);
             if (sched)
                 sched->SetExpirer(expirer);
         }
@@ -766,6 +771,7 @@ int run_backend(const MythCommandLineParser &cmdline)
         VERBOSE(VB_IMPORTANT, "Main::Registering HttpStatus Extension");
 
         httpStatus = new HttpStatus( &tvList, sched, expirer, ismaster );
+        httpStatus->SetFileServer(fileServer);
         pHS->RegisterExtension( httpStatus );
     }
 
@@ -780,11 +786,6 @@ int run_backend(const MythCommandLineParser &cmdline)
         delete socketManager;
         return GENERIC_EXIT_SOCKET_ERROR;
     }
-
-    FileTransferHandler *fileServer = new FileTransferHandler();
-    expirer->SetFileServer(fileServer);
-    httpStatus->SetFileServer(fileServer);
-    sched->SetFileServer(fileServer);
 
     MainServer *mainServer = new MainServer(ismaster, &tvList, sched,
                                         expirer, fileServer);

@@ -57,12 +57,16 @@ class ProcessRequestThread : public QThread
         while (true)
         {
             m_waitCond.wait(locker.mutex());
+            VERBOSE(VB_SOCKET|VB_EXTRA, "ProcessRequestThread running.");
 
             if (!m_threadlives)
                 break;
 
             if (!m_socket)
+            {
+                VERBOSE(VB_SOCKET|VB_EXTRA, "ProcessRequestThread has no target.");
                 continue;
+            }
 
             m_parent->ProcessRequest(m_socket);
             m_socket->DownRef();
@@ -80,7 +84,8 @@ class ProcessRequestThread : public QThread
     bool                m_threadlives;
 };
 
-MythSocketManager::MythSocketManager()
+MythSocketManager::MythSocketManager() :
+    m_server(NULL)
 {
     SetThreadCount(PRT_STARTUP_THREAD_COUNT);
 }
@@ -116,9 +121,14 @@ void MythSocketManager::SetThreadCount(uint count)
 
 void MythSocketManager::MarkUnused(ProcessRequestThread *prt)
 {
+    VERBOSE(VB_SOCKET|VB_EXTRA, "Releasing ProcessRequestThread.");
+
     QMutexLocker locker(&m_threadPoolLock);
     m_threadPool.push_back(prt);
     m_threadPoolCond.wakeAll();
+
+    VERBOSE(VB_SOCKET|VB_EXTRA, QString("ProcessRequestThread pool size: %1")
+                                        .arg(m_threadPool.size()));
 }
 
 bool MythSocketManager::Listen(int port)
@@ -155,7 +165,7 @@ void MythSocketManager::RegisterHandler(SocketRequestHandler *handler)
     }
     else
     {
-        VERBOSE(VB_IMPORTANT, LOC + "Registering socket command handler" + 
+        VERBOSE(VB_IMPORTANT, LOC + "Registering socket command handler " + 
                                     name);
         handler->SetParent(this);
         m_handlerMap.insert(name, handler);
@@ -168,6 +178,7 @@ QString MythSocketManager::AddConnection(MythSocket *sock)
     QString name = QString("%1").arg(socket_id++);
     m_socketMap.insert(name, sock);
     sock->setCallbacks(this);
+    sock->UpRef();
     return name;
 }
 
@@ -182,6 +193,7 @@ bool MythSocketManager::AddConnection(QString name, MythSocket *sock)
     QWriteLocker wlock(&m_socketLock);
     m_socketMap.insert(name, sock);
     sock->setCallbacks(this);
+    sock->UpRef();
     return true;
 }
 
@@ -196,7 +208,10 @@ MythSocket *MythSocketManager::GetConnection(QString name)
 void MythSocketManager::readyRead(MythSocket *sock)
 {
     if (sock->isExpectingReply())
+    {
+        VERBOSE(VB_SOCKET|VB_EXTRA, "Socket marked as expecting reply.");
         return;
+    }
 
     ProcessRequestThread *prt = NULL;
     {
@@ -241,7 +256,12 @@ void MythSocketManager::connectionClosed(MythSocket *sock)
 
     {
         QWriteLocker wlock(&m_socketLock);
-        /// remove local reference to socket
+        QString key = m_socketMap.key(sock);
+        if (!key.isEmpty())
+        {
+            m_socketMap.remove(key);
+            sock->DownRef();
+        }
     }
 }
 
@@ -316,12 +336,16 @@ void MythSocketManager::ProcessRequestWork(MythSocket *sock)
 
             if (handled)
             {
+                i--;
+                VERBOSE(VB_SOCKET, LOC + QString("Socket handled by: %1")
+                                    .arg((*i)->GetHandlerName()));
                 for (i = m_handlerMap.constBegin(); 
                          i != m_handlerMap.constEnd(); ++i)
                     (*i)->connectionAnnounced(sock, tokens, listline);
             }
             else
             {
+                VERBOSE(VB_SOCKET, LOC_ERR + "Socket unhandled.");
                 listline.clear();
                 listline << "ERROR" << "unhandled announce";
                 sock->writeStringList(listline);
@@ -331,6 +355,7 @@ void MythSocketManager::ProcessRequestWork(MythSocket *sock)
         }
         else
         {
+            VERBOSE(VB_SOCKET, LOC_ERR + "ANN sent out of sequence.");
             listline.clear();
             listline << "ERROR" << "socket has not been announced";
             sock->writeStringList(listline);
@@ -348,6 +373,11 @@ void MythSocketManager::ProcessRequestWork(MythSocket *sock)
             handled = (*i)->HandleQuery(sock, tokens, listline);
             i++;
         }
+
+        if (handled)
+            VERBOSE(VB_SOCKET, QString("Query handled by: %1")
+                        .arg((*--i)->GetHandlerName()));
+
     }
 
     if (!handled)

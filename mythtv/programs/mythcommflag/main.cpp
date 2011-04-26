@@ -84,7 +84,6 @@ bool showPercentage = true;
 bool fullSpeed = true;
 bool rebuildSeekTable = false;
 bool beNice = true;
-bool inJobQueue = false;
 bool watchingRecording = false;
 CommDetectorBase* commDetector = NULL;
 RemoteEncoder* recorder = NULL;
@@ -500,8 +499,16 @@ static void commDetectorBreathe()
 
 static void commDetectorStatusUpdate(const QString& status)
 {
+    VERBOSE(VB_IMPORTANT, "Setting status to: " + status);
+
     if (commjob)
+    {   
+        VERBOSE(VB_JOBQUEUE, commjob->isValid());
+        VERBOSE(VB_JOBQUEUE, commjob->getJobID());
+        VERBOSE(VB_JOBQUEUE, commjob->getComment());
         commjob->saveComment(status);
+        VERBOSE(VB_JOBQUEUE, commjob->getComment());
+    }
 }
 
 static void commDetectorGotNewCommercialBreakList(void)
@@ -586,7 +593,7 @@ static void incomingCustomEvent(QEvent* e)
 
 static int DoFlagCommercials(
     ProgramInfo *program_info,
-    bool showPercentage, bool fullSpeed, bool inJobQueue,
+    bool showPercentage, bool fullSpeed,
     MythCommFlagPlayer* cfp, enum SkipTypes commDetectMethod,
     const QString &outputfilename, bool useDB)
 {
@@ -600,17 +607,9 @@ static int DoFlagCommercials(
         program_info->GetRecordingStartTime(),
         program_info->GetRecordingEndTime(), useDB);
 
-    if (inJobQueue && useDB)
+    if (commjob)
     {
-        commjob = new JobInfo(*program_info, JOB_COMMFLAG);
-        if (!commjob->isValid())
-        {
-            delete commjob;
-            commjob = NULL;
-            VERBOSE(VB_COMMFLAG, "mythcommflag: Unable to determine jobID");
-        }
-        else
-            VERBOSE(VB_COMMFLAG, QString("mythcommflag processing JobID %1")
+        VERBOSE(VB_COMMFLAG, QString("mythcommflag processing JobID %1")
                         .arg(commjob->getJobID()));
     }
 
@@ -752,7 +751,7 @@ static int FlagCommercials(
         cerr << out.constData() << flush;
     }
 
-
+/*
     if (!force)
     {
         JobInfo job = JobInfo(*program_info, JOB_COMMFLAG);
@@ -766,6 +765,7 @@ static int FlagCommercials(
             return GENERIC_EXIT_IN_USE;
         }
     }
+*/
 
     QString filename = get_filename(program_info);
     long long size = 0;
@@ -913,7 +913,7 @@ static int FlagCommercials(
 
 
     breaksFound = DoFlagCommercials(
-        program_info, showPercentage, fullSpeed, inJobQueue,
+        program_info, showPercentage, fullSpeed, 
         cfp, commDetectMethod, outputfilename, useDB);
 
 /*
@@ -968,8 +968,6 @@ int main(int argc, char *argv[])
     QString starttime;
     QString allStart = "19700101000000";
     QString allEnd   = QDateTime::currentDateTime().toString("yyyyMMddhhmmss");
-    int jobID = -1;
-    int jobType = JOB_NONE;
     QDir fullfile;
     time_t time_now;
     bool useDB = true;
@@ -980,6 +978,7 @@ int main(int argc, char *argv[])
     bool clearSkiplist = false;
     bool getCutlist = false;
     bool getSkipList = false;
+    int jobID = -1;
     QString newCutList = QString::null;
     QMap<QString, QString> settingsOverride;
 
@@ -1344,23 +1343,6 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (jobID != -1)
-    {
-        QDateTime recstartts = myth_dt_from_string(starttime);
-        commjob = new JobInfo(chanid, recstartts, jobType);
-        if (commjob->isValid())
-        {
-            inJobQueue = true;
-            force = true;
-        }
-        else
-        {
-            cerr << "mythcommflag: ERROR: Unable to find DB info for "
-                 << "JobQueue ID# " << jobID << endl;
-            return GENERIC_EXIT_NO_RECORDING_DATA;
-        }
-    }
-
     if ((fullfile.path() != ".") && useDB)
     {
         MSqlQuery query(MSqlQuery::InitCon());
@@ -1407,8 +1389,22 @@ int main(int argc, char *argv[])
     if (getSkipList)
         return GetMarkupList("commflag", QString::number(chanid), starttime);
 
-    if (inJobQueue)
+    if (jobID != -1)
     {
+        if (commjob)
+            delete commjob;
+
+        commjob = new JobInfo(jobID);
+        if (!commjob->isValid())
+        {
+            cerr << "mythcommflag: ERROR: Unable to find DB info for "
+                 << "JobQueue ID# " << jobID << endl;
+            return GENERIC_EXIT_INVALID_CMDLINE;
+        }
+
+        chanid = commjob->getChanID();
+        starttime = commjob->getStartTime().toString("yyyyMMddhhmmss");
+
         int jobQueueCPU = gCoreContext->GetNumSetting("JobQueueCPU", 0);
 
         if (jobQueueCPU < 2)

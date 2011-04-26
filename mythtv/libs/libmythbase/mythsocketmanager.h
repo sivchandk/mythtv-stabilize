@@ -80,6 +80,9 @@ class MBASE_PUBLIC MythSocketManager : public QObject, public MythSocketCBs
     void RegisterHandler(SocketRequestHandler *handler);
     bool Listen(int port);
 
+  public slots:
+    void newConnection(MythSocket *socket) { AddConnection(socket); }
+
   private:
     void ProcessRequestWork(MythSocket *socket);
     void HandleVersion(MythSocket *socket, const QStringList slist);

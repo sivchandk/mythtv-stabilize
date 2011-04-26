@@ -496,14 +496,8 @@ bool MainServer::HandleQuery(MythSocket *sock, QStringList &tokens,
     }
     else
     {
-        VERBOSE(VB_IMPORTANT, "Unknown command: " + command);
-
-        MythSocket *pbssock = pbs->getSocket();
-
-        QStringList strlist;
-        strlist << "UNKNOWN_COMMAND";
-
-        SendResponse(pbssock, strlist);
+        pbs->DownRef();
+        return false;
     }
 
     // Decrease refcount..
@@ -1016,6 +1010,10 @@ bool MainServer::HandleAnnounce(MythSocket *socket, QStringList &commands,
         if (eventsMode != kPBSEvents_None && commands[2] != "tzcheck")
             SendMythSystemEvent(QString("CLIENT_CONNECTED HOSTNAME %1")
                                         .arg(commands[2]));
+
+        socket->setAnnounce(commands);
+        socket->writeStringList(retlist);
+        return true;
     }
     else if (commands[1] == "SlaveBackend")
     {
@@ -1083,139 +1081,10 @@ bool MainServer::HandleAnnounce(MythSocket *socket, QStringList &commands,
 
         SendMythSystemEvent(QString("SLAVE_CONNECTED HOSTNAME %1")
                                     .arg(commands[2]));
-    }
-    else if (commands[1] == "FileTransfer")
-    {
-        if (slist.size() < 3)
-        {
-            VERBOSE(VB_IMPORTANT, "Received malformed FileTransfer command");
-            errlist << "malformed_filetransfer_command";
-            socket->writeStringList(errlist);
-            return true;
-        }
 
-        VERBOSE(VB_GENERAL, "MainServer::HandleAnnounce FileTransfer");
-        VERBOSE(VB_IMPORTANT, QString("adding: %1 as a remote file transfer")
-                               .arg(commands[2]));
-        QStringList::const_iterator it = slist.begin();
-        QUrl qurl = *(++it);
-        QString wantgroup = *(++it);
-        QString filename;
-        QStringList checkfiles;
-        for (++it; it != slist.end(); ++it)
-            checkfiles += *it;
-
-        FileTransfer *ft = NULL;
-        bool writemode = false;
-        bool usereadahead = true;
-        int timeout_ms = 2000;
-        if (commands.size() > 3)
-            writemode = commands[3].toInt();
-
-        if (commands.size() > 4)
-            usereadahead = commands[4].toInt();
-
-        if (commands.size() > 5)
-            timeout_ms = commands[5].toInt();
-
-        if (writemode)
-        {
-            if (wantgroup.isEmpty())
-                wantgroup = "Default";
-
-            StorageGroup sgroup(wantgroup, gCoreContext->GetHostName(), false);
-            QString dir = sgroup.FindNextDirMostFree();
-            if (dir.isEmpty())
-            {
-                VERBOSE(VB_IMPORTANT, "Unable to determine directory "
-                        "to write to in FileTransfer write command");
-                errlist << "filetransfer_directory_not_found";
-                socket->writeStringList(errlist);
-                return true;
-            }
-
-            QString basename = qurl.path();
-            if (basename.isEmpty())
-            {
-                VERBOSE(VB_IMPORTANT, QString("ERROR: FileTransfer write "
-                        "filename is empty in url '%1'.")
-                        .arg(qurl.toString()));
-                errlist << "filetransfer_filename_empty";
-                socket->writeStringList(errlist);
-                return true;
-            }
-
-            if ((basename.contains("/../")) ||
-                (basename.startsWith("../")))
-            {
-                VERBOSE(VB_IMPORTANT, QString("ERROR: FileTransfer write "
-                        "filename '%1' does not pass sanity checks.")
-                        .arg(basename));
-                errlist << "filetransfer_filename_dangerous";
-                socket->writeStringList(errlist);
-                return true;
-            }
-
-            filename = dir + "/" + basename;
-        }
-        else
-            filename = LocalFilePath(qurl, wantgroup);
-
-        QFileInfo finfo(filename);
-        if (finfo.isDir())
-        {
-            VERBOSE(VB_IMPORTANT, QString("ERROR: FileTransfer filename "
-                    "'%1' is actually a directory, cannot transfer.")
-                    .arg(filename));
-            errlist << "filetransfer_filename_is_a_directory";
-            socket->writeStringList(errlist);
-            return true;
-        }
-
-        if (writemode)
-        {
-            QString dirPath = finfo.absolutePath();
-            QDir qdir(dirPath);
-            if (!qdir.exists())
-            {
-                if (!qdir.mkpath(dirPath))
-                {
-                    VERBOSE(VB_IMPORTANT, QString("ERROR: FileTransfer "
-                            "filename '%1' is in a subdirectory which does "
-                            "not exist, but can not be created.")
-                            .arg(filename));
-                    errlist << "filetransfer_unable_to_create_subdirectory";
-                    socket->writeStringList(errlist);
-                    return true;
-                }
-            }
-            ft = new FileTransfer(filename, socket, writemode);
-        }
-        else
-            ft = new FileTransfer(filename, socket, usereadahead, timeout_ms);
-
-        sockListLock.lockForWrite();
-        fileTransferList.push_back(ft);
-        sockListLock.unlock();
-
-        retlist << QString::number(socket->socket());
-        ft->UpRef();
-        encodeLongLong(retlist, ft->GetFileSize());
-        ft->DownRef();
-
-        if (checkfiles.size())
-        {
-            QFileInfo fi(filename);
-            QDir dir = fi.absoluteDir();
-            for (it = checkfiles.begin(); it != checkfiles.end(); ++it)
-            {
-                if (dir.exists(*it) &&
-                    QFileInfo(dir, *it).size() >= kReadTestSize)
-                {
-                    retlist<<*it;
-                }
-            }
-        }
+        socket->setAnnounce(commands);
+        socket->writeStringList(retlist);
+        return true;
     }
 
     return false;
@@ -4211,9 +4080,6 @@ void MainServer::DeletePBS(PlaybackSock *sock)
     deferredDeleteList.push_back(dds);
 }
 
-/*
- * FIXME
- * this one is going to need some work restructuring
 void MainServer::connectionClosed(MythSocket *socket)
 {
     sockListLock.lockForWrite();
@@ -4223,18 +4089,19 @@ void MainServer::connectionClosed(MythSocket *socket)
     {
         PlaybackSock *pbs = (*it);
         MythSocket *sock = pbs->getSocket();
-        if (sock == socket && pbs == masterServer)
+        if (sock == socket)
         {
-            playbackList.erase(it);
-            sockListLock.unlock();
-            masterServer->DownRef();
-            masterServer = NULL;
-            MythEvent me("LOCAL_RECONNECT_TO_MASTER");
-            gCoreContext->dispatch(me);
-            return;
-        }
-        else if (sock == socket)
-        {
+            if (pbs == masterServer)
+            {
+                playbackList.erase(it);
+                sockListLock.unlock();
+                masterServer->DownRef();
+                masterServer = NULL;
+                MythEvent me("LOCAL_RECONNECT_TO_MASTER");
+                gCoreContext->dispatch(me);
+                return;
+            }
+
             list<uint> disconnectedSlaves;
             bool needsReschedule = false;
 
@@ -4325,25 +4192,8 @@ void MainServer::connectionClosed(MythSocket *socket)
         }
     }
 
-    vector<FileTransfer *>::iterator ft = fileTransferList.begin();
-    for (; ft != fileTransferList.end(); ++ft)
-    {
-        MythSocket *sock = (*ft)->getSocket();
-        if (sock == socket)
-        {
-            (*ft)->DownRef();
-            fileTransferList.erase(ft);
-            sockListLock.unlock();
-            return;
-        }
-    }
-
     sockListLock.unlock();
-
-    VERBOSE(VB_IMPORTANT, LOC_WARN +
-            QString("Unknown socket closing MythSocket(0x%1)")
-            .arg((uint64_t)socket,0,16));
-}*/
+}
 
 PlaybackSock *MainServer::GetSlaveByHostname(const QString &hostname)
 {

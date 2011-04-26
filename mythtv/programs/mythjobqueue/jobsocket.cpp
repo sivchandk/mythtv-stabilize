@@ -16,6 +16,12 @@ using namespace std;
 
 const uint kMasterServerReconnectTimeout = 1000;
 
+JobSocketHandler::JobSocketHandler(void) :
+    SocketRequestHandler(), m_serverSock(NULL),
+    m_masterReconnect(NULL)
+{
+}
+
 JobSocketHandler::~JobSocketHandler(void)
 {
     // clean out m_jobList and terminate all running jobs
@@ -25,7 +31,10 @@ void JobSocketHandler::SetParent(MythSocketManager *parent)
 {
     m_parent = parent;
 
+    if (m_masterReconnect != NULL)
+        delete m_masterReconnect;
     m_masterReconnect = new QTimer(this);
+
     m_masterReconnect->setSingleShot(true);
     connect(m_masterReconnect, SIGNAL(timeout()),
             this, SLOT(MasterReconnect()));
@@ -71,6 +80,8 @@ bool JobSocketHandler::HandleQuery(MythSocket *socket, QStringList &commands,
             socket->writeStringList(res);
             return true;
         }
+
+        job = m_jobMap[tmpjob.getJobID()];
     }
 
     if (command == "PAUSE")
@@ -83,7 +94,10 @@ bool JobSocketHandler::HandleQuery(MythSocket *socket, QStringList &commands,
         handled = HandleRestartJob(socket, job);
     else if (command == "POLL")
         handled = HandlePollJob(socket, job);
+    else
+        return false;
 
+    return true;
 }
 
 bool JobSocketHandler::HandleRunJob(MythSocket *socket, JobInfoRun &tmpjob)
@@ -171,6 +185,14 @@ bool JobSocketHandler::HandlePollJob(MythSocket *socket, JobInfoRun *job)
     job->ToStringList(res);
     socket->writeStringList(res);
     return true;
+}
+
+void JobSocketHandler::connectionClosed(MythSocket *sock)
+{
+    if (sock == m_serverSock)
+        m_masterReconnect->start(kMasterServerReconnectTimeout);
+    // TODO: come up with some auto-scaling timeout so its not hammering
+    // the master backend once a second for connections
 }
 
 void JobSocketHandler::MasterReconnect(void)

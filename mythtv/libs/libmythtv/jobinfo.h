@@ -192,6 +192,8 @@ class MTV_PUBLIC JobInfo : public QObject
     void        UpRef(void);
     bool        DownRef(void);
 
+    void        PrintToLog(void);
+
   protected:
     int         m_jobid;
     uint        m_chanid;

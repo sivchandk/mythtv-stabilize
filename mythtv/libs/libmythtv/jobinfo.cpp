@@ -39,24 +39,25 @@ using namespace std;
 #define STR_FROM_LIST(x)     do { NEXT_STR(); (x) = ts; } while (0)
 
 JobInfo::JobInfo(void) :
-    m_inserttime(QDateTime::currentDateTime()), m_userJobIndex(-1)
+    m_inserttime(QDateTime::currentDateTime()), m_userJobIndex(-1),
+    m_pgInfo(NULL)
 {
 }
 
 JobInfo::JobInfo(int id) :
-     m_jobid(id), m_userJobIndex(-1)
+     m_jobid(id), m_userJobIndex(-1), m_pgInfo(NULL)
 {
     QueryObject();
 }
 
 JobInfo::JobInfo(uint chanid, QDateTime &starttime, int jobType) :
-    m_userJobIndex(-1)
+    m_userJobIndex(-1), m_pgInfo(NULL)
 {
     QueryObject(chanid, starttime, jobType);
 }
 
 JobInfo::JobInfo(const ProgramInfo &pginfo, int jobType) :
-    m_userJobIndex(-1)
+    m_userJobIndex(-1), m_pgInfo(NULL)
 {
     QueryObject(pginfo.GetChanID(), pginfo.GetRecordingStartTime(), jobType);
 }
@@ -66,25 +67,26 @@ JobInfo::JobInfo(int jobType, uint chanid, const QDateTime &starttime,
                  int flags, int status, QDateTime schedruntime) :
     m_chanid(chanid), m_starttime(starttime), m_jobType(jobType),
     m_flags(flags), m_status(status), m_hostname(host), m_args(args),
-    m_comment(comment), m_schedruntime(schedruntime), m_userJobIndex(-1)
+    m_comment(comment), m_schedruntime(schedruntime), m_userJobIndex(-1),
+    m_pgInfo(NULL)
 {
 }
 
 JobInfo::JobInfo(const JobInfo &other) :
-    m_userJobIndex(-1)
+    m_userJobIndex(-1), m_pgInfo(NULL)
 {
     clone(other);
 }
 
 JobInfo::JobInfo(QStringList::const_iterator &it,
                  QStringList::const_iterator end) :
-    m_userJobIndex(-1)
+    m_userJobIndex(-1), m_pgInfo(NULL)
 {
     FromStringList(it, end);
 }
 
 JobInfo::JobInfo(const QStringList &slist) :
-    m_userJobIndex(-1)
+    m_userJobIndex(-1), m_pgInfo(NULL)
 {
     FromStringList(slist);
 }
@@ -102,6 +104,7 @@ JobInfo &JobInfo::operator=(const JobInfo &other)
 
 void JobInfo::clone(const JobInfo &other)
 {
+    m_jobid = other.m_jobid;
     m_chanid = other.m_chanid;
     m_starttime = other.m_starttime;
     m_inserttime = other.m_inserttime;
@@ -238,14 +241,14 @@ bool JobInfo::QueryObject(void)
         return false;
     }
 
-    QStringList sl(QString("QUERY_JOBQUEUE GET_INFO %s").arg(m_jobid));
+    QStringList sl(QString("QUERY_JOBQUEUE GET_INFO %1").arg(m_jobid));
     return SendExpectingInfo(sl, true);
 }
 
 bool JobInfo::QueryObject(int chanid, QDateTime starttime, int jobType)
 {
-    QStringList sl(QString("QUERY_JOBQUEUE GET_INFO %s %s %s")
-                        .arg(chanid).arg(starttime.toString()).arg(jobType));
+    QStringList sl(QString("QUERY_JOBQUEUE GET_INFO %1 %2 %3")
+                        .arg(chanid).arg(starttime.toTime_t()).arg(jobType));
     return SendExpectingInfo(sl, true);
 }
 
@@ -257,7 +260,14 @@ bool JobInfo::SaveObject(void)
     QStringList sl("QUERY_JOBQUEUE SEND_INFO");
     if (!ToStringList(sl))
         return false;
-    return SendExpectingInfo(sl, false);
+
+    if (!gCoreContext->SendReceiveStringList(sl))
+        return false;
+
+    if (sl[0] == "ERROR")
+        return false;
+
+    return true;
 }
 
 bool JobInfo::Queue(void)
@@ -427,5 +437,23 @@ bool JobInfo::DownRef()
     }
 
     return false;
+}
+
+void JobInfo::PrintToLog()
+{
+    VERBOSE(VB_JOBQUEUE, "Dumping JobInfo instance");
+    VERBOSE(VB_JOBQUEUE, QString("   jobid:         %1").arg(m_jobid));
+    VERBOSE(VB_JOBQUEUE, QString("   chanid:        %1").arg(m_chanid));
+    VERBOSE(VB_JOBQUEUE, QString("   starttime:     %1").arg(m_starttime.toString(Qt::ISODate)));
+    VERBOSE(VB_JOBQUEUE, QString("   inserttime:    %1").arg(m_inserttime.toString(Qt::ISODate)));
+    VERBOSE(VB_JOBQUEUE, QString("   jobtype:       %1").arg(m_jobType));
+    VERBOSE(VB_JOBQUEUE, QString("   command:       %1").arg(m_cmds));
+    VERBOSE(VB_JOBQUEUE, QString("   flags:         %1").arg(m_flags));
+    VERBOSE(VB_JOBQUEUE, QString("   status:        %1").arg(m_status));
+    VERBOSE(VB_JOBQUEUE, QString("   statustime:    %1").arg(m_statustime.toString(Qt::ISODate)));
+    VERBOSE(VB_JOBQUEUE, QString("   hostname:      %1").arg(m_hostname));
+    VERBOSE(VB_JOBQUEUE, QString("   args:          %1").arg(m_args));
+    VERBOSE(VB_JOBQUEUE, QString("   comment:       %1").arg(m_comment));
+    VERBOSE(VB_JOBQUEUE, QString("   schedruntime   %1").arg(m_schedruntime.toString(Qt::ISODate)));
 }
 

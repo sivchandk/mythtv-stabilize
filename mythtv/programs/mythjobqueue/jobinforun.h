@@ -11,25 +11,26 @@ using namespace std;
 
 class JobInfoRun : public JobInfo
 {
+    Q_OBJECT
   public:
     JobInfoRun(int id) :
-        JobInfo(id) {};
+        JobInfo(id), m_process(NULL) {};
     JobInfoRun(const JobInfo &other) :
-        JobInfo(other) {};
+        JobInfo(other), m_process(NULL) {};
     JobInfoRun(uint chanid, QDateTime &starttime, int jobType) :
-        JobInfo(chanid, starttime, jobType) {};
+        JobInfo(chanid, starttime, jobType), m_process(NULL) {};
     JobInfoRun(ProgramInfo &pginfo, int jobType) :
-        JobInfo(pginfo, jobType) {};
+        JobInfo(pginfo, jobType), m_process(NULL) {};
     JobInfoRun(int jobType, uint chanid, const QDateTime &starttime,
                QString args, QString comment, QString host,
                int flags, int status, QDateTime schedruntime) :
         JobInfo(jobType, chanid, starttime, args, comment, host, flags, 
-                status, schedruntime) {};
+                status, schedruntime), m_process(NULL) {};
     JobInfoRun(QStringList::const_iterator &it,
                QStringList::const_iterator end) :
-        JobInfo(it, end) {};
+        JobInfo(it, end), m_process(NULL) {};
     JobInfoRun(const QStringList &slist) :
-        JobInfo(slist) {};
+        JobInfo(slist), m_process(NULL) {};
 
     virtual bool Start(void);
     virtual bool Stop(void);
@@ -41,11 +42,9 @@ class JobInfoRun : public JobInfo
 
     void finished(void);
     void finishedts(void);
-    void finishedcf(void);
 
     void error(uint status);
     void errorts(uint status);
-    void errorcf(uint status);
 
   private:
     void ConnectMS(void);
