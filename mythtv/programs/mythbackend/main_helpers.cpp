@@ -52,6 +52,7 @@
 #include "backendcontext.h"
 #include "jobscheduler.h"
 #include "filetransfer.h"
+#include "mythtranslation.h"
 
 #include "mediaserver.h"
 #include "httpstatus.h"
@@ -672,6 +673,8 @@ int run_backend(const MythCommandLineParser &cmdline)
         VERBOSE(VB_IMPORTANT, "Couldn't upgrade database to new schema");
         return GENERIC_EXIT_DB_OUTOFDATE;
     }
+
+    MythTranslation::load("mythfrontend");
 
     if (!ismaster)
     {
