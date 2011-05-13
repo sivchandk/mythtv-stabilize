@@ -21,7 +21,7 @@ using namespace std;
    mythtv/bindings/perl/MythTV.pm
 */
 /// This is the DB schema version expected by the running MythTV instance.
-const QString currentDatabaseVersion = "1273";
+const QString currentDatabaseVersion = "1274";
 
 static bool UpdateDBVersionNumber(const QString &newnumber, QString &dbver);
 static bool performActualUpdate(
@@ -5645,6 +5645,132 @@ NULL
 NULL
 };
         if (!performActualUpdate(updates, "1273", dbver))
+            return false;
+    }
+
+    if (dbver == "1273")
+    {
+
+        const char *updates[] = {
+"CREATE TEMPORARY TABLE oldjobqueue LIKE jobqueue;",
+"INSERT INTO oldjobqueue SELECT * FROM jobqueue;",
+"DROP TABLE jobqueue;",
+"CREATE TABLE jobcommand ("
+    "cmdid      int(10) unsigned NOT NULL AUTO_INCREMENT,"
+    "type       varchar(32) NOT NULL,"
+    "name       varchar(32) NOT NULL,"
+    "subname    varchar(32) default '',"
+    "shortdesc  varchar(64) default '',"
+    "longdesc   varchar(1000) default '',"
+    "path       varchar(256) NOT NULL,"
+    "args       varchar(512) default '',"
+    "needsfile  tinyint(1) default 0,"
+    "def        tinyint(1) default 0,"
+    "cpuintense tinyint(1) default 0,"
+    "diskintense tinyint(1) default 0,"
+    "sequence   tinyint(1) default 0,"
+    "PRIMARY KEY (cmdid) );",
+"CREATE TABLE jobhost ("
+    "cmdid      int(10) unsigned NOT NULL,"
+    "hostname   varchar(64) NOT NULL,"
+    "runbefore  time default '23:59:59',"
+    "runafter   time default '00:00:00',"
+    "terminate  tinyint(1) default 0,"
+    "idlemax    smallint unsigned default 1800,"
+    "cpumax     mediumint unsigned default 0,"
+    "PRIMARY KEY (cmdid,hostname) );",
+"CREATE TABLE jobrecord ("
+    "cmdid      int(10) unsigned NOT NULL,"
+    "recordid   int(10) unsigned NOT NULL,"
+    "realtime   tinyint(1) default 0,"
+    "PRIMARY KEY (cmdid,recordid) );",
+"CREATE TABLE jobqueue ("
+    "jobid      int(10) unsigned NOT NULL AUTO_INCREMENT,"
+    "cmdid      int(10) unsigned NOT NULL,"
+    "chanid     int(10) unsigned default 0,"
+    "starttime  datetime default '0000-00-00 00:00:00',"
+    "status     tinyint unsigned default 0,"
+    "comment    varchar(512),"
+    "statustime timestamp ON UPDATE CURRENT_TIMESTAMP,"
+    "hostname   varchar(64),"
+    "schedruntime datetime NOT NULL,"
+    "cputime    mediumint,"
+    "duration   mediumint,"
+    "PRIMARY KEY (jobid) );",
+NULL
+};
+/*
+"INSERT INTO jobcommand (cmdid, type, name, subname, shortdesc,"
+                        "path, needsfile, cpuintense,"
+                        "diskintense, args)"
+    "VALUES (1, 'Transcode', 'MythTranscode', 'Autodetect',"
+            "'Internal transcoder using the Autodetect profile'","
+            "'mythtranscode', 1, 1, 1,"
+            "'-j %JOBID% -v %VERBOSELEVEL% -p \"autodetect\"'),"
+           "(2, 'Transcode', 'MythTranscode', 'High Quality',"
+            "'Internal transcoder using the High Quality profile'","
+            "'mythtranscode', 1, 1, 1,"
+            "'-j %JOBID% -v %VERBOSELEVEL% -p 
+    # CREATE special cmdid = 0 autodetect transcoding job command
+    INSERT INTO jobcommand (cmdid, TYPE, name, subname, shortdesc,
+                            path, needsfile, cpuintense,
+                            diskintense, args)
+        VALUES (0, 'Transcode', 'MythTranscode', 'Autodetect',
+                'Internal transcoder using the Autodetect profile',
+                'mythtranscode', 1, 1, 1,
+                '-j %JOBID% -v %VERBOSELEVEL% -p \"autodetect\"');
+     
+    # CREATE transcoding job commands FOR ALL in-USE transcoding profiles
+    INSERT INTO jobcommand (cmdid, TYPE, name, subname, shortdesc,
+                            path, needsfile, cpuintense,
+                            diskintense, args)
+            SELECT rp.id, 'Transcode', 'MythTranscode', rp.name,
+                    concat('Internal transcoder using the ', rp.name, ' profile'),
+                            'mythtranscode', 1, 1, 1,
+                            concat('-j %JOBID% -v %VERBOSELEVEL% -p ', rp.id)
+                    FROM record r, recordingprofiles rp
+                    WHERE rp.name <> 'MPEG2' AND rp.name <> 'RTjpeg/MPEG4'
+                        AND rp.id = r.transcoder
+                            AND r.autotranscode = 1
+                            AND r.transcoder > 0;
+     
+    # setup transcoding jobs TO run FOR recordings.  OLD transcoder == NEW cmdid,
+    # even FOR transcoder == 0 since we INSERT a cmdid = 0 FOR autodetect above.
+    INSERT INTO jobrecord (cmdid, recordid)
+            SELECT r.transcoder, r.recordid
+                FROM record r
+                    WHERE r.autotranscode = 1;
+     
+    # CREATE mythcommflag job command AND SET it TO run FOR ALL recordids that
+    # currently auto-run flagging.
+    INSERT INTO jobcommand (TYPE, name, subname, shortdesc,
+                            path, needsfile, cpuintense,
+                            diskintense, args)
+        SELECT 'CommFlag', 'Commercial Flagger', 'Commercial Flagger',
+                'Commercial Flagger command copied during migration',
+                substr(s.DATA, 1, instr(s.DATA, ' ') - 1), 0, 1, 1,
+                            substr(s.DATA, instr(s.DATA, ' ') + 1)
+                    FROM settings s
+                    WHERE s.VALUE = 'JobQueueCommFlagCommand';
+    CREATE TEMPORARY TABLE upgrade_commflag_job_id
+            AS SELECT LAST_INSERT_ID() AS id;
+     
+    # setup commflag jobs TO run FOR recordings.  This JOIN has no WHERE clause, but
+    # that IS NOT an issue because we want one record ROW FOR every ROW IN
+    # upgrade_commflag_job_id since there IS ONLY one ROW IN upgrade_commflag_job_id
+    INSERT INTO jobrecord (cmdid, recordid)
+            SELECT cj.id, r.recordid
+                FROM record r, upgrade_commflag_job_id cj
+                    WHERE r.autocommflag = 1;
+     
+    DROP TEMPORARY TABLE upgrade_commflag_job_id;
+     
+    SELECT * FROM jobcommand;
+    SELECT * FROM jobrecord;*/
+
+
+
+        if (!performActualUpdate(updates, "1274", dbver))
             return false;
     }
 

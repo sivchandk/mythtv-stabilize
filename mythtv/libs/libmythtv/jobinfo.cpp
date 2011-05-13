@@ -4,6 +4,7 @@
 #include <cstdlib>
 using namespace std;
 
+#include <QTime>
 #include <QDateTime>
 #include <QString>
 #include <QStringList>
@@ -21,7 +22,9 @@ using namespace std;
 
 // for serialization
 #define INT_TO_LIST(x)       do { list << QString::number(x); } while (0)
+#define BOOL_TO_LIST(x)      do { list << QString((x)?"1":"0"); } while (0)
 #define DATETIME_TO_LIST(x)  INT_TO_LIST((x).toTime_t())
+#define TIME_TO_LIST(x)      INT_TO_LIST((x).hour()*3600 + (x).minute()+60 + (x).second())
 #define STR_TO_LIST(x)       do { list << (x); } while (0)
 
 // for deserialization
@@ -33,112 +36,50 @@ using namespace std;
                                }                                     \
                                ts = *it++; } while (0)
 #define INT_FROM_LIST(x)     do { NEXT_STR(); (x) = ts.toLongLong(); } while (0)
+#define BOOL_FROM_LIST(x)    do { NEXT_STR(); (x) = (ts.toInt() == 1); } while (0)
 #define ENUM_FROM_LIST(x, y) do { NEXT_STR(); (x) = ((y)ts.toInt()); } while (0)
 #define DATETIME_FROM_LIST(x) \
     do { NEXT_STR(); (x).setTime_t(ts.toUInt()); } while (0)
+#define TIME_FROM_LIST(x) \
+    do { NEXT_STR(); int tsi = ts.toInt(); (x) = QTime(tsi/3600, (tsi%3600)/60, tsi%60); } while (0)
 #define STR_FROM_LIST(x)     do { NEXT_STR(); (x) = ts; } while (0)
 
-JobInfo::JobInfo(void) :
-    m_inserttime(QDateTime::currentDateTime()), m_userJobIndex(-1),
-    m_pgInfo(NULL)
+
+/*
+ * JobBase - base inheritance class for sending/receiving
+ *           jobqueue information across the backend protocol
+ */
+JobBase::JobBase(void) : ReferenceCounter(), m_stored(false)
 {
 }
 
-JobInfo::JobInfo(int id) :
-     m_jobid(id), m_userJobIndex(-1), m_pgInfo(NULL)
-{
-    QueryObject();
-}
-
-JobInfo::JobInfo(uint chanid, QDateTime &starttime, int jobType) :
-    m_userJobIndex(-1), m_pgInfo(NULL)
-{
-    QueryObject(chanid, starttime, jobType);
-}
-
-JobInfo::JobInfo(const ProgramInfo &pginfo, int jobType) :
-    m_userJobIndex(-1), m_pgInfo(NULL)
-{
-    QueryObject(pginfo.GetChanID(), pginfo.GetRecordingStartTime(), jobType);
-}
-
-JobInfo::JobInfo(int jobType, uint chanid, const QDateTime &starttime,
-                 QString args, QString comment, QString host,
-                 int flags, int status, QDateTime schedruntime) :
-    m_chanid(chanid), m_starttime(starttime), m_jobType(jobType),
-    m_flags(flags), m_status(status), m_hostname(host), m_args(args),
-    m_comment(comment), m_schedruntime(schedruntime), m_userJobIndex(-1),
-    m_pgInfo(NULL)
-{
-}
-
-JobInfo::JobInfo(const JobInfo &other) :
-    m_userJobIndex(-1), m_pgInfo(NULL)
+JobBase::JobBase(const JobBase &other) : ReferenceCounter(), m_stored(false)
 {
     clone(other);
 }
 
-JobInfo::JobInfo(QStringList::const_iterator &it,
+JobBase::JobBase(QStringList::const_iterator &it,
                  QStringList::const_iterator end) :
-    m_userJobIndex(-1), m_pgInfo(NULL)
+    ReferenceCounter(), m_stored(false)
 {
-    FromStringList(it, end);
+    if (!FromStringList(it, end))
+        clear();
 }
 
-JobInfo::JobInfo(const QStringList &slist) :
-    m_userJobIndex(-1), m_pgInfo(NULL)
+JobBase::JobBase(const QStringList &slist) :
+    ReferenceCounter(), m_stored(false)
 {
-    FromStringList(slist);
+    if (!FromStringList(slist))
+        clear();
 }
 
-JobInfo::~JobInfo(void)
-{
-
-}
-
-JobInfo &JobInfo::operator=(const JobInfo &other)
+JobBase &JobBase::operator=(const JobBase &other)
 {
     clone(other);
     return *this;
 }
 
-void JobInfo::clone(const JobInfo &other)
-{
-    m_jobid = other.m_jobid;
-    m_chanid = other.m_chanid;
-    m_starttime = other.m_starttime;
-    m_inserttime = other.m_inserttime;
-    m_jobType = other.m_jobType;
-    m_cmds = other.m_cmds;
-    m_flags = other.m_flags;
-    m_status = other.m_status;
-    m_statustime = other.m_statustime;
-    m_hostname = other.m_hostname;
-    m_args = other.m_args;
-    m_comment = other.m_comment;
-    m_schedruntime = other.m_schedruntime;
-}
-
-void JobInfo::clear(void)
-{
-    m_jobid = -1;
-    m_chanid = 0;
-    m_starttime = QDateTime::currentDateTime();
-    m_inserttime = m_starttime;
-    m_jobType = 0;
-    m_cmds = 0;
-    m_flags = 0;
-    m_status = 0;
-    m_statustime = m_starttime;
-    m_hostname.clear();
-    m_args.clear();
-    m_comment.clear();
-    m_schedruntime = m_starttime;
-}
-
-
-
-bool JobInfo::SendExpectingInfo(QStringList &sl, bool clearinfo)
+bool JobBase::SendExpectingInfo(QStringList &sl, bool clearinfo)
 {
     if (!gCoreContext->SendReceiveStringList(sl))
     {
@@ -161,32 +102,522 @@ bool JobInfo::SendExpectingInfo(QStringList &sl, bool clearinfo)
         return false;
     }
 
+    setStored(true);
     return true;
+}
+
+bool JobBase::FromStringList(const QStringList &slist)
+{
+    QStringList::const_iterator it = slist.constBegin();
+    return FromStringList(it, slist.constEnd());
+}
+
+/*
+ *
+ *
+ */
+JobHost::JobHost(void) : JobBase(),
+    m_cmdid(-1), m_hostname(""), m_runbefore(23,59,59), m_runafter(0,0,0),
+    m_terminate(0), m_idlemax(1800), m_cpumax(0)
+{
+}
+
+JobHost::JobHost(int cmdid, QString hostname) : JobBase()
+{
+    QueryObject(cmdid, hostname);
+}
+
+JobHost::JobHost(int cmdid, QString hostname, QTime runbefore, QTime runafter,
+                 bool terminate, uint idlemax, uint cpumax, bool create) :
+    JobBase(), m_cmdid(cmdid), m_hostname(hostname), m_runbefore(runbefore),
+    m_runafter(runafter), m_terminate(terminate), m_idlemax(idlemax),
+    m_cpumax(cpumax)
+{
+    if (create)
+        Create();
+}
+
+
+void JobHost::clone(const JobHost &other)
+{
+    m_cmdid = other.m_cmdid;
+    m_hostname = other.m_hostname;
+    m_runbefore = other.m_runbefore;
+    m_runafter = other.m_runafter;
+    m_terminate = other.m_terminate;
+    m_idlemax = other.m_idlemax;
+    m_cpumax = other.m_cpumax;
+
+    setStored(other.isStored());
+}
+
+void JobHost::clear(void)
+{
+    m_cmdid = -1;
+    m_hostname = "";
+    m_runbefore = QTime(23,59,59);
+    m_runafter = QTime(0,0,0);
+    m_terminate = 0;
+    m_idlemax = 1800; 
+    m_cpumax = 0;
+
+    setStored(false);
+}
+
+bool JobHost::QueryObject(void)
+{
+    if (!isStored())
+    {
+        clear();
+        return false;
+    }
+    return QueryObject(m_cmdid, m_hostname);
+}
+
+bool JobHost::QueryObject(int cmdid, QString hostname)
+{
+    QStringList sl(QString("QUERY_JOBQUEUE GET_HOST %1 %2")
+                        .arg(cmdid).arg(hostname));
+    return SendExpectingInfo(sl, true);
+}
+
+bool JobHost::Create(void)
+{
+    if (isStored())
+        return false;
+
+    QStringList sl("QUERY_JOBQUEUE ADD_HOST");
+    if (!ToStringList(sl))
+        return false;
+
+    return SendExpectingInfo(sl, false);
+}
+
+bool JobHost::SaveObject(void)
+{
+    if (!isStored())
+        return false;
+
+    QStringList sl("QUERY_JOBQUEUE SEND_HOST");
+    if (!ToStringList(sl))
+        return false;
+
+    if (!gCoreContext->SendReceiveStringList(sl))
+        return false;
+
+    if (sl[0] == "ERROR")
+        return false;
+
+    return true;
+}
+
+bool JobHost::Delete(void)
+{
+    if (!isStored())
+        return false;
+
+    QStringList sl("QUERY_JOBQUEUE DELETE_HOST");
+    if (!ToStringList(sl))
+        return false;
+
+    if (!gCoreContext->SendReceiveStringList(sl))
+        return false;
+
+    if (sl[0] == "ERROR")
+        return false;
+
+    return true;
+}
+
+bool JobHost::ToStringList(QStringList &list) const
+{
+    INT_TO_LIST(m_cmdid);
+    STR_TO_LIST(m_hostname);
+    TIME_TO_LIST(m_runbefore);
+    TIME_TO_LIST(m_runafter);
+    INT_TO_LIST(m_terminate);
+    INT_TO_LIST(m_idlemax);
+    INT_TO_LIST(m_cpumax);
+
+    return true;
+}
+
+bool JobHost::FromStringList(QStringList::const_iterator &it,
+                             QStringList::const_iterator listend)
+{
+    QString listerror = LOC + "FromStringList, not enough items in list.";
+    QString ts;
+
+    INT_FROM_LIST(m_cmdid);
+    STR_FROM_LIST(m_hostname);
+    TIME_FROM_LIST(m_runbefore);
+    TIME_FROM_LIST(m_runafter);
+    INT_FROM_LIST(m_terminate);
+    INT_FROM_LIST(m_idlemax);
+    INT_FROM_LIST(m_cpumax);
+
+    return true;
+}
+
+JobCommand *JobHost::getJobCommand(void)
+{
+    JobCommand *jcmd = NULL;
+    if (isStored())
+        jcmd = new JobCommand(m_cmdid);
+    return jcmd;
+}
+
+/*
+ *
+ *
+ */
+JobCommand::JobCommand(void) : JobBase(),
+    m_cmdid(-1), m_type(""), m_name(""), m_subname(""),
+    m_shortdesc(""), m_longdesc(""), m_path(""), m_args(""),
+    m_needsfile(false), m_rundefault(false), m_cpuintense(false),
+    m_diskintense(false), m_sequence(false)
+{
+}
+
+JobCommand::JobCommand(int cmdid) : JobBase()
+{
+    QueryObject(cmdid);
+}
+
+JobCommand::JobCommand(const JobInfo &job) : JobBase()
+{
+    QueryObject(job.getCmdID());
+}
+
+JobCommand::JobCommand(QString type, QString name, QString subname,
+                       QString shortdesc, QString longdesc, QString path,
+                       QString args, bool needsfile, bool rundefault,
+                       bool cpuintense, bool diskintense, bool sequence,
+                       bool create) :
+    JobBase(), m_type(type), m_name(name), m_subname(subname),
+    m_shortdesc(shortdesc), m_longdesc(longdesc), m_path(path), m_args(args),
+    m_needsfile(needsfile), m_rundefault(rundefault), m_cpuintense(cpuintense),
+    m_diskintense(diskintense), m_sequence(sequence)
+{
+    if (create)
+        Create();
+}
+
+void JobCommand::clone(const JobCommand &other)
+{
+    m_cmdid = other.m_cmdid;
+    m_type = other.m_type;
+    m_name = other.m_name;
+    m_subname = other.m_subname;
+    m_shortdesc = other.m_shortdesc;
+    m_longdesc = other.m_longdesc;
+    m_path = other.m_path;
+    m_args = other.m_args;
+    m_needsfile = other.m_needsfile;
+    m_rundefault = other.m_rundefault;
+    m_cpuintense = other.m_cpuintense;
+    m_diskintense = other.m_diskintense;
+    m_sequence = other.m_sequence;
+
+    setStored(other.isStored());
+}
+
+void JobCommand::clear(void)
+{
+    m_cmdid = -1;
+    m_type = "";
+    m_name = "";
+    m_subname = "";
+    m_shortdesc = "";
+    m_longdesc = "";
+    m_path = "";
+    m_args = "";
+    m_needsfile = false;
+    m_rundefault = false;
+    m_cpuintense = false;
+    m_diskintense = false;
+    m_sequence = false;
+
+    setStored(false);
+}
+
+bool JobCommand::QueryObject(void)
+{
+    if (!isStored())
+    {
+        clear();
+        return false;
+    }
+    return QueryObject(m_cmdid);
+}
+
+bool JobCommand::QueryObject(int cmdid)
+{
+    QStringList sl(QString("QUERY_JOBQUEUE GET_COMMAND %1")
+                        .arg(cmdid));
+    return SendExpectingInfo(sl, true);
+}
+
+bool JobCommand::Create(void)
+{
+    if (isStored())
+        return false;
+
+    QStringList sl("QUERY_JOBQUEUE CREATE_COMMAND");
+    if (!ToStringList(sl))
+        return false;
+
+    return SendExpectingInfo(sl, true);
+}
+
+bool JobCommand::SaveObject(void)
+{
+    if (!isStored())
+        return false;
+
+    QStringList sl("QUERY_JOBQUEUE SEND_COMMAND");
+    if (!ToStringList(sl))
+        return false;
+
+    if (!gCoreContext->SendReceiveStringList(sl))
+        return false;
+
+    if (sl[0] == "ERROR")
+        return false;
+
+    return true;
+}
+
+bool JobCommand::Delete(void)
+{
+    if (!isStored())
+        return false;
+
+    QStringList sl("QUERY_JOBQUEUE DELETE_COMMAND");
+    if (!ToStringList(sl))
+        return false;
+
+    if (!gCoreContext->SendReceiveStringList(sl))
+        return false;
+
+    if (sl[0] == "ERROR")
+        return false;
+
+    return true;
+}
+
+bool JobCommand::ToStringList(QStringList &list) const
+{
+    INT_TO_LIST(m_cmdid);
+    STR_TO_LIST(m_type);
+    STR_TO_LIST(m_name);
+    STR_TO_LIST(m_subname);
+    STR_TO_LIST(m_shortdesc);
+    STR_TO_LIST(m_longdesc);
+    STR_TO_LIST(m_path);
+    STR_TO_LIST(m_args);
+    BOOL_TO_LIST(m_needsfile);
+    BOOL_TO_LIST(m_rundefault);
+    BOOL_TO_LIST(m_cpuintense);
+    BOOL_TO_LIST(m_diskintense);
+    BOOL_TO_LIST(m_sequence);
+
+    return true;
+}
+
+bool JobCommand::FromStringList(QStringList::const_iterator &it,
+                                QStringList::const_iterator listend)
+{
+    QString listerror = LOC + "FromStringList, not enough items in list.";
+    QString ts;
+
+    INT_FROM_LIST(m_cmdid);
+    STR_FROM_LIST(m_type);
+    STR_FROM_LIST(m_name);
+    STR_FROM_LIST(m_subname);
+    STR_FROM_LIST(m_shortdesc);
+    STR_FROM_LIST(m_longdesc);
+    STR_FROM_LIST(m_path);
+    STR_FROM_LIST(m_args);
+    BOOL_FROM_LIST(m_needsfile);
+    BOOL_FROM_LIST(m_rundefault);
+    BOOL_FROM_LIST(m_cpuintense);
+    BOOL_FROM_LIST(m_diskintense);
+    BOOL_FROM_LIST(m_sequence);
+
+    return true;
+}
+
+QList<JobHost *> JobCommand::GetEnabledHosts(void)
+{
+    QList<JobHost *> jl;
+    if (!isStored())
+        return jl;
+
+    QStringList sl(QString("QUERY_JOBQUEUE GET_HOSTS %1").arg(m_cmdid));
+    if (!gCoreContext->SendReceiveStringList(sl))
+        return jl;
+
+    JobHost *host = NULL;
+    QStringList::const_iterator it = sl.begin();
+    QStringList::const_iterator end = sl.end();
+
+    VERBOSE(VB_JOBQUEUE, QString("JobCommand(%1) is runnable on %2 hosts.")
+                .arg(m_cmdid).arg(*it++));
+
+    while (it != end)
+    {
+        host = new JobHost(it, end);
+        if (!host->isStored())
+        {
+            delete host;
+            QList<JobHost *>::iterator it2;
+            for (it2 = jl.begin(); it2 != jl.end(); ++it2)
+                delete (*it2);
+        }
+        jl << host;
+    }
+
+    return jl;
+}
+
+QMap<uint, bool> JobCommand::GetAutorunRecordings(void)
+{
+    QMap<uint, bool> jr;
+    if (!isStored())
+        return jr;
+
+    QStringList sl(QString("QUERY_JOBQUEUE GET_AUTORUN %1").arg(m_cmdid));
+    if (!gCoreContext->SendReceiveStringList(sl))
+        return jr;
+
+    QStringList::const_iterator it = sl.begin();
+    VERBOSE(VB_JOBQUEUE, QString("JobCommand(%1) is autorun on %2 rules.")
+                .arg(m_cmdid).arg(*it++));
+    for(;it != sl.end(); ++it)
+        jr.insert((*it++).toInt(), (*it) == "1");
+
+    return jr;
+}
+
+/*QList<JobInfo *> JobCommand::GetJobs(uint status)
+{
+
+}*/
+
+JobInfo *JobCommand::QueueRecordingJob(const ProgramInfo &pginfo)
+{
+    JobInfo *ji = new JobInfo(pginfo, m_cmdid);
+    if (!ji->isStored())
+    {
+        delete ji;
+        return NULL;
+    }
+    return ji;
+}
+
+JobInfo *JobCommand::NewJob(void)
+{
+    JobInfo *ji = new JobInfo();
+    ji->setCmdID(m_cmdid);
+    return ji;
+}
+
+/*
+ *
+ *
+ */
+JobInfo::JobInfo(void) :
+    JobBase(), m_command(NULL), m_pgInfo(NULL)
+{
+}
+
+JobInfo::JobInfo(int id) :
+     JobBase(), m_jobid(id), m_command(NULL), m_pgInfo(NULL)
+{
+    QueryObject();
+}
+
+JobInfo::JobInfo(uint chanid, QDateTime &starttime, int cmdid) :
+    JobBase(), m_command(NULL), m_pgInfo(NULL)
+{
+    QueryObject(chanid, starttime, cmdid);
+}
+
+JobInfo::JobInfo(const ProgramInfo &pginfo, int cmdid) :
+    JobBase(), m_command(NULL), m_pgInfo(NULL)
+{
+    QueryObject(pginfo.GetChanID(), pginfo.GetRecordingStartTime(), cmdid);
+}
+
+JobInfo::JobInfo(int cmdid, uint chanid, const QDateTime &starttime,
+                 int status, QString hostname, QDateTime schedruntime,
+                 bool create) :
+    JobBase(), m_cmdid(cmdid), m_chanid(chanid), m_starttime(starttime),
+    m_status(status), m_hostname(hostname), m_schedruntime(schedruntime),
+    m_command(NULL), m_pgInfo(NULL)
+{
+    if (create)
+        Queue();
+}
+
+JobInfo::~JobInfo(void)
+{
+    if (m_command)
+        m_command->DownRef();
+    if (m_pgInfo)
+        delete m_pgInfo;
+}
+
+void JobInfo::clone(const JobInfo &other)
+{
+    m_jobid = other.m_jobid;
+    m_cmdid = other.m_cmdid;
+    m_chanid = other.m_chanid;
+    m_starttime = other.m_starttime;
+    m_status = other.m_status;
+    m_comment = other.m_comment;
+    m_statustime = other.m_statustime;
+    m_hostname = other.m_hostname;
+    m_schedruntime = other.m_schedruntime;
+    m_cputime = other.m_cputime;
+    m_duration = other.m_duration;
+
+    setStored(other.isStored());
+}
+
+void JobInfo::clear(void)
+{
+    m_jobid = -1;
+    m_cmdid = -1;
+    m_chanid = 0;
+    m_starttime = QDateTime::currentDateTime();
+    m_status = 0;
+    m_comment.clear();
+    m_statustime = m_starttime;
+    m_hostname.clear();
+    m_schedruntime = m_starttime;
+    m_cputime = 0;
+    m_duration = 0;
+
+    setStored(false);
 }
 
 bool JobInfo::ToStringList(QStringList &list) const
 {
     INT_TO_LIST(m_jobid);
+    INT_TO_LIST(m_cmdid);
     INT_TO_LIST(m_chanid);
     DATETIME_TO_LIST(m_starttime);
-    DATETIME_TO_LIST(m_inserttime);
-    INT_TO_LIST(m_jobType);
-    INT_TO_LIST(m_cmds);
-    INT_TO_LIST(m_flags);
     INT_TO_LIST(m_status);
+    STR_TO_LIST(m_comment);
     DATETIME_TO_LIST(m_statustime);
     STR_TO_LIST(m_hostname);
-    STR_TO_LIST(m_args);
-    STR_TO_LIST(m_comment);
     DATETIME_TO_LIST(m_schedruntime);
+    INT_TO_LIST(m_cputime);
+    INT_TO_LIST(m_duration);
 
     return true;
-}
-
-bool JobInfo::FromStringList(const QStringList &slist)
-{
-    QStringList::const_iterator it = slist.constBegin();
-    return FromStringList(it, slist.constEnd());
 }
 
 bool JobInfo::FromStringList(QStringList::const_iterator &it,
@@ -196,18 +627,16 @@ bool JobInfo::FromStringList(QStringList::const_iterator &it,
     QString ts;
 
     INT_FROM_LIST(m_jobid);
+    INT_FROM_LIST(m_cmdid);
     INT_FROM_LIST(m_chanid);
     DATETIME_FROM_LIST(m_starttime);
-    DATETIME_FROM_LIST(m_inserttime);
-    INT_FROM_LIST(m_jobType);
-    INT_FROM_LIST(m_cmds);
-    INT_FROM_LIST(m_flags);
     INT_FROM_LIST(m_status);
+    STR_FROM_LIST(m_comment);
     DATETIME_FROM_LIST(m_statustime);
     STR_FROM_LIST(m_hostname);
-    STR_FROM_LIST(m_args);
-    STR_FROM_LIST(m_comment);
     DATETIME_FROM_LIST(m_schedruntime);
+    INT_FROM_LIST(m_cputime);
+    INT_FROM_LIST(m_duration);
 
     return true;
 }
@@ -233,28 +662,50 @@ void JobInfo::saveStatus(int status, QString comment)
     }
 }
 
-bool JobInfo::QueryObject(void)
+void JobInfo::setCmdID(int cmdid)
 {
-    if (!isValid())
-    {
-        clear();
-        return false;
-    }
+    // only allow this operation if job is not stored in the database
+    if (!isStored())
+        m_cmdid = cmdid;
+}
 
-    QStringList sl(QString("QUERY_JOBQUEUE GET_INFO %1").arg(m_jobid));
+void JobInfo::setProgram(int chanid, QDateTime starttime)
+{
+    // only allow this operation if job is not stored in the database
+    if (!isStored())
+    {
+        m_chanid = chanid;
+        m_starttime = starttime;
+    }
+}
+
+void JobInfo::setProgram(ProgramInfo *pginfo)
+{
+    if (!isStored())
+    {
+        setProgram(pginfo->GetChanID(), pginfo->GetRecordingStartTime());
+        if (m_pgInfo)
+            delete m_pgInfo;
+        m_pgInfo = pginfo;
+    }
+}
+
+bool JobInfo::QueryObject(int jobid)
+{
+    QStringList sl(QString("QUERY_JOBQUEUE GET_INFO %1").arg(jobid));
     return SendExpectingInfo(sl, true);
 }
 
-bool JobInfo::QueryObject(int chanid, QDateTime starttime, int jobType)
+bool JobInfo::QueryObject(uint chanid, const QDateTime &starttime, int cmdid)
 {
     QStringList sl(QString("QUERY_JOBQUEUE GET_INFO %1 %2 %3")
-                        .arg(chanid).arg(starttime.toTime_t()).arg(jobType));
+                        .arg(chanid).arg(starttime.toTime_t()).arg(cmdid));
     return SendExpectingInfo(sl, true);
 }
 
 bool JobInfo::SaveObject(void)
 {
-    if (!isValid())
+    if (!isStored())
         return false;
 
     QStringList sl("QUERY_JOBQUEUE SEND_INFO");
@@ -338,44 +789,6 @@ bool JobInfo::Restart(void)
     return true;
 }
 
-
-int JobInfo::GetUserJobIndex(void)
-{
-    if (m_userJobIndex < 0)
-    {
-        if (m_jobType & JOB_USERJOB)
-        {
-            int x = ((m_jobType & JOB_USERJOB) >> 8);
-            int bits = 1;
-            while ((x != 0) && ((x & 0x01) == 0))
-            {
-                bits++;
-                x = x >> 1;
-            }
-            if (bits > 4)
-                m_userJobIndex = 0;
-        }
-        else
-            m_userJobIndex = 0;
-    }
-
-    return m_userJobIndex;
-}
-
-QString JobInfo::GetJobDescription(void)
-{
-    if (m_jobType == JOB_TRANSCODE)
-        return "Transcode";
-    else if (m_jobType == JOB_COMMFLAG)
-        return "Commercial Detection";
-    else if (!(m_jobType & JOB_USERJOB))
-        return "Unknown Job";
-
-    QString descSetting = 
-        QString("UserJobDesc%1").arg(GetUserJobIndex());
-    return gCoreContext->GetSetting(descSetting, "Unknown Job");
-}
-
 QString JobInfo::GetStatusText(void)
 {
     switch (m_status)
@@ -385,10 +798,10 @@ QString JobInfo::GetStatusText(void)
         default: break;
     }
 
-    return tr("Undefined");
+    return QObject::tr("Undefined");
 }
 
-ProgramInfo *JobInfo::GetPGInfo(void)
+ProgramInfo *JobInfo::getProgramInfo(void)
 {
     if (m_pgInfo == NULL)
     {
@@ -407,6 +820,7 @@ ProgramInfo *JobInfo::GetPGInfo(void)
             saveComment("Unable to retrieve Program Info from database");
 
             delete m_pgInfo;
+            m_pgInfo = NULL;
             return NULL;
         }
     }
@@ -418,42 +832,43 @@ bool JobInfo::IsRecording()
     return bool(m_chanid) && (!m_starttime.isNull());
 }
 
-void JobInfo::UpRef()
+JobCommand *JobInfo::getCommand(void)
 {
-    QMutexLocker locker(&m_reflock);
-    m_refcount++;
-}
-
-bool JobInfo::DownRef()
-{
-    m_reflock.lock();
-    int count = --m_refcount;
-    m_reflock.unlock();
-
-    if (count <= 0)
+    if (m_command == NULL)
     {
-        delete this;
-        return true;
-    }
+        if (m_cmdid == -1)
+            return m_command;
 
-    return false;
+        m_command = new JobCommand(m_cmdid);
+        if (!m_command->isStored())
+        {
+            VERBOSE(VB_JOBQUEUE, LOC_ERR +
+                QString("Unable to retrieve command information for job %1")
+                    .arg(m_cmdid));
+            setStatus(JOB_ERRORED);
+            saveComment("Unable to retrieve job command information.");
+
+            delete m_command;
+            m_command = NULL;
+            return NULL;
+        }
+    }
+    return m_command;
 }
 
 void JobInfo::PrintToLog()
 {
     VERBOSE(VB_JOBQUEUE, "Dumping JobInfo instance");
     VERBOSE(VB_JOBQUEUE, QString("   jobid:         %1").arg(m_jobid));
+    VERBOSE(VB_JOBQUEUE, QString("   cmdid:         %1").arg(m_cmdid));
     VERBOSE(VB_JOBQUEUE, QString("   chanid:        %1").arg(m_chanid));
     VERBOSE(VB_JOBQUEUE, QString("   starttime:     %1").arg(m_starttime.toString(Qt::ISODate)));
-    VERBOSE(VB_JOBQUEUE, QString("   inserttime:    %1").arg(m_inserttime.toString(Qt::ISODate)));
-    VERBOSE(VB_JOBQUEUE, QString("   jobtype:       %1").arg(m_jobType));
-    VERBOSE(VB_JOBQUEUE, QString("   command:       %1").arg(m_cmds));
-    VERBOSE(VB_JOBQUEUE, QString("   flags:         %1").arg(m_flags));
     VERBOSE(VB_JOBQUEUE, QString("   status:        %1").arg(m_status));
+    VERBOSE(VB_JOBQUEUE, QString("   comment:       %1").arg(m_comment));
     VERBOSE(VB_JOBQUEUE, QString("   statustime:    %1").arg(m_statustime.toString(Qt::ISODate)));
     VERBOSE(VB_JOBQUEUE, QString("   hostname:      %1").arg(m_hostname));
-    VERBOSE(VB_JOBQUEUE, QString("   args:          %1").arg(m_args));
-    VERBOSE(VB_JOBQUEUE, QString("   comment:       %1").arg(m_comment));
-    VERBOSE(VB_JOBQUEUE, QString("   schedruntime   %1").arg(m_schedruntime.toString(Qt::ISODate)));
+    VERBOSE(VB_JOBQUEUE, QString("   schedruntime:  %1").arg(m_schedruntime.toString(Qt::ISODate)));
+    VERBOSE(VB_JOBQUEUE, QString("   cputime:       %1").arg(m_cputime));
+    VERBOSE(VB_JOBQUEUE, QString("   duration:      %1").arg(m_duration));
 }
 

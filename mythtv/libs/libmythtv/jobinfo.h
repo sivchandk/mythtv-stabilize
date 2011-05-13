@@ -10,136 +10,288 @@ using namespace std;
 #include <QString>
 #include <QStringList>
 #include <QDateTime>
+#include <QReadWriteLock>
 
 // MythTV
 #include "mythsocket.h"
 #include "mythcorecontext.h"
 #include "programinfo.h"
 #include "mythtvexp.h"
+#include "referencecounter.h"
 
 // Strings are used by JobQueue::StatusText()
 #define JOBSTATUS_MAP(F) \
     F(JOB_UNKNOWN,      0x0000, QObject::tr("Unknown")) \
     F(JOB_QUEUED,       0x0001, QObject::tr("Queued")) \
     F(JOB_PENDING,      0x0002, QObject::tr("Pending")) \
-    F(JOB_STARTING,     0x0003, QObject::tr("Starting")) \
-    F(JOB_RUNNING,      0x0004, QObject::tr("Running")) \
-    F(JOB_STOPPING,     0x0005, QObject::tr("Stopping")) \
-    F(JOB_PAUSED,       0x0006, QObject::tr("Paused")) \
-    F(JOB_RETRY,        0x0007, QObject::tr("Retrying")) \
-    F(JOB_ERRORING,     0x0008, QObject::tr("Erroring")) \
-    F(JOB_ABORTING,     0x0009, QObject::tr("Aborting")) \
+    F(JOB_STARTING,     0x0004, QObject::tr("Starting")) \
+    F(JOB_RUNNING,      0x0008, QObject::tr("Running")) \
+    F(JOB_STOPPING,     0x0010, QObject::tr("Stopping")) \
+    F(JOB_PAUSED,       0x0020, QObject::tr("Paused")) \
+    F(JOB_RETRY,        0x0040, QObject::tr("Retrying")) \
+    F(JOB_ERRORING,     0x0080, QObject::tr("Erroring")) \
+    F(JOB_ABORTING,     0x0100, QObject::tr("Aborting")) \
     /* \
      * JOB_DONE is a mask to indicate the job is done no matter what the \
      * status \
      */ \
-    F(JOB_DONE,         0x0100, QObject::tr("Done (Invalid status!)")) \
-    F(JOB_FINISHED,     0x0110, QObject::tr("Finished")) \
-    F(JOB_ABORTED,      0x0120, QObject::tr("Aborted")) \
-    F(JOB_ERRORED,      0x0130, QObject::tr("Errored")) \
-    F(JOB_CANCELLED,    0x0140, QObject::tr("Cancelled")) \
+    F(JOB_DONE,         0x8000, QObject::tr("Done (Invalid status!)")) \
+    F(JOB_FINISHED,     0x8200, QObject::tr("Finished")) \
+    F(JOB_ABORTED,      0x8400, QObject::tr("Aborted")) \
+    F(JOB_ERRORED,      0x8800, QObject::tr("Errored")) \
+    F(JOB_CANCELLED,    0x9000, QObject::tr("Cancelled")) \
 
 enum JobStatus {
 #define JOBSTATUS_ENUM(A,B,C)   A = B ,
     JOBSTATUS_MAP(JOBSTATUS_ENUM)
 };
 
-enum JobCmds {
-    JOB_RUN          = 0x0000,
-    JOB_PAUSE        = 0x0001,
-    JOB_RESUME       = 0x0002,
-    JOB_STOP         = 0x0004,
-    JOB_RESTART      = 0x0008
-};
-
-enum JobFlags {
-    JOB_NO_FLAGS     = 0x0000,
-    JOB_USE_CUTLIST  = 0x0001,
-    JOB_LIVE_REC     = 0x0002,
-    JOB_EXTERNAL     = 0x0004
-};
-
-enum JobLists {
-    JOB_LIST_ALL      = 0x0001,
-    JOB_LIST_DONE     = 0x0002,
-    JOB_LIST_NOT_DONE = 0x0004,
-    JOB_LIST_ERROR    = 0x0008,
-    JOB_LIST_RECENT   = 0x0010
-};
-
-enum JobTypes {
-    JOB_NONE         = 0x0000,
-
-    JOB_SYSTEMJOB    = 0x00ff,
-    JOB_TRANSCODE    = 0x0001,
-    JOB_COMMFLAG     = 0x0002,
-
-    JOB_USERJOB      = 0xff00,
-    JOB_USERJOB1     = 0x0100,
-    JOB_USERJOB2     = 0x0200,
-    JOB_USERJOB3     = 0x0400,
-    JOB_USERJOB4     = 0x0800
-};
-
 #define NUMJOBINFOLINES 13
 
-class MTV_PUBLIC JobInfo : public QObject
+class JobBase : public ReferenceCounter
 {
-    Q_OBJECT
   public:
-    JobInfo();
-    JobInfo(int id);
-    JobInfo(const JobInfo &other);
-    JobInfo(uint chanid, QDateTime &starttime, int jobType);
-    JobInfo(const ProgramInfo &pginfo, int jobType);
-    JobInfo(int jobType, uint chanid, const QDateTime &starttime,
-            QString args, QString comment, QString host,
-            int flags, int status, QDateTime schedruntime);
-    JobInfo(QStringList::const_iterator &it,
+    JobBase(void);
+    JobBase(const JobBase &other);
+    JobBase(QStringList::const_iterator &it,
             QStringList::const_iterator end);
-    JobInfo(const QStringList &slist);
+    JobBase(const QStringList &slist);
+   ~JobBase() {};
 
+    JobBase &operator=(const JobBase &other);
+
+    virtual void clone(const JobBase &other) {}
+    virtual void clear(void) {}
+    virtual bool isStored(void) const { return m_stored; }
+            void setStored(bool b)    { m_stored = b; }
+
+    virtual bool SendExpectingInfo(QStringList &strlist, bool clearinfo);
+    virtual bool ToStringList(QStringList &strlist) const { return false; }
+
+  protected:
+    bool m_stored;
+
+    virtual bool FromStringList(const QStringList &slist);
+    virtual bool FromStringList(QStringList::const_iterator &it,
+                        QStringList::const_iterator listend) { return false; }
+};
+
+
+class JobInfo;
+class JobCommand;
+
+class MTV_PUBLIC JobHost : public JobBase
+{
+  public:
+    JobHost(void);
+    JobHost(int cmdid, QString hostname);
+    JobHost(int cmdid, QString hostname, QTime runbefore, QTime runafter,
+            bool terminate, uint idlemax, uint cpumax, bool create=true);
+
+    JobHost(const JobHost &other) : JobBase(other) {};
+    JobHost(QStringList::const_iterator &it,
+            QStringList::const_iterator end) : JobBase(it, end) {};
+    JobHost(const QStringList &slist) : JobBase(slist) {};
+
+    virtual void clone(const JobHost &other);
+    void clear(void);
+
+    // local information retrieval
+    int         getCmdID(void)      const { return m_cmdid; }
+    QString     getHostname(void)   const { return m_hostname; }
+    QTime       getRunBefore(void)  const { return m_runbefore; }
+    QTime       getRunAfter(void)   const { return m_runafter; }
+    bool        getTerminate(void)  const { return m_terminate; }
+    uint        getIdleMax(void)    const { return m_idlemax; }
+    uint        getCPUMax(void)     const { return m_cpumax; }
+
+    // local information storage
+    void        setRunBefore(QTime time)    { m_runbefore = time; }
+    void        setRunAfter(QTime time)     { m_runafter = time; }
+    void        setTerminate(bool b=true)   { m_terminate = b; }
+    void        setIdleMax(uint max)        { m_idlemax = max; }
+    void        setCPUMax(uint max)         { m_cpumax = max; }
+
+    // remote information retrieval
+    virtual bool QueryObject(void);
+    virtual bool QueryObject(int cmdid, QString hostname);
+    
+    // remote information storage
+    virtual bool SaveObject(void);
+    virtual bool Create(void);
+    virtual bool Delete(void);
+
+    bool        ToStringList(QStringList &slist) const;
+    JobCommand *getJobCommand(void);
+
+  protected:
+    bool FromStringList(QStringList::const_iterator &it,
+                        QStringList::const_iterator listend);
+
+    int         m_cmdid;
+    QString     m_hostname;
+    QTime       m_runbefore;
+    QTime       m_runafter;
+    bool        m_terminate;
+    uint        m_idlemax;
+    uint        m_cpumax;
+};
+
+class MTV_PUBLIC JobCommand : public JobBase
+{
+  public:
+    JobCommand(void);
+    JobCommand(int cmdid);
+    JobCommand(const JobInfo &job);
+    JobCommand(QString type, QString name, QString subname, QString shortdesc,
+               QString longdesc, QString path, QString args, bool needsfile,
+               bool rundefault, bool cpuintense, bool diskintense,
+               bool sequence, bool create=true);
+
+    JobCommand(const JobCommand &other) : JobBase(other) {};
+    JobCommand(QStringList::const_iterator &it,
+               QStringList::const_iterator end) : JobBase(it, end) {};
+    JobCommand(const QStringList &slist) : JobBase(slist) {};
+
+    virtual void clone(const JobCommand &other);
+    void clear(void);
+
+    // local information retrieval
+    int         getCmdID(void)      const { return m_cmdid; }
+    QString     getType(void)       const { return m_type; }
+    QString     getName(void)       const { return m_name; }
+    QString     getSubName(void)    const { return m_subname; }
+    QString     getShortDesc(void)  const { return m_shortdesc; }
+    QString     getLongDesc(void)   const { return m_longdesc; }
+    QString     getPath(void)       const { return m_path; }
+    QString     getArgs(void)       const { return m_args; }
+    bool        doesNeedFile(void)  const { return m_needsfile; }
+    bool        isDefault(void)     const { return m_rundefault; }
+    bool        isCPUIntense(void)  const { return m_cpuintense; }
+    bool        isDiskIntense(void) const { return m_diskintense; }
+    bool        isSequence(void)    const { return m_sequence; }
+
+    // local information storage
+    void        setType(QString type)       { m_type = type; }
+    void        setName(QString name)       { m_name = name; }
+    void        setSubName(QString name)    { m_subname = name; }
+    void        setShortDesc(QString desc)  { m_shortdesc = desc; }
+    void        setLongDesc(QString desc)   { m_longdesc = desc; }
+    void        setPath(QString path)       { m_path = path; }
+    void        setArgs(QString args)       { m_args = args; }
+    void        setNeedsFile(bool b=true)   { m_needsfile = b; }
+    void        setDefault(bool b=true)     { m_rundefault = b; }
+    void        setCPUIntense(bool b=true)  { m_cpuintense = b; }
+    void        setDiskIntense(bool b=true) { m_diskintense = b; }
+    void        setSequence(bool b=true)    { m_sequence = b; }
+
+    // remote information retrieval
+    virtual bool QueryObject(void);
+    virtual bool QueryObject(int cmdid);
+    // not going to make easy retrival for individual elements
+    // for now, since this object should be largely static
+
+    // remote information storage
+    virtual bool SaveObject(void);
+    virtual bool Create(void);
+    virtual bool Delete(void);
+    // not going to make easy storage for individual elements
+    // for now, since this object should be largely static
+
+    virtual QList<JobHost *> GetEnabledHosts(void);
+    virtual QMap<uint, bool> GetAutorunRecordings(void);
+
+//    QList<JobInfo *> GetJobs(uint status=JOB_QUEUED|JOB_RUNNING|JOB_PAUSED);
+    JobInfo *QueueRecordingJob(const ProgramInfo &pginfo);
+    JobInfo *NewJob(void);
+
+    bool ToStringList(QStringList &slist) const;
+
+  protected:
+    bool FromStringList(QStringList::const_iterator &it,
+                        QStringList::const_iterator listend);
+
+    int         m_cmdid;
+    QString     m_type;
+    QString     m_name;
+    QString     m_subname;
+    QString     m_shortdesc;
+    QString     m_longdesc;
+    QString     m_path;
+    QString     m_args;
+    bool        m_needsfile;
+    bool        m_rundefault;
+    bool        m_cpuintense;
+    bool        m_diskintense;
+    bool        m_sequence;
+
+    QMap<QString, JobHost*> m_hostMap;
+    QReadWriteLock          m_hostLock;
+
+    QMap<uint, bool> m_recordMap;
+    QReadWriteLock   m_recordLock;
+};
+
+class MTV_PUBLIC JobInfo : public JobBase
+{
+  public:
+    JobInfo(void);
+    JobInfo(int id);
+    JobInfo(uint chanid, QDateTime &starttime, int cmdid);
+    JobInfo(const ProgramInfo &pginfo, int cmdid);
+    JobInfo(int cmdid, uint chanid, const QDateTime &starttime,
+            int status, QString hostname, QDateTime schedruntime,
+            bool create=true);
+
+    JobInfo(const JobInfo &other) : JobBase(other) {};
+    JobInfo(QStringList::const_iterator &it,
+            QStringList::const_iterator end) : JobBase(it, end) {};
+    JobInfo(const QStringList &slist) : JobBase(slist) {};
 
    ~JobInfo(void);
 
-    JobInfo &operator=(const JobInfo &other);
     virtual void clone(const JobInfo &other);
     void clear(void);
 
-    bool isValid(void)                const { return (m_jobid != -1); }
-
     // local information gets
     int         getJobID(void)        const { return m_jobid; }
+    int         getCmdID(void)        const { return m_cmdid; }
     uint        getChanID(void)       const { return m_chanid; }
     QDateTime   getStartTime(void)    const { return m_starttime; }
-    QDateTime   getInsertTime(void)   const { return m_inserttime; }
-    int         getJobType(void)      const { return m_jobType; }
-    int         getCmds(void)         const { return m_cmds; }
-    int         getFlags(void)        const { return m_flags; }
     int         getStatus(void)       const { return m_status; }
+    QString     getComment(void)      const { return m_comment; }
     QDateTime   getStatusTime(void)   const { return m_statustime; }
     QString     getHostname(void)     const { return m_hostname; }
-    QString     getArgs(void)         const { return m_args; }
-    QString     getComment(void)      const { return m_comment; }
     QDateTime   getSchedRunTime(void) const { return m_schedruntime; }
+    uint        getCPUTime(void)      const { return m_cputime; }
+    uint        getDuration(void)     const { return m_duration; }
+
+    JobCommand  *getCommand(void);
+    ProgramInfo *getProgramInfo(void);
 
     // local information saves
-    void        setCmds(int cmds)           { m_cmds = cmds; }
-    void        setFlags(int flags)         { m_flags = flags; }
     void        setStatus(int status)       { m_status = status;
                                               setStatusTime(); }
     void        setStatus(int status, QString comment);
     void        setComment(QString comment) { m_comment = comment;
                                               setStatusTime(); }
-    void        setArgs(QString args)       { m_args = args; }
     void        setSchedRunTime(QDateTime runtime)
                                             { m_schedruntime = runtime; }
     void        setStatusTime(void)         { m_statustime = 
                                                 QDateTime::currentDateTime(); }
     void        setHostname(QString hostname)
                                             { m_hostname = hostname; }
+    void        setCPUTime(uint cputime)    { m_cputime = cputime; }
+    void        setDuration(uint duration)  { m_duration = duration; }
 
-    virtual bool QueryObject(void);
+    void        setCmdID(int cmdid);
+    void        setProgram(int chanid, QDateTime starttime);
+    void        setProgram(ProgramInfo *pginfo);
+
+    virtual bool QueryObject(void) { return QueryObject(m_jobid); }
+    virtual bool QueryObject(int jobid);
+    virtual bool QueryObject(uint chanid, const QDateTime &starttime, int cmdid);
+
     virtual bool SaveObject(void);
     virtual bool Queue(void);
 
@@ -148,16 +300,10 @@ class MTV_PUBLIC JobInfo : public QObject
     virtual bool Stop(void);
     virtual bool Restart(void);
 
-    int         GetUserJobIndex(void);
-    QString     GetJobDescription(void);
     QString     GetStatusText(void);
-    ProgramInfo *GetPGInfo(void);
     bool        IsRecording(void);
 
     // remote information gets
-    int         queryCmds(void)             { QueryObject(); return getCmds(); }
-    int         queryFlags(void)            { QueryObject();
-                                              return getFlags(); }
     int         queryStatus(void)           { QueryObject();
                                               return getStatus(); }
     QString     queryComment(void)          { QueryObject();
@@ -168,56 +314,49 @@ class MTV_PUBLIC JobInfo : public QObject
                                               return getSchedRunTime(); }
     QString     queryHostname(void)         { QueryObject();
                                               return getHostname(); }
-    QString     queryArgs(void)             { QueryObject(); return getArgs(); }
+    uint        queryCPUTime(void)          { QueryObject();
+                                              return getCPUTime(); }
+    uint        queryDuration(void)         { QueryObject();
+                                              return getDuration(); }
 
     // remote information saves
-    void        saveCmds(int cmds)          { setCmds(cmds); SaveObject(); }
-    void        saveFlags(int flags)        { setFlags(flags); SaveObject(); }
     void        saveStatus(int status)      { setStatus(status); SaveObject(); }
     void        saveStatus(int status, QString comment);
     void        saveComment(QString comment){ setComment(comment);
                                               SaveObject(); }
-    void        saveArgs(QString args)      { setArgs(args); SaveObject(); }
     void        saveSchedRunTime(QDateTime runtime)
                                             { setSchedRunTime(runtime);
                                               SaveObject(); }
     void        saveHostname(QString hostname)
                                             { setHostname(hostname);
                                               SaveObject(); }
+    void        saveCPUTime(uint cputime)   { setCPUTime(cputime);
+                                              SaveObject(); }
+    void        saveDuration(uint duration) { setDuration(duration);
+                                              SaveObject(); }
 
-    bool        SendExpectingInfo(QStringList &sl, bool clearinfo);
     bool        ToStringList(QStringList &slist) const;
-    bool        QueryObject(int chanid, QDateTime starttime, int jobType);
-
-    void        UpRef(void);
-    bool        DownRef(void);
 
     void        PrintToLog(void);
 
   protected:
     int         m_jobid;
+    int         m_cmdid;
     uint        m_chanid;
     QDateTime   m_starttime;
-    QDateTime   m_inserttime;
-    int         m_jobType;
-    int         m_cmds;
-    int         m_flags;
-    int         m_status;
+    uint        m_status;
+    QString     m_comment;
     QDateTime   m_statustime;
     QString     m_hostname;
-    QString     m_args;
-    QString     m_comment;
     QDateTime   m_schedruntime;
+    uint        m_cputime;
+    uint        m_duration;
 
-    bool        FromStringList(const QStringList &slist);
-    bool        FromStringList(QStringList::const_iterator &it,
-                               QStringList::const_iterator listend);
-
-    int         m_userJobIndex;
+    JobCommand  *m_command;
     ProgramInfo *m_pgInfo;
 
-    int         m_refcount;
-    QMutex      m_reflock;
+    bool        FromStringList(QStringList::const_iterator &it,
+                               QStringList::const_iterator listend);
 };
 
 #endif

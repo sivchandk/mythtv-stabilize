@@ -9,23 +9,22 @@ using namespace std;
 #include "jobinfo.h"
 
 
-class JobInfoRun : public JobInfo
+class JobInfoRun : public QObject, public JobInfo
 {
     Q_OBJECT
   public:
     JobInfoRun(int id) :
         JobInfo(id), m_process(NULL) {};
-    JobInfoRun(const JobInfo &other) :
+    JobInfoRun(const JobInfoRun &other) :
         JobInfo(other), m_process(NULL) {};
-    JobInfoRun(uint chanid, QDateTime &starttime, int jobType) :
-        JobInfo(chanid, starttime, jobType), m_process(NULL) {};
-    JobInfoRun(ProgramInfo &pginfo, int jobType) :
-        JobInfo(pginfo, jobType), m_process(NULL) {};
-    JobInfoRun(int jobType, uint chanid, const QDateTime &starttime,
-               QString args, QString comment, QString host,
-               int flags, int status, QDateTime schedruntime) :
-        JobInfo(jobType, chanid, starttime, args, comment, host, flags, 
-                status, schedruntime), m_process(NULL) {};
+    JobInfoRun(uint chanid, QDateTime &starttime, int cmdid) :
+        JobInfo(chanid, starttime, cmdid), m_process(NULL) {};
+    JobInfoRun(ProgramInfo &pginfo, int cmdid) :
+        JobInfo(pginfo, cmdid), m_process(NULL) {};
+    JobInfoRun(int cmdid, uint chanid, const QDateTime &starttime,
+               int status, QString hostname, QDateTime schedruntime) :
+        JobInfo(cmdid, chanid, starttime, status, hostname, schedruntime),
+        m_process(NULL) {};
     JobInfoRun(QStringList::const_iterator &it,
                QStringList::const_iterator end) :
         JobInfo(it, end), m_process(NULL) {};
@@ -41,10 +40,7 @@ class JobInfoRun : public JobInfo
 //    void started(void);
 
     void finished(void);
-    void finishedts(void);
-
     void error(uint status);
-    void errorts(uint status);
 
   private:
     void ConnectMS(void);
@@ -52,7 +48,7 @@ class JobInfoRun : public JobInfo
 
     MythSystem *m_process;
 
-    QString m_command;
+    QString m_cmdstr;
 
     QString GetJobCommand(void);
 };
