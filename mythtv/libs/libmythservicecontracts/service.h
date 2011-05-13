@@ -85,3 +85,4 @@ class SERVICE_PUBLIC Service : public QObject
 Q_DECLARE_METATYPE( QFileInfo  )
 
 #endif
+

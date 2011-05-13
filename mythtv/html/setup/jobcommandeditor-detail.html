@@ -1,0 +1,63 @@
+<div id='jobcommandsettings'>
+    <h3><a href="#">Information</a></h3>
+    <div id='commanddetail-information'>
+        <p>
+        <table width="100%" cellpadding="0" cellspacing="10" border="0">
+            <tr>
+                <td width="50%">Command ID:</td><td><div style="text-align:right" id='commanddetail-info-cmdid'></div></td>
+            </tr>
+            <tr>
+                <td width="50%">Type:</td><td><div style="text-align:right" id='commanddetail-info-type'></div></td>
+            </tr>
+            <tr>
+                <td width="50%">Name:</td><td><div style="text-align:right" id='commanddetail-info-name'></div></td>
+            </tr>
+            <tr>
+                <td width="50%">SubName:</td><td><div style="text-align:right" id='commanddetail-info-subname'></div></td>
+            </tr>
+            <tr>
+                <td width="50%">Short Description:</td><td><div style="text-align:right" id='commanddetail-info-sdesc'></div></td>
+            </tr>
+            <tr>
+                <td width="50%">Long Description:</td><td><div style="text-align:right" id='commanddetail-info-ldesc'></div></td>
+            </tr>
+        </table>
+        </p>
+    </div>
+    <h3><a href="#">Command Settings</a></h3>
+    <div id='commanddetail-settings'>
+        <p>
+        <table width="100%" cellpadding="0" cellspacing="10" border="0">
+            <tr>
+                <td width="100px">Path:</td><td style="text-align:right;"><input size="72" id='commanddetail-setting-path' /></td>
+            </tr>
+            <tr>
+                <td width="100px">Arguments:</td><td style="text-align:right;"><input size="72" id='commanddetail-setting-args' /></td>
+            </tr>
+            <tr>
+                <td colspan=2><input id='commanddetail-setting-default' type='checkbox' />Run job automatically on newly created rules.</td>
+            </tr>
+            <tr>
+                <td colspan=2><input id='commanddetail-setting-needsfile' type='checkbox' />Job needs file access.</td>
+            </tr>
+            <tr>
+                <td colspan=2><input id='commanddetail-setting-cpuintense' type='checkbox' />Job is CPU intensive.</td>
+            </tr>
+            <tr>
+                <td colspan=2><input id='commanddetail-setting-diskintense' type='checkbox' />Job is I/O intensive.</td>
+            </tr>
+        </table>
+        </p>
+    </div>
+
+    <h3><a href="#">Allowed Hosts</a></h3>
+    <div id='commanddetail-hosts'>
+        <div id='commanddetail-host-select' style="float: left; text-align: left;" ></div>
+        <div id='commanddetail-host-detail'></div>
+        <div id='commanddetail-hostnav' stype="float: right; text-align: right;">
+            <input type='button' onClick='javascript:addJobHost()' value='Add Host' />
+            <input type='button' onClick='javascript:saveJobHost()' value='Save Host' />
+            <input type='button' onClick='javascript:deleteJobHost()' value='Delete Host' />
+        </div>
+    </div>
+</div>

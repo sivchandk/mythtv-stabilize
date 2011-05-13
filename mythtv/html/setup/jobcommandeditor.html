@@ -1,0 +1,25 @@
+<div id='Title'>Job Command Editor</div><br>
+
+<div id='commandEdit'>
+    <table id="jobcommands"></table>
+    <div id='pager'>
+</div>
+
+<div id='navigation' style="float: right; text-align: right;">
+    <input type='button' onClick='javascript:addJobCommand()' value="Add Command" />
+    <input type='button' onClick='javascript:editJobCommand()' value="Edit Command" />
+    <input type='button' onClick='javascript:promptToDeleteJobCommand()' value="Delete Command" />
+</div>
+
+<div class="contextMenu" id="jobcommandmenu" style="display:none">
+    <ul style="width: 300px">
+        <li id="editopt">
+            <span class="ui-icon ui-icon-pencil" style="float:left"></span>
+            <span class="body">Edit</span>
+        </li>
+        <li id="del">
+            <span class="ui-icon ui-icon-trash" style="float:left"></span>
+            <span class="body">Delete</span>
+        </li>
+    </ul>
+</div>

@@ -18,7 +18,11 @@
             </li>
             <li class="indent1"><a href='#' onClick="javascript:loadContent('/misc/placeholder.html')"><i18n>Recording Devices</i18n></a></li>
             <li class="indent1"><a href='#' onClick="javascript:loadSetupPage('storagegroups')"><i18n>Storage Groups</i18n></a></li>
-            <li class="indent1"><a href='#' onClick="javascript:loadSetupPage('jobqueue')"><i18n>Job Queue</i18n></a></li>
+            <li class="indent1"><a href='#'><i18n>Job Queue</i18n></a>
+              <ul class="acitem collapsible">
+                <li class="indent1"><a href='#' onClick="javascript:loadSetupPage('jobcommandeditor')"><i18n>Command Editor</i18n></a></li>
+                <li class="indent1"><a href='#' onClick="javascript:loadSetupPage('jobmanager')"><i18n>Task Manager</i18n></a></li>
+              </ul>
             <li class="indent1"><a href='#' onClick="javascript:loadSetupPage('systemevents')"><i18n>System Events</i18n></a></li>
           </ul>
         </li>
@@ -60,6 +64,7 @@
             <li class="indent1"><a href='/Dvr/wsdl'><i18n>DVR Service</i18n></a></li>
             <li class="indent1"><a href='/Content/wsdl'><i18n>Content Service</i18n></a></li>
             <li class="indent1"><a href='/Channel/wsdl'><i18n>Channel Service</i18n></a></li>
+            <li class="indent1"><a href='/JobQueue/wsdl'><i18n>JobQueue Service</i18n></a></li>
           </ul>
         </li>
         <li><a href='#'><i18n>Server Side Scripting</i18n></a>

@@ -27,8 +27,8 @@
 #include "mythversion.h"
 #include "mythcorecontext.h"
 #include "scheduler.h"
+//#include "jobinfo.h"
 #include "autoexpire.h"
-#include "jobqueue.h"
 #include "encoderlink.h"
 
 #include "serviceUtil.h"
@@ -51,7 +51,8 @@ DTC::ProgramList* Dvr::GetRecorded( bool bDescending,
         recMap = sched->GetRecording();
 
     QMap< QString, uint32_t > inUseMap    = ProgramInfo::QueryInUseMap();
-    QMap< QString, bool >     isJobRunning= ProgramInfo::QueryJobsRunning(JOB_COMMFLAG);
+    QMap< QString, bool >     isJobRunning;//
+//= ProgramInfo::QueryJobsRunning(JOB_COMMFLAG);
 
     ProgramList progList;
 

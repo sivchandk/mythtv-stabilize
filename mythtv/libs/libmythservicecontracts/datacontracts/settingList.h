@@ -77,3 +77,4 @@ Q_DECLARE_METATYPE( DTC::SettingList  )
 Q_DECLARE_METATYPE( DTC::SettingList* )
 
 #endif
+

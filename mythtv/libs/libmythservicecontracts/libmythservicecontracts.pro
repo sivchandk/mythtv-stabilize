@@ -17,6 +17,7 @@ HEADERS += serviceexp.h service.h datacontracthelper.h
 HEADERS += services/mythServices.h    services/guideServices.h
 HEADERS += services/contentServices.h services/dvrServices.h
 HEADERS += services/channelServices.h services/videoServices.h
+HEADERS += services/jobqueueServices.h
 
 HEADERS += datacontracts/connectionInfo.h        datacontracts/databaseInfo.h
 HEADERS += datacontracts/programAndChannel.h     datacontracts/programGuide.h
@@ -28,6 +29,7 @@ HEADERS += datacontracts/channelInfoList.h       datacontracts/videoSource.h
 HEADERS += datacontracts/videoSourceList.h       datacontracts/videoMultiplex.h
 HEADERS += datacontracts/videoMultiplexList.h    datacontracts/videoMetadataInfo.h
 HEADERS += datacontracts/videoMetadataInfoList.h datacontracts/blurayInfo.h
+HEADERS += datacontracts/jobCommandList.h        datacontracts/jobCommandAndHost.h
 
 SOURCES += service.cpp
 
@@ -46,6 +48,7 @@ incServices.path = $${PREFIX}/include/mythtv/libmythservicecontracts/services/
 incServices.files  = services/mythServices.h    services/guideServices.h
 incServices.files += services/contentServices.h services/dvrServices.h
 incServices.files += services/channelServices.h services/videoServices.h
+incServices.files += services/jobqueueServices.h
 
 incDatacontracts.path = $${PREFIX}/include/mythtv/libmythservicecontracts/datacontracts/
 incDatacontracts.files  = datacontracts/connectionInfo.h      datacontracts/databaseInfo.h
@@ -55,6 +58,7 @@ incDatacontracts.files += datacontracts/wolInfo.h             datacontracts/chan
 incDatacontracts.files += datacontracts/videoSource.h         datacontracts/videoSourceList.h
 incDatacontracts.files += datacontracts/videoMultiplex.h      datacontracts/videoMultiplexList.h
 incDatacontracts.files += datacontracts/videoMetadataInfo.h   datacontracts/videoMetadataInfoList.h
+incDatacontracts.files += datacontracts/jobCommandList.h      datacontracts/jobCommandAndHost.h
 incDatacontracts.files += datacontracts/blurayInfo.h
 
 INSTALLS += inc incServices incDatacontracts
