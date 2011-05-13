@@ -28,7 +28,7 @@ using namespace std;
 static void CompleteJob(int jobID, ProgramInfo *pginfo, bool useCutlist,
                         frm_dir_map_t *deleteMap, int &resultCode);
 
-JobInfo *gJob = new JobInfo(-1);
+JobInfo *gJob;
 static QString recorderOptions = "";
 
 static void usage(char *progname)
@@ -103,9 +103,6 @@ static void UpdatePositionMap(frm_pos_map_t &posMap, QString mapfile,
 static int BuildKeyframeIndex(MPEG2fixup *m2f, QString &infile,
                        frm_pos_map_t &posMap, int jobID)
 {
-    if (gJob->queryCmds() == JOB_STOP)
-        return 0;
-
     gJob->saveComment(QObject::tr("Generating Keyframe Index"));
 
     int err = m2f->BuildKeyframeIndex(infile, posMap);
@@ -128,14 +125,6 @@ static void UpdateJobQueue(float percent_done)
 
 static int CheckJobQueue()
 {
-    if (!gJob->isValid())
-        return 0;
-
-    if (gJob->getCmds() == JOB_STOP)
-    {
-        VERBOSE(VB_IMPORTANT, "Transcoding stopped by JobQueue");
-        return 1;
-    }
     return 0;
 }
 
@@ -540,9 +529,8 @@ int main(int argc, char *argv[])
 
     if (jobID != -1)
     {
-        delete gJob;
         gJob = new JobInfo(jobID);
-        if (!gJob->isValid())
+        if (!gJob)
         {
             cerr << "mythtranscode: ERROR: Unable to find DB info for "
                  << "JobQueue ID# " << jobID << endl;
@@ -643,7 +631,7 @@ int main(int argc, char *argv[])
     if (outfile.isNull() && !build_index)
         outfile = infile + ".tmp";
 
-    if (gJob->isValid())
+    if (gJob)
         gJob->saveStatus(JOB_RUNNING);
 
     Transcode *transcode = new Transcode(pginfo);
@@ -657,7 +645,7 @@ int main(int argc, char *argv[])
     if (!recorderOptions.isEmpty())
         transcode->SetRecorderOptions(recorderOptions);
     int result = 0;
-    if (!mpeg2 && !build_index)
+/*    if (!mpeg2 && !build_index)
     {
         result = transcode->TranscodeFile(infile, outfile,
                                           profilename, useCutlist,
@@ -666,7 +654,7 @@ int main(int argc, char *argv[])
                                           passthru);
         if ((result == REENCODE_OK) && gJob)
             gJob->saveArgs("RENAME_TO_NUV");
-    }
+    }*/
 
     int exitcode = GENERIC_EXIT_OK;
     if ((result == REENCODE_MPEG2TRANS) || mpeg2 || build_index)
@@ -675,7 +663,7 @@ int main(int argc, char *argv[])
         int (*check_func)() = NULL;
         if (useCutlist && !found_infile)
             pginfo->QueryCutList(deleteMap);
-        if (gJob->isValid())
+        if (gJob)
         {
            update_func = &UpdateJobQueue;
            check_func = &CheckJobQueue;
@@ -718,7 +706,7 @@ int main(int argc, char *argv[])
 
     if (result == REENCODE_OK)
     {
-        if (gJob->isValid())
+        if (gJob)
             gJob->saveStatus(JOB_STOPPING);
         VERBOSE(VB_GENERAL, QString("%1 %2 done")
                 .arg(build_index ? "Building Index for" : "Transcoding")
@@ -726,7 +714,7 @@ int main(int argc, char *argv[])
     }
     else if (result == REENCODE_CUTLIST_CHANGE)
     {
-        if (gJob->isValid())
+        if (gJob)
             gJob->saveStatus(JOB_RETRY);
         VERBOSE(VB_GENERAL, QString("Transcoding %1 aborted because of "
                                     "cutlist update").arg(infile));
@@ -734,7 +722,7 @@ int main(int argc, char *argv[])
     }
     else if (result == REENCODE_STOPPED)
     {
-        if (gJob->isValid())
+        if (gJob)
             gJob->saveStatus(JOB_ABORTING);
         VERBOSE(VB_GENERAL, QString("Transcoding %1 stopped because of "
                                     "stop command").arg(infile));
@@ -742,13 +730,13 @@ int main(int argc, char *argv[])
     }
     else
     {
-        if (gJob->isValid())
+        if (gJob)
             gJob->saveStatus(JOB_ERRORING);
         VERBOSE(VB_GENERAL, QString("Transcoding %1 failed").arg(infile));
         exitcode = result;
     }
 
-    if (gJob->isValid())
+    if (gJob)
         CompleteJob(jobID, pginfo, useCutlist, &deleteMap, exitcode);
 
     transcode->deleteLater();
@@ -896,7 +884,7 @@ static void CompleteJob(int jobID, ProgramInfo *pginfo, bool useCutlist,
             ComputeNewBookmark(ReloadBookmark(pginfo), deleteMap);
         pginfo->SaveBookmark(previousBookmark);
 
-        const QString jobArgs = gJob->getArgs();
+//        const QString jobArgs = gJob->getArgs();
 
         const QString tmpfile = filename + ".tmp";
         const QByteArray atmpfile = tmpfile.toLocal8Bit();
@@ -911,7 +899,7 @@ static void CompleteJob(int jobID, ProgramInfo *pginfo, bool useCutlist,
             newSize = st.size();
 
         QString cnf = filename;
-        if ((jobArgs == "RENAME_TO_NUV") &&
+/*        if ((jobArgs == "RENAME_TO_NUV") &&
             (filename.contains(QRegExp("mpg$"))))
         {
             QString newbase = pginfo->QueryBasename();
@@ -919,7 +907,7 @@ static void CompleteJob(int jobID, ProgramInfo *pginfo, bool useCutlist,
             cnf.replace(QRegExp("mpg$"), "nuv");
             newbase.replace(QRegExp("mpg$"), "nuv");
             pginfo->SaveBasename(newbase);
-        }
+        }*/
 
         const QString newfile = cnf;
         const QByteArray anewfile = newfile.toLocal8Bit();
@@ -1007,7 +995,7 @@ static void CompleteJob(int jobID, ProgramInfo *pginfo, bool useCutlist,
         }
 
         /* Rename all preview thumbnails. */
-        if (jobArgs == "RENAME_TO_NUV")
+/*        if (jobArgs == "RENAME_TO_NUV")
         {
             QFileInfo fInfo(filename);
             QString nameFilter = fInfo.fileName() + "*.png";
@@ -1038,7 +1026,7 @@ static void CompleteJob(int jobID, ProgramInfo *pginfo, bool useCutlist,
                 if ((oldfileprev != newfileprev) && (checkFile.exists()))
                     rename(aoldfileprev.constData(), anewfileprev.constData());
             }
-        }
+        }*/
 
         MSqlQuery query(MSqlQuery::InitCon());
 

@@ -59,7 +59,7 @@ bool JobSocketHandler::HandleQuery(MythSocket *socket, QStringList &commands,
     // pull job information
     QStringList::const_iterator i = slist.begin();
     JobInfoRun tmpjob(++i, slist.end());
-    if (!tmpjob.isValid())
+    if (tmpjob.getJobID() == -1)
         return handled;
 
     if (command == "RUN")

@@ -187,61 +187,6 @@ static int BuildVideoMarkup(ProgramInfo *program_info, bool useDB)
     return GENERIC_EXIT_OK;
 }
 
-static int QueueCommFlagJob(uint chanid, QString starttime)
-{
-    QDateTime recstartts = myth_dt_from_string(starttime);
-    const ProgramInfo pginfo(chanid, recstartts);
-
-    if (!pginfo.GetChanID())
-    {
-        if (!quiet)
-        {
-            QString tmp = QString(
-                "Unable to find program info for chanid %1 @ %2")
-                .arg(chanid).arg(starttime);
-            cerr << tmp.toLocal8Bit().constData() << endl;
-        }
-        return GENERIC_EXIT_NO_RECORDING_DATA;
-    }
-
-    JobInfo job(pginfo, JOB_COMMFLAG);
-    if (job.isValid())
-    {
-        if (!quiet)
-        {
-            QString tmp = QString("Job already exists for chanid %1 @ %2")
-                .arg(chanid).arg(starttime);
-            cerr << tmp.toLocal8Bit().constData() << endl;
-        }
-        return GENERIC_EXIT_DB_ERROR;
-    }
-
-    job = JobInfo(JOB_COMMFLAG, chanid, recstartts, "", "", "", 0, 0,
-                  QDateTime::currentDateTime());
-    if (job.Queue())
-    {
-        if (!quiet)
-        {
-            QString tmp = QString("Job Queued for chanid %1 @ %2")
-                .arg(chanid).arg(starttime);
-            cerr << tmp.toLocal8Bit().constData() << endl;
-        }
-        return GENERIC_EXIT_OK;
-    }
-    else
-    {
-        if (!quiet)
-        {
-            QString tmp = QString("Error queueing job for chanid %1 @ %2")
-                .arg(chanid).arg(starttime);
-            cerr << tmp.toLocal8Bit().constData() << endl;
-        }
-        return GENERIC_EXIT_DB_ERROR;
-    }
-
-    return GENERIC_EXIT_OK;
-}
-
 static int CopySkipListToCutList(QString chanid, QString starttime)
 {
     frm_dir_map_t cutlist;
@@ -503,7 +448,7 @@ static void commDetectorStatusUpdate(const QString& status)
 
     if (commjob)
     {   
-        VERBOSE(VB_JOBQUEUE, commjob->isValid());
+        VERBOSE(VB_JOBQUEUE, commjob->isStored());
         VERBOSE(VB_JOBQUEUE, commjob->getJobID());
         VERBOSE(VB_JOBQUEUE, commjob->getComment());
         commjob->saveComment(status);
@@ -972,7 +917,6 @@ int main(int argc, char *argv[])
     time_t time_now;
     bool useDB = true;
     bool allRecorded = false;
-    bool queueJobInstead = false;
     bool copyToCutlist = false;
     bool clearCutlist = false;
     bool clearSkiplist = false;
@@ -1176,10 +1120,6 @@ int main(int argc, char *argv[])
             print_verbose_messages = VB_NONE;
             verboseString = "";
         }
-        else if (!strcmp(a.argv()[argpos], "--queue"))
-        {
-            queueJobInstead = true;
-        }
         else if (!strcmp(a.argv()[argpos], "--sleep"))
         {
             fullSpeed = false;
@@ -1281,9 +1221,6 @@ int main(int argc, char *argv[])
                     "--getcutlist                 Display the current cutlist\n"
                     "--getskiplist                Display the current Commercial Skip list\n"
                     "-v or --verbose debug-level  Use '-v help' for level info\n"
-                    "--queue                      Insert flagging job into the JobQueue rather than\n"
-                    "                             running flagging in the foreground\n"
-                    "                             WARNING: This option does NOT work with --rebuild\n"
                     "--quiet                      Don't display commercial flagging progress\n"
                     "--very-quiet                 Only display output\n"
                     "--all                        Re-run commercial flagging for all recorded\n"
@@ -1395,7 +1332,7 @@ int main(int argc, char *argv[])
             delete commjob;
 
         commjob = new JobInfo(jobID);
-        if (!commjob->isValid())
+        if (!commjob->isStored())
         {
             cerr << "mythcommflag: ERROR: Unable to find DB info for "
                  << "JobQueue ID# " << jobID << endl;
@@ -1489,10 +1426,7 @@ int main(int argc, char *argv[])
     }
     else if (chanid && !starttime.isEmpty())
     {
-        if (queueJobInstead)
-            QueueCommFlagJob(chanid, starttime);
-        else
-            result = FlagCommercials(chanid, starttime, outputfilename, useDB);
+        result = FlagCommercials(chanid, starttime, outputfilename, useDB);
     }
     else if (!useDB)
     {
@@ -1555,13 +1489,8 @@ int main(int argc, char *argv[])
 
                 if ( allRecorded )
                 {
-                    if (queueJobInstead)
-                        QueueCommFlagJob(chanid, starttime);
-                    else
-                    {
-                        FlagCommercials(chanid, starttime,
-                                        outputfilename, useDB);
-                    }
+                    FlagCommercials(chanid, starttime,
+                                    outputfilename, useDB);
                 }
                 else
                 {
@@ -1616,13 +1545,8 @@ int main(int argc, char *argv[])
                             if ((flagStatus == COMM_FLAG_NOT_FLAGGED) &&
                                 (marksFound == 0))
                             {
-                                if (queueJobInstead)
-                                    QueueCommFlagJob(chanid, starttime);
-                                else
-                                {
-                                    FlagCommercials(chanid, starttime,
-                                                    outputfilename, useDB);
-                                }
+                                FlagCommercials(chanid, starttime,
+                                                outputfilename, useDB);
                             }
                         }
                     }
