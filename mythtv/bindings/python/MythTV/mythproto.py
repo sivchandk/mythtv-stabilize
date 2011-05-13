@@ -968,6 +968,96 @@ class Program( DictData, RECSTATUS, AUDIO_PROPS, VIDEO_PROPS, \
         return fe.send('play','program %d %s' % \
                     (self.chanid, self.recstartts.isoformat()))
 
+class JobCommand( DictData, JOBSTATUS ):
+    """
+    JobCommand(id) -> JobCommand Object
+
+    This class manages one Command definition for running tasks
+    through the jobqueue.
+    """
+    class JobHost( DictData ):
+        """
+        JobHost(id, hostname) -> JobHost Object
+
+        This class manages one host definition allowing one command
+        to run on one jobqueue host.
+        """
+
+    _field_order = ['id', 'type', 'name', 'subname', 'shortdesc',
+                    'description', 'path', 'args', 'needsfile',
+                    'default', 'cpuintense', 'diskintense', 'sequence']
+    _field_type = [0, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2]
+    _db = None
+    _be = None
+    _local = None
+
+    @classmethod
+    def fromID(cls, id, db=None):
+        if db is None:
+            db = DBCache()
+        be = BECache(db=db)
+
+        raw = be.backendCommand("QUERY_JOBQUEUE GET_COMMAND " +str(id))
+        if raw == '-1':
+            raise MythError("Invalid job")
+        return cls(raw.split(BACKEND_SEP), db, be)
+
+    @classmethod
+    def new(cls, db=None):
+        obj = cls(dict(zip(cls._field_order,
+                    [-1, '', '', '', '', '', '', '', False, False,
+                     False, False, False])),
+                 db=db, _process=False)
+        obj._local = True
+        return obj
+
+    def __init__(self, raw, db=None, be=None, _process=True):
+        if db is None:
+            db = DBCache()
+        self._db = db
+
+        if be is None:
+            be = BECache(db=db)
+        self._be = be
+
+        DictData.__init__(self, raw, _process=_process)
+        self._local = False
+
+    def toString(self):
+        """
+        JobCommand.toString() -> string representation
+                    for use with backend protocol commands
+        """
+        return BACKEND_SEP.join(self._deprocess())
+
+    def _send_mesg(self, message, process_response=False):
+        l = ["QUERY_JOBQUEUE "+message]
+        l += self._deprocess()
+
+        res = self._be.backendCommand(BACKEND_SEP.join(l))
+
+        if (res == -1) or (res.startswith("ERROR")):
+            raise MythError("jobqueue command failed")
+        if process_response:
+            self.update(self._process(res.split(BACKEND_SEP)))
+
+    def update(self):
+        if self._local:
+            raise MythError("Only existing commands can be altered.")
+        self._send_mesg("SEND_COMMAND")
+
+    def create(self):
+        if not self._local:
+            raise MythError("Pre-existing commands cannot be created.")
+        self._send_mesg("CREATE_COMMAND", True)
+
+    def delete(self):
+        if self._local:
+            raise MythError("Only existing commands can be deleted.")
+        res = self._be.backendCommand("QUERY_JOBQUEUE DELETE_COMMAND "+self.id)
+        if (res == -1) or (res.startswith("ERROR")):
+            raise MythError("jobqueue command failed")
+
 class Job( DictData, JOBTYPE, JOBCMD, JOBFLAG, JOBSTATUS ):
     """
     Job(id) -> Job object
