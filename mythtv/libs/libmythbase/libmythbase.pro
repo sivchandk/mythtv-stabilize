@@ -21,7 +21,7 @@ HEADERS += mythcoreutil.h mythdownloadmanager.h mythtranslation.h
 HEADERS += unzip.h unzip_p.h zipentry_p.h iso639.h iso3166.h mythmedia.h
 HEADERS += util.h mythhdd.h mythcdrom.h autodeletedeque.h dbutil.h
 HEADERS += mythhttppool.h mythhttphandler.h mythdeque.h version.h
-HEADERS += mythsocketmanager.h
+HEADERS += mythsocketmanager.h referencecounter.h
 
 SOURCES += mythsocket.cpp mythsocketthread.cpp msocketdevice.cpp
 SOURCES += mythdbcon.cpp mythdb.cpp oldsettings.cpp mythverbose.cpp
@@ -32,7 +32,7 @@ SOURCES += mythcorecontext.cpp mythsystem.cpp mythlocale.cpp storagegroup.cpp
 SOURCES += mythcoreutil.cpp mythdownloadmanager.cpp mythtranslation.cpp
 SOURCES += unzip.cpp iso639.cpp iso3166.cpp mythmedia.cpp util.cpp
 SOURCES += mythhdd.cpp mythcdrom.cpp dbutil.cpp mythsocketmanager.cpp
-SOURCES += mythhttppool.cpp mythhttphandler.cpp
+SOURCES += mythhttppool.cpp mythhttphandler.cpp referencecounter.cpp
 
 win32:SOURCES += msocketdevice_win.cpp
 unix {
