@@ -6,8 +6,8 @@
 
 #include "mythsocket.h"
 #include "mythverbose.h"
-#include "jobscheduler.h"
 #include "jobinfodb.h"
+#include "jobscheduler.h"
 #include "programinfo.h"
 
 JobSchedulerPrivate *jobSchedThread = NULL;
@@ -102,7 +102,7 @@ JobScheduler::JobScheduler()
         delete jobSchedThread;
     }
 
-    SyncWithDB();
+    RefreshFromDB();
 
     jobSchedThread = new JobSchedulerCF(this);
     jobSchedThread->start();
@@ -221,62 +221,168 @@ bool JobScheduler::HandleQuery(MythSocket *socket, QStringList &commands,
     QStringList res;
 
     QString command = commands[1];
+
+    // returns one or more JobInfo
     if (command == "GET_INFO")
         return HandleGetInfo(socket, commands);
     if (command == "GET_LIST")
         return HandleGetJobList(socket);
+    if (command == "GET_QUEUES")
+        return HandleGetConnectedQueues(socket);
+
+    // returns one or more JobCommand
+    if (command == "GET_COMMAND")
+        return HandleGetCommand(socket, commands);
+    if (command == "GET_COMMANDS")
+        return HandleGetCommands(socket);
+
+    // returns one or more JobHost
+    if (command == "GET_HOST")
+        return HandleGetHost(socket, commands);
     if (command == "GET_HOSTS")
-        return HandleGetHostList(socket);
+        return HandleGetHosts(socket, commands);
+
     if (command == "RUN_SCHEDULER")
         return HandleRunScheduler(socket);
 
-    // all following commands must follow the syntax
-    // QUERY_JOBQUEUE <command>[]:[]<jobinfo>
-    
-    if (slist.size() == 1)
+    if (command == "QUEUE_JOB"  ||
+        command == "SEND_INFO"  ||
+        command == "PAUSE_JOB"  ||
+        command == "RESUME_JOB" ||
+        command == "STOP_JOB"   ||
+        command == "RESTART_JOB")
     {
-        res << "ERROR" << "invalid_job";
-        socket->writeStringList(res);
-        return true;
+        // these commands must all pass a single JobInfo as
+        // a stringlist
+
+        if (slist.size() == 1)
+        {
+            res << "ERROR" << "invalid_job";
+            socket->writeStringList(res);
+            return true;
+        }
+
+        QStringList::const_iterator i = slist.begin();
+        JobInfoDB tmpjob(++i, slist.end());
+
+        if (command == "QUEUE_JOB")
+            return HandleQueueJob(socket, tmpjob);
+
+        // the following jobs must match an existing 
+        // queued job
+
+        if (tmpjob.getJobID() == -1)
+        {
+            res << "ERROR" << "invalid_job";
+            socket->writeStringList(res);
+            return true;
+        }
+
+        JobInfoDB *job = GetJobByID(tmpjob.getJobID());
+        if (job == NULL)
+        {
+            res << "ERROR" << "job_not_in_queue";
+            socket->writeStringList(res);
+            return true;
+        }
+
+        if (command == "SEND_INFO")
+            handled = HandleSendInfo(socket, tmpjob, job);
+        else if (command == "PAUSE_JOB")
+            handled = HandlePauseJob(socket, job);
+        else if (command == "RESUME_JOB")
+            handled = HandleResumeJob(socket, job);
+        else if (command == "STOP_JOB")
+            handled = HandleStopJob(socket, job);
+        else if (command == "RESTART_JOB")
+            handled = HandleRestartJob(socket, job);
+
+        job->DownRef();
     }
-
-    QStringList::const_iterator i = slist.begin();
-    JobInfoDB tmpjob(++i, slist.end());
-
-    if (command == "QUEUE_JOB")
-        return HandleQueueJob(socket, tmpjob);
-
-    if (!tmpjob.isValid())
+    else if (command == "CREATE_COMMAND" ||
+             command == "SEND_COMMAND" ||
+             command == "DELETE_COMMAND")
     {
-        res << "ERROR" << "invalid_job";
-        socket->writeStringList(res);
-        return true;
-    }
+        if (slist.size() == 1)
+        {
+            res << "ERROR" << "invalid_command";
+            socket->writeStringList(res);
+            return true;
+        }
 
-    // all following commands must match to an existing job
-    JobInfoDB *job = GetJobByID(tmpjob.getJobID());
-    if (job == NULL)
+        QStringList::const_iterator i = slist.begin();
+        JobCommandDB tmpcmd(++i, slist.end());
+
+        if (command == "CREATE_COMMAND")
+            return HandleCreateCommand(socket, tmpcmd);
+
+        if (tmpcmd.getCmdID() == -1)
+        {
+            res << "ERROR" << "invalid_command";
+            socket->writeStringList(res);
+            return true;
+        }
+
+        JobCommandDB *cmd = GetCommand(tmpcmd.getCmdID());
+        if (cmd == NULL)
+        {
+            res << "ERROR" << "command_not_registered";
+            socket->writeStringList(res);
+            return true;
+        }
+
+        if (command == "SEND_COMMAND")
+            handled = HandleSendCommand(socket, tmpcmd, cmd);
+        else if (command == "DELETE_COMMAND")
+            handled = HandleDeleteCommand(socket, cmd);
+
+        cmd->DownRef();
+    }
+    else if (command == "ADD_HOST" ||
+             command == "SEND_HOST" ||
+             command == "DELETE_HOST")
     {
-        res << "ERROR" << "job_not_in_queue";
-        socket->writeStringList(res);
-        return true;
+        if (slist.size() == 1)
+        {
+            res << "ERROR" << "invalid_command_host";
+            socket->writeStringList(res);
+            return true;
+        }
+
+        QStringList::const_iterator i = slist.begin();
+        JobHostDB tmphost(++i, slist.end());
+
+        JobCommandDB *cmd = GetCommand(tmphost.getCmdID());
+        if (cmd == NULL)
+        {
+            res << "ERROR" << "command_not_registered";
+            socket->writeStringList(res);
+            return true;
+        }
+
+        if (command == "ADD_HOST")
+        {
+            bool res = HandleCreateHost(socket, tmphost);
+            cmd->DownRef();
+            return res;
+        }
+
+        JobHostDB *host = (JobHostDB*)cmd->GetEnabledHost(tmphost.getHostname());
+        if (host == NULL)
+        {
+            res << "ERROR" << "commandhost_not_registered";
+            socket->writeStringList(res);
+            cmd->DownRef();
+            return true;
+        }
+
+        if (command == "SEND_HOST")
+            handled = HandleSendHost(socket, tmphost, host);
+        else if (command == "DELETE_HOST")
+            handled = HandleDeleteHost(socket, host);
+
+        cmd->DownRef();
     }
-
-    job->UpRef();
-
-    if (command == "SEND_INFO")
-        handled = HandleSendInfo(socket, tmpjob, job);
-    else if (command == "PAUSE_JOB")
-        handled = HandlePauseJob(socket, job);
-    else if (command == "RESUME_JOB")
-        handled = HandleResumeJob(socket, job);
-    else if (command == "STOP_JOB")
-        handled = HandleStopJob(socket, job);
-    else if (command == "RESTART_JOB")
-        handled = HandleRestartJob(socket, job);
-
-    job->DownRef();
-    job = NULL;
 
     return handled;
 }
@@ -332,7 +438,7 @@ bool JobScheduler::HandleGetJobList(MythSocket *socket)
     return true;
 }
 
-bool JobScheduler::HandleGetHostList(MythSocket *socket)
+bool JobScheduler::HandleGetConnectedQueues(MythSocket *socket)
 {
     QStringList sl;
 
@@ -519,50 +625,343 @@ bool JobScheduler::HandleRestartJob(MythSocket *socket, JobInfoDB *job)
     return true;
 }
 
-void JobScheduler::SyncWithDB(void)
+bool JobScheduler::HandleGetCommand(MythSocket *socket, QStringList &commands)
 {
+    QStringList sl;
+
+    if (commands.size() != 2)
+    {
+        sl << "ERROR" << "invalid_call";
+        socket->writeStringList(sl);
+        return true;
+    }
+
+    JobCommandDB *cmd = GetCommand(commands[1].toInt());
+    if (cmd == NULL)
+    {
+        sl << "ERROR" << "invalid_command";
+        socket->writeStringList(sl);
+        return true;
+    }
+
+    cmd->ToStringList(sl);
+    socket->writeStringList(sl);
+    cmd->DownRef();
+    return true;
+}
+
+bool JobScheduler::HandleGetCommands(MythSocket *socket)
+{
+    QStringList sl;
+
+    {
+        QReadLocker rlock(&m_cmdLock);
+        JobCommandMap::const_iterator it;
+
+        sl << QString::number(m_cmdMap.size());
+        for (it = m_cmdMap.begin(); it != m_cmdMap.end(); ++it)
+            (*it)->ToStringList(sl);
+    }
+
+    socket->writeStringList(sl);
+    return true;
+}
+
+bool JobScheduler::HandleSendCommand(MythSocket *socket, JobCommandDB &tmpcmd,
+                                     JobCommandDB *cmd)
+{
+    cmd->clone(tmpcmd);
+
+    QStringList sl;
+    if (cmd->SaveObject())
+        sl << "OK";
+    else
+        sl << "ERROR";
+    socket->writeStringList(sl);
+
+    return true;
+}
+
+bool JobScheduler::HandleCreateCommand(MythSocket *socket, JobCommandDB &tmpcmd)
+{
+    JobCommandDB *cmd = new JobCommandDB(tmpcmd);
+    QStringList res;
+
+    if (!cmd->Create())
+        res << "ERROR" << "command_not_added";
+    else
+        cmd->ToStringList(res);
+
+    socket->writeStringList(res);
+    jobSchedThread->wake();
+    return true;
+}
+
+bool JobScheduler::HandleDeleteCommand(MythSocket *socket, JobCommandDB *cmd)
+{
+//TODO: Needs to delete all matching jobs and hosts
+    QStringList res;
+
+    if (cmd->Delete())
+        res << "OK";
+    else
+        res << "ERROR" << "command_not_deleted";
+
+    socket->writeStringList(res);
+    return true;
+}
+
+bool JobScheduler::HandleGetHost(MythSocket *socket, QStringList &commands)
+{
+    QStringList sl;
+
+    if (commands.size() != 3)
+    {
+        sl << "ERROR" << "invalid_call";
+        socket->writeStringList(sl);
+        return true;
+    }
+
+    JobCommandDB *cmd = GetCommand(commands[1].toInt());
+    if (cmd == NULL)
+    {
+        sl << "ERROR" << "invalid_command";
+        socket->writeStringList(sl);
+        return true;
+    }
+
+    JobHostDB *host = (JobHostDB*)cmd->GetEnabledHost(commands[2]);
+    if (host == NULL)
+    {
+        sl << "ERROR" << "invalid_host";
+        socket->writeStringList(sl);
+        cmd->DownRef();
+        return true;
+    }
+
+    host->ToStringList(sl);
+
+    host->DownRef();
+    cmd->DownRef();
+
+    socket->writeStringList(sl);
+    return true;
+}
+
+bool JobScheduler::HandleGetHosts(MythSocket *socket, QStringList &commands)
+{
+    QStringList sl;
+
+    if (commands.size() != 2)
+    {
+        sl << "ERROR" << "invalid_call";
+        socket->writeStringList(sl);
+        return true;
+    }
+
+    JobCommandDB *cmd = GetCommand(commands[1].toInt());
+    if (cmd == NULL)
+    {
+        sl << "ERROR" << "invalid_command";
+        socket->writeStringList(sl);
+        return true;
+    }
+
+    QList<JobHost*> hosts = cmd->GetEnabledHosts();
+    cmd->DownRef();
+    QList<JobHost*>::iterator it;
+
+    sl << QString::number(hosts.size());
+    for (it = hosts.begin(); it != hosts.end(); ++it)
+    {
+        (*it)->ToStringList(sl);
+        (*it)->DownRef();
+    }
+
+    socket->writeStringList(sl);
+    return true;
+}
+
+bool JobScheduler::HandleSendHost(MythSocket *socket, JobHostDB &tmphost,
+                                  JobHostDB *host)
+{
+    host->clone(tmphost);
+
+    QStringList sl;
+    if (host->SaveObject())
+        sl << "OK";
+    else
+        sl << "ERROR";
+    socket->writeStringList(sl);
+
+    return true;
+}
+
+bool JobScheduler::HandleCreateHost(MythSocket *socket, JobHostDB &tmphost)
+{
+    QStringList sl;
+    JobHostDB *host = new JobHostDB(tmphost);
+
+    if (!host->Create())
+        sl << "ERROR" << "host_not_added";
+    else
+        host->ToStringList(sl);
+
+    socket->writeStringList(sl);
+    jobSchedThread->wake();
+    return true;
+}
+
+bool JobScheduler::HandleDeleteHost(MythSocket *socket, JobHostDB *host)
+{
+    QStringList res;
+
+    if (host->Delete())
+        res << "OK";
+    else
+        res << "ERROR" << "host_not_deleted";
+
+    socket->writeStringList(res);
+    return true;
+}
+
+void JobScheduler::RefreshFromDB(void)
+{
+    // no sense being cautious with the locks, this one is going to be extremely invasive
+    QWriteLocker clock(&m_cmdLock);
+    QWriteLocker jlock(&m_jobLock);
+
+    {
+        // clear out any old references
+        // perhaps this needs some blocking if there are actively running jobs
+        // not sure when this might need to be run besides init through
+        JobCommandMap::iterator cit;
+        for (cit = m_cmdMap.begin(); cit != m_cmdMap.end(); ++cit)
+            (*cit)->DownRef();
+        m_cmdMap.clear();
+
+        JobList::iterator jit;
+        for (jit = m_jobList.begin(); jit != m_jobList.end(); ++jit)
+            (*jit)->DownRef();
+        m_jobList.clear();
+    }
+
+    // populate list of job commands
     MSqlQuery query(MSqlQuery::InitCon());
 
-    query.prepare("SELECT id FROM jobqueue;");
+    query.prepare("SELECT cmdid, type, name, subname, shortdesc, longdesc, "
+                         "path, args, needsfile, def, cpuintense, "
+                         "diskintense, sequence "
+                  "FROM jobcommand;");
     if (!query.exec())
-    {
-        MythDB::DBError("Error in JobQueue::QueueJob()", query);
         return;
+
+    JobCommandDB *cmd = new JobCommandDB(query);
+    while (cmd->isStored())
+    {
+        m_cmdMap.insert(cmd->getCmdID(), cmd);
+        cmd = new JobCommandDB(query);
     }
+    // the last one will always be invalid
+    // no need to downref, just delete it directly
+    delete cmd;
+    cmd = NULL;
 
-    QList<int> newids;
+    // populate runnable hosts for each job command
+    query.prepare("SELECT cmdid, hostname, runbefore, runafter, terminate, "
+                         "idlemax, cpumax "
+                  "FROM jobhost;");
+    if (!query.exec())
+        return;
 
-    JobList::const_iterator jit;
+    JobHostDB *host = new JobHostDB(query);
+    while (host->isStored())
+    {
+        if (m_cmdMap.contains(host->getCmdID()))
+            // nothing else can access this map, so no lock needed
+            m_cmdMap[host->getCmdID()]
+                    ->m_hostMap.insert(host->getHostname(), host);
+        else
+        {
+            VERBOSE(VB_JOBQUEUE|VB_IMPORTANT,
+                "Job host definition found without matching command.");
+            delete host;
+        }
+        host = new JobHostDB(query);
+    }
+    delete host;
+    host = NULL;
+
+    // populate autorun tasks for each job command
+    query.prepare("SELECT cmdid, recordid, realtime "
+                  "FROM jobrecord;");
+    if (!query.exec())
+        return;
+
     while (query.next())
     {
-        QReadLocker rlock(&m_jobLock);
-        bool found = false;
-        int jobid = query.value(0).toInt();
+        int cmdid     = query.value(0).toInt();
+        int recordid  = query.value(1).toInt();
+        bool realtime = (query.value(2) != 0);
 
-        for (jit = m_jobList.begin(); jit != m_jobList.end(); ++jit)
-        {
-            if ((*jit)->getJobID() == jobid)
-            {
-                found = true;
-                break;
-            }
-        }
-
-        if (!found)
-            newids << jobid;
+        if (m_cmdMap.contains(cmdid))
+            m_cmdMap[cmdid]->m_recordMap.insert(recordid, realtime);
+        else
+            VERBOSE(VB_JOBQUEUE|VB_IMPORTANT,
+                "Job autorun definition found without matching command.");
     }
 
-    if (newids.isEmpty())
+    // populate existing jobs in the queue
+    query.prepare("SELECT jobid, cmdid, chanid, starttime, status, comment, "
+                         "statustime, hostname, schedruntime, cputime, duration "
+                  "FROM jobqueue");
+    if (!query.exec())
         return;
 
-    JobInfoDB *job;
-    QWriteLocker wlock(&m_jobLock);
-    QList<int>::const_iterator idit;
-    for (idit = newids.begin(); idit != newids.end(); ++idit)
+    JobInfoDB *job = new JobInfoDB(query);
+    while (job->isStored())
     {
-        job = new JobInfoDB(*idit);
-        m_jobList << job;
+        if (m_cmdMap.contains(job->getCmdID()))
+        {
+            job->m_command = m_cmdMap[job->getCmdID()];
+            m_jobList.append(job);
+        }
+        else
+            VERBOSE(VB_JOBQUEUE|VB_IMPORTANT,
+                "Queued Job found with no known command.");
     }
+    delete job;
+    job = NULL;
+}
+
+QList<JobCommandDB*> JobScheduler::GetCommandList(void)
+{
+    QReadLocker rlock(&m_cmdLock);
+
+    QList<JobCommandDB*> cmdlist;
+
+    JobCommandMap::iterator it;
+    for (it = m_cmdMap.begin(); it != m_cmdMap.end(); ++it)
+    {
+        (*it)->UpRef();
+        cmdlist.append(*it);
+    }
+
+    return cmdlist;
+}
+
+JobCommandDB *JobScheduler::GetCommand(int cmdid)
+{
+    QReadLocker rlock(&m_cmdLock);
+
+    JobCommandDB *jobcmd = NULL;
+    if (m_cmdMap.contains(cmdid))
+    {
+        jobcmd = m_cmdMap[cmdid];
+        jobcmd->UpRef();
+    }
+
+    return jobcmd;
 }
 
 JobList *JobScheduler::GetQueuedJobs(void)
@@ -626,7 +1025,7 @@ JobInfoDB *JobScheduler::GetJobByID(int jobid)
 }
 
 JobInfoDB *JobScheduler::GetJobByProgram(uint chanid, QDateTime starttime,
-                                         int jobType)
+                                         int cmdid)
 {
     QReadLocker rlock(&m_jobLock);
 
@@ -637,7 +1036,7 @@ JobInfoDB *JobScheduler::GetJobByProgram(uint chanid, QDateTime starttime,
     {
         if ((*i)->getChanID() == chanid &&
             (*i)->getStartTime() == starttime &&
-            (*i)->getJobType() == jobType)
+            (*i)->getCmdID() == cmdid)
         {
             job = *i;
             job->UpRef();
@@ -652,6 +1051,58 @@ JobInfoDB *JobScheduler::GetJobByProgram(ProgramInfo *pg, int jobType)
 {
     return GetJobByProgram(pg->GetChanID(), pg->GetRecordingStartTime(),
                            jobType);
+}
+
+void JobScheduler::AddCommand(JobCommandDB *cmd)
+{
+    {
+        QReadLocker rlock(&m_cmdLock);
+        if (m_cmdMap.contains(cmd->getCmdID()))
+            return;
+    }
+
+    cmd->UpRef();
+    QWriteLocker wlock(&m_cmdLock);
+    m_cmdMap.insert(cmd->getCmdID(), cmd);
+}
+
+void JobScheduler::DeleteCommand(JobCommandDB *cmd)
+{
+    {
+        QReadLocker rlock(&m_cmdLock);
+        if (!m_cmdMap.contains(cmd->getCmdID()))
+            return;
+    }
+
+    QWriteLocker wlock(&m_cmdLock);
+    m_cmdMap.remove(cmd->getCmdID());
+    cmd->DownRef();
+}
+
+void JobScheduler::AddJob(JobInfoDB *job)
+{
+    {
+        QReadLocker rlock(&m_jobLock);
+        if (m_jobList.contains(job))
+            return;
+    }
+
+    job->UpRef();
+    QWriteLocker wlock(&m_jobLock);
+    m_jobList.append(job);
+}
+
+void JobScheduler::DeleteJob(JobInfoDB *job)
+{
+    {
+        QReadLocker rlock(&m_jobLock);
+        if (!m_jobList.contains(job))
+            return;
+    }
+
+    QWriteLocker wlock(&m_jobLock);
+    m_jobList.removeOne(job);
+    job->DownRef();
 }
 
 JobSchedulerPrivate::JobSchedulerPrivate(JobScheduler *parent)
@@ -678,7 +1129,6 @@ void JobSchedulerPrivate::run(void)
         QMutexLocker locker(&m_lock);
 
         VERBOSE(VB_JOBQUEUE|VB_EXTRA, "Running job scheduler.");
-        m_parent->SyncWithDB();
         DoJobScheduling();
 
         m_timer->start(60000);

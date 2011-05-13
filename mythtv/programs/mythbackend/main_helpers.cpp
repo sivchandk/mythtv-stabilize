@@ -797,7 +797,10 @@ int run_backend(const MythCommandLineParser &cmdline)
     socketManager->RegisterHandler(mainServer);
 
     if (ismaster)
-        socketManager->RegisterHandler(new JobScheduler());
+    {
+        jobsched = new JobScheduler();
+        socketManager->RegisterHandler(jobsched);
+    }
 
     if (httpStatus && mainServer)
         httpStatus->SetMainServer(mainServer);

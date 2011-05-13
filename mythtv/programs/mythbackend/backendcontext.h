@@ -7,18 +7,18 @@
 class EncoderLink;
 class AutoExpire;
 class Scheduler;
-class JobQueue;
+class JobScheduler;
 class HouseKeeper;
 class MediaServer;
 
 extern QMap<int, EncoderLink *> tvList;
-extern AutoExpire  *expirer;
-extern Scheduler   *sched;
-extern JobQueue    *jobqueue;
-extern HouseKeeper *housekeeping;
-extern MediaServer *g_pUPnp;
-extern QString      pidfile;
-extern QString      logfile;
+extern AutoExpire    *expirer;
+extern Scheduler     *sched;
+extern JobScheduler  *jobsched;
+extern HouseKeeper   *housekeeping;
+extern MediaServer   *g_pUPnp;
+extern QString        pidfile;
+extern QString        logfile;
 
 class BackendContext
 {

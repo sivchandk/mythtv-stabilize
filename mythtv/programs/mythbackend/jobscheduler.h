@@ -20,6 +20,8 @@ using namespace std;
 class JobQueueSocket;
 
 typedef QMap<QString, JobQueueSocket*> JobHostMap;
+typedef QMap<int, JobCommandDB*> JobCommandMap;
+
 typedef QList<JobQueueSocket*> JobHostList;
 typedef QList<JobInfoDB*> JobList;
 
@@ -79,22 +81,54 @@ class JobScheduler : public SocketRequestHandler
     JobList     *GetJobByProgram(ProgramInfo *pginfo);
 
     JobInfoDB   *GetJobByID(int jobid);
-    JobInfoDB   *GetJobByProgram(uint chanid, QDateTime starttime, int jobType);
-    JobInfoDB   *GetJobByProgram(ProgramInfo *pginfo, int jobType);
+    JobInfoDB   *GetJobByProgram(uint chanid, QDateTime starttime, int cmdid);
+    JobInfoDB   *GetJobByProgram(ProgramInfo *pginfo, int cmdid);
 
-    void SyncWithDB(void);
+    QList<JobCommandDB*> GetCommandList(void);
+    JobCommandDB        *GetCommand(int cmdid);
+//    QList<JobHostDB*>    *GetHostList(void);
+//    QList<JobHostDB*>    *GetHostList(int cmdid);
+
+    void RefreshFromDB(void);
+
+    friend class JobInfoDB;
+    friend class JobCommandDB;
+
+  protected:
+    void AddCommand(JobCommandDB *cmd);
+    void DeleteCommand(JobCommandDB *cmd);
+    void AddJob(JobInfoDB *job);
+    void DeleteJob(JobInfoDB *job);
 
   private:
-    bool HandleGetInfo(MythSocket *socket, QStringList &commands);
     bool HandleGetJobList(MythSocket *socket);
-    bool HandleGetHostList(MythSocket *socket);
+    bool HandleGetConnectedQueues(MythSocket *socket);
     bool HandleRunScheduler(MythSocket *socket);
+
     bool HandleQueueJob(MythSocket *socket, JobInfoDB &tmpjob);
+    bool HandleGetInfo(MythSocket *socket, QStringList &commands);
     bool HandleSendInfo(MythSocket *socket, JobInfoDB &tmpjob, JobInfoDB *job);
     bool HandlePauseJob(MythSocket *socket, JobInfoDB *job);
     bool HandleResumeJob(MythSocket *socket, JobInfoDB *job);
     bool HandleStopJob(MythSocket *socket, JobInfoDB *job);
     bool HandleRestartJob(MythSocket *socket, JobInfoDB *job);
+
+    bool HandleGetCommand(MythSocket *socket, QStringList &commands);
+    bool HandleGetCommands(MythSocket *socket);
+    bool HandleSendCommand(MythSocket *socket, JobCommandDB &tmpcmd, JobCommandDB *cmd);
+    bool HandleCreateCommand(MythSocket *socket, JobCommandDB &tmpcmd);
+    bool HandleDeleteCommand(MythSocket *socket, JobCommandDB *cmd);
+
+    bool HandleGetHost(MythSocket *socket, QStringList &commands);
+    bool HandleGetHosts(MythSocket *socket, QStringList &commands);
+    bool HandleSendHost(MythSocket *socket, JobHostDB &tmphost, JobHostDB *host);
+    bool HandleCreateHost(MythSocket *socket, JobHostDB &tmphost);
+    bool HandleDeleteHost(MythSocket *socket, JobHostDB *host);
+    
+
+
+    JobCommandMap   m_cmdMap;
+    QReadWriteLock  m_cmdLock;
 
     JobList         m_jobList;
     QReadWriteLock  m_jobLock;
