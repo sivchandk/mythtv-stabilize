@@ -30,9 +30,6 @@
 #include "upnp.h"
 
 #define LOC      QString("SOAPClient: ")
-#define LOC_WARN QString("SOAPClient, Warning: ")
-#define LOC_ERR  QString("SOAPClient, Error: ")
-
 
 /** \brief Full SOAPClient constructor. After constructing the client
  *         with this constructor it is ready for SendSOAPRequest().
@@ -60,7 +57,7 @@ bool SOAPClient::Init(const QUrl    &url,
     if (sNamespace.isEmpty())
     {
         ok = false;
-        VERBOSE(VB_IMPORTANT, LOC_ERR + "Init() given blank namespace");
+        LOG(VB_GENERAL, LOG_ERR, LOC + "Init() given blank namespace");
     }
 
     QUrl test(url);
@@ -68,8 +65,8 @@ bool SOAPClient::Init(const QUrl    &url,
     if (!test.isValid())
     {
         ok = false;
-        VERBOSE(VB_IMPORTANT, LOC_ERR +
-                QString("Init() given invalid control URL %1")
+        LOG(VB_GENERAL, LOG_ERR, LOC +
+            QString("Init() given invalid control URL %1")
                 .arg(test.toString()));
     }
 
@@ -260,30 +257,30 @@ QDomDocument SOAPClient::SendSOAPRequest(const QString &sMethod,
 
     QBuffer buff(&aBuffer);
 
-    VERBOSE(VB_UPNP|VB_EXTRA,
-            QString("SOAPClient(%1) sending:\n").arg(url.toString()) +
-            header.toString() +
-            QString("\n%1\n").arg(aBuffer.constData()));
+    LOG(VB_UPNP, LOG_DEBUG,
+        QString("SOAPClient(%1) sending:\n").arg(url.toString()) +
+        header.toString() + QString("\n%1\n").arg(aBuffer.constData()));
 
-    QString sXml = HttpComms::postHttp(
-        url,
-        &header,
-        &buff, // QIODevice*
-        10000, // ms -- Technically we should allow 30,000 ms per spec
-        3,     // retries
-        0,     // redirects
-        false, // allow gzip
-        NULL,  // login
-        bInQtThread,
-        QString() // userAgent, UPnP/1.0 very strict on format if set
+    QString sXml =
+        HttpComms::postHttp(url,
+                            &header,
+                            &buff, // QIODevice*
+                            10000, // ms -- Technically should be 30ms per spec
+                            3,     // retries
+                            0,     // redirects
+                            false, // allow gzip
+                            NULL,  // login
+                            bInQtThread,
+                            QString() // userAgent, UPnP/1.0 very strict on
+                                      // format if set
         );
 
     // --------------------------------------------------------------
     // Parse response
     // --------------------------------------------------------------
 
-    VERBOSE(VB_UPNP|VB_EXTRA, "SOAPClient response:\n" +QString("%1\n")
-            .arg(sXml));
+    LOG(VB_UPNP, LOG_DEBUG, "SOAPClient response:\n" +
+                            QString("%1\n").arg(sXml));
 
     // TODO handle timeout without response correctly.
 
@@ -293,11 +290,10 @@ QDomDocument SOAPClient::SendSOAPRequest(const QString &sMethod,
 
     if (!doc.setContent(sXml, true, &sErrDesc, &nErrCode))
     {
-        VERBOSE(VB_UPNP,
-                QString("MythXMLClient::SendSOAPRequest( %1 ) - "
-                        "Invalid response from %2")
+        LOG(VB_UPNP, LOG_ERR,
+            QString("SendSOAPRequest( %1 ) - Invalid response from %2")
                 .arg(sMethod).arg(url.toString()) + 
-                QString("%1: %2").arg(nErrCode).arg(sErrDesc));
+            QString("%1: %2").arg(nErrCode).arg(sErrDesc));
 
         return xmlResult;
     }

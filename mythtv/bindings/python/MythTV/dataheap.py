@@ -829,8 +829,8 @@ class Video( VideoSchema, DBDataWrite, CMPVideo ):
         """Video.getHash() -> file hash"""
         if self.host is None:
             return None
-        be = FileOps(self.host)
-        hash = be.getHash(self.filename, 'Videos')
+        be = FileOps(db=self._db)
+        hash = be.getHash(self.filename, 'Videos', self.host)
         return hash
 
     def parseFilename(self):

@@ -102,7 +102,7 @@ int main(int argc, char *argv[])
         return retval;
 
     bool daemonize = cmdline.toBool("daemon");
-    QString mask("important general");
+    QString mask("general");
     if ((retval = cmdline.ConfigureLogging(mask, daemonize)) != GENERIC_EXIT_OK)
         return retval;
 
@@ -111,7 +111,7 @@ int main(int argc, char *argv[])
     gContext = new MythContext(MYTH_BINARY_VERSION);
     if (!gContext->Init(false))
     {
-        VERBOSE(VB_IMPORTANT, LOC_ERR + "Failed to init MythContext, exiting.");
+        LOG(VB_GENERAL, LOG_ERR, LOC + "Failed to init MythContext, exiting.");
         return GENERIC_EXIT_NO_MYTHCONTEXT;
     }
 
@@ -119,7 +119,7 @@ int main(int argc, char *argv[])
 
     if (!gCoreContext->ConnectToMasterServer())
     {
-        VERBOSE(VB_IMPORTANT, LOC_ERR + "Failed to connect to master server");
+        LOG(VB_GENERAL, LOG_ERR, LOC + "Failed to connect to master server");
         return GENERIC_EXIT_CONNECT_ERROR;
     }
 

@@ -18,6 +18,7 @@
 #include "videometadatalistmanager.h"
 #include "videoscan.h"
 #include "videoutils.h"
+#include "mythevent.h"
 #include "remoteutil.h"
 #include "mythlogging.h"
 
@@ -49,10 +50,13 @@ namespace
         void handleFile(const QString &file_name,
                         const QString &fq_file_name,
                         const QString &extension,
-			const QString &host)
+                        const QString &host)
 
         {
-		    //VERBOSE(VB_GENERAL,QString("handleFile: %1 :: %2").arg(fq_file_name).arg(host));
+#if 0
+            LOG(VB_GENERAL, LOG_DEBUG,
+                QString("handleFile: %1 :: %2").arg(fq_file_name).arg(host));
+#endif
             (void) file_name;
             if (m_image_ext.find(extension.toLower()) == m_image_ext.end())
             {
@@ -79,9 +83,6 @@ class VideoScannerThread : public QThread
         m_DBDataChanged(false)
     {
         m_dbmetadata = new VideoMetadataListManager;
-        VideoMetadataListManager::metadata_list ml;
-        VideoMetadataListManager::loadAllFromDatabase(ml);
-        m_dbmetadata->setList(ml);
         m_HasGUI = gCoreContext->HasGUI();
         m_ListUnknown = gCoreContext->GetNumSetting("VideoListUnknownFiletypes", 0);
     }
@@ -94,6 +95,11 @@ class VideoScannerThread : public QThread
     void run()
     {
         threadRegister("VideoScanner");
+
+        VideoMetadataListManager::metadata_list ml;
+        VideoMetadataListManager::loadAllFromDatabase(ml);
+        m_dbmetadata->setList(ml);
+
         QList<QByteArray> image_types = QImageReader::supportedImageFormats();
         QStringList imageExtensions;
         for (QList<QByteArray>::const_iterator p = image_types.begin();
@@ -102,7 +108,7 @@ class VideoScannerThread : public QThread
             imageExtensions.push_back(QString(*p));
         }
 
-        VERBOSE(VB_GENERAL, QString("Beginning Video Scan."));
+        LOG(VB_GENERAL, LOG_INFO, QString("Beginning Video Scan."));
 
         uint counter = 0;
         FileCheckList fs_files;
@@ -124,7 +130,8 @@ class VideoScannerThread : public QThread
 
                     failedSGHosts.append(host);
 
-                    VERBOSE(VB_GENERAL, QString("Failed to scan :%1:").arg(*iter));
+                    LOG(VB_GENERAL, LOG_ERR,
+                        QString("Failed to scan :%1:").arg(*iter));
                 }
             }
             if (m_HasGUI)
@@ -134,8 +141,25 @@ class VideoScannerThread : public QThread
         PurgeList db_remove;
         verifyFiles(fs_files, db_remove);
         m_DBDataChanged = updateDB(fs_files, db_remove);
+
         if (m_DBDataChanged)
-            RemoteSendMessage("VIDEO_LIST_CHANGE");
+        {
+            QStringList slist;
+
+            QList<int>::const_iterator i;
+            for (i = m_addList.begin(); i != m_addList.end(); ++i)
+                slist << QString("added::%1").arg(*i);
+            for (i = m_movList.begin(); i != m_movList.end(); ++i)
+                slist << QString("moved::%1").arg(*i);
+            for (i = m_delList.begin(); i != m_delList.end(); ++i)
+                slist << QString("deleted::%1").arg(*i);
+            
+            MythEvent me("VIDEO_LIST_CHANGE", slist);
+
+            RemoteSendEvent(me);
+        }
+        else
+            RemoteSendMessage("VIDEO_LIST_NO_CHANGE");
         threadDeregister();
     }
 
@@ -210,25 +234,23 @@ class VideoScannerThread : public QThread
                     // it.
                     iter->second.check= true;
                 }
-                else
+                else if (lhost.isEmpty())
                 {
-                    // If it's only in the database, and not on a host we cannot reach,
-                    //  mark it as for removal later.
-                    if (lhost.isEmpty())
-                    {
-                        remove.push_back(std::make_pair((*p)->GetID(), lname));
-                    }
-                    else
-                    {
-                        if (!failedSGHosts.contains(lhost))
-                        {
-                            VERBOSE(VB_GENERAL, QString("Removing file SG(%1) :%2: ").arg(lhost).arg(lname));
-                            remove.push_back(std::make_pair((*p)->GetID(), lname));
-                        }
-                        else
-                            VERBOSE(VB_GENERAL, QString("SG(%1) not available. Not removing file :%2: ").arg(lhost).arg(lname));
-                    }
+                    // If it's only in the database, and not on a host we
+                    // cannot reach, mark it as for removal later.
+                    remove.push_back(std::make_pair((*p)->GetID(), lname));
                 }
+                else if (!failedSGHosts.contains(lhost))
+                {
+                    LOG(VB_GENERAL, LOG_INFO,
+                        QString("Removing file SG(%1) :%2:")
+                            .arg(lhost).arg(lname));
+                    remove.push_back(std::make_pair((*p)->GetID(), lname));
+                }
+                else
+                    LOG(VB_GENERAL, LOG_WARNING,
+                        QString("SG(%1) not available. Not removing file :%2:")
+                            .arg(lhost).arg(lname));
             }
             if (m_HasGUI)
                 SendProgressEvent(++counter);
@@ -240,7 +262,6 @@ class VideoScannerThread : public QThread
     {
         int ret = 0;
         uint counter = 0;
-        QList<int> preservelist;
         if (m_HasGUI)
             SendProgressEvent(counter, (uint)(add.size() + remove.size()),
                               tr("Updating video database"));
@@ -261,11 +282,12 @@ class VideoScannerThread : public QThread
                     {
                         // Whew, that was close.  Let's remove that thing from
                         // our purge list, too.
-                        VERBOSE(VB_IMPORTANT, QString("Hash %1 already exists in the "
-                                                      "database, updating record %2 "
-                                                      "with new filename %3")
-                                                      .arg(hash).arg(id).arg(p->first));
-                        preservelist.append(id);
+                        LOG(VB_GENERAL, LOG_ERR,
+                            QString("Hash %1 already exists in the "
+                                    "database, updating record %2 "
+                                    "with new filename %3")
+                                .arg(hash).arg(id).arg(p->first));
+                        m_movList.append(id);
                     }
                 }
                 if (id == -1)
@@ -289,11 +311,12 @@ class VideoScannerThread : public QThread
                                      QDate::currentDate(),
                                      0, ParentalLevel::plLowest);
 
-                    VERBOSE(VB_GENERAL, QString("Adding : %1 : %2 : %3")
+                    LOG(VB_GENERAL, LOG_INFO, QString("Adding : %1 : %2 : %3")
                             .arg(newFile.GetHost()).arg(newFile.GetFilename())
                             .arg(hash));
                     newFile.SetHost(p->second.host);
                     newFile.SaveToDatabase();
+                    m_addList << newFile.GetID();
                 }
                 ret += 1;
             }
@@ -306,8 +329,11 @@ class VideoScannerThread : public QThread
         for (PurgeList::const_iterator p = remove.begin(); p != remove.end();
                 ++p)
         {
-            if (!preservelist.contains(p->first))
+            if (!m_movList.contains(p->first))
+            {
                 removeOrphans(p->first, p->second);
+                m_delList << p->first;
+            }
             if (m_HasGUI)
                 SendProgressEvent(++counter);
         }
@@ -319,7 +345,8 @@ class VideoScannerThread : public QThread
                                         const QStringList &imageExtensions,
                                         FileCheckList &filelist)
     {
-        VERBOSE(VB_GENERAL, QString("buildFileList directory = %1").arg(directory));
+        LOG(VB_GENERAL,LOG_INFO, QString("buildFileList directory = %1")
+                                     .arg(directory));
         FileAssociations::ext_ignore_list ext_list;
         FileAssociations::getFileAssociation().getExtensionIgnoreList(ext_list);
 
@@ -338,7 +365,6 @@ class VideoScannerThread : public QThread
         QApplication::postEvent(m_dialog, pue);
     }
 
-
     bool m_ListUnknown;
     bool m_RemoveAll;
     bool m_KeepAll;
@@ -349,6 +375,9 @@ class VideoScannerThread : public QThread
     VideoMetadataListManager *m_dbmetadata;
     MythUIProgressDialog *m_dialog;
 
+    QList<int> m_addList; // newly added intids
+    QList<int> m_movList; // intids moved to new filename
+    QList<int> m_delList; // orphaned/deleted intids
     bool m_DBDataChanged;
 };
 
