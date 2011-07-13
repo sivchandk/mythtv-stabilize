@@ -35,7 +35,6 @@ using namespace std;
 
 #include "mythcontext.h"
 #include "mythcorecontext.h"
-#include "mythverbose.h"
 #include "mythversion.h"
 #include "mythdb.h"
 #include "exitcodes.h"
@@ -44,8 +43,9 @@ using namespace std;
 #include "programinfo.h"
 #include "dbcheck.h"
 #include "previewgenerator.h"
-#include "mythcommandlineparser.h"
+#include "commandlineparser.h"
 #include "mythsystemevent.h"
+#include "mythlogging.h"
 
 #define LOC      QString("MythPreviewGen: ")
 #define LOC_WARN QString("MythPreviewGen, Warning: ")
@@ -57,8 +57,6 @@ using namespace std;
 #else
     #define UNUSED_FILENO 3
 #endif
-
-static QString logfile;
 
 namespace
 {
@@ -155,28 +153,23 @@ int preview_helper(const QString &_chanid, const QString &starttime,
 
 int main(int argc, char **argv)
 {
-    bool cmdline_err;
-    MythCommandLineParser cmdline(
-        kCLPHelp                 |
-        kCLPQueryVersion         |
-        kCLPVerbose              |
-        kCLPInFile               |
-        kCLPOutFile              |
-        kCLPChannelId            |
-        kCLPStartTime            |
-        kCLPGeneratePreview);
-
-
-    for (int argpos = 0; argpos < argc; ++argpos)
+    MythPreviewGeneratorCommandLineParser cmdline;
+    if (!cmdline.Parse(argc, argv))
     {
-        if (cmdline.PreParse(argc, argv, argpos, cmdline_err))
-        {
-            if (cmdline_err)
-                return GENERIC_EXIT_INVALID_CMDLINE;
+        cmdline.PrintHelp();
+        return GENERIC_EXIT_INVALID_CMDLINE;
+    }
 
-            if (cmdline.WantsToExit())
-                return GENERIC_EXIT_OK;
-        }
+    if (cmdline.toBool("showhelp"))
+    {
+        cmdline.PrintHelp();
+        return GENERIC_EXIT_OK;
+    }
+
+    if (cmdline.toBool("showversion"))
+    {
+        cmdline.PrintVersion();
+        return GENERIC_EXIT_OK;
     }
 
 #ifndef _WIN32
@@ -188,29 +181,14 @@ int main(int argc, char **argv)
     // such as socket notifications :[
     QApplication a(argc, argv);
 #endif
-
     QCoreApplication::setApplicationName(MYTH_APPNAME_MYTHPREVIEWGEN);
 
-    for (int argpos = 1; argpos < a.argc(); ++argpos)
-    {
-        if (cmdline.Parse(a.argc(), a.argv(), argpos, cmdline_err))
-        {
-            if (cmdline_err)
-                return GENERIC_EXIT_INVALID_CMDLINE;
+    int retval;
+    if ((retval = cmdline.ConfigureLogging()) != GENERIC_EXIT_OK)
+        return retval;
 
-            if (cmdline.WantsToExit())
-                return GENERIC_EXIT_OK;
-        }
-        else
-        {
-            cerr << "Invalid argument: " << a.argv()[argpos] << endl;
-            QByteArray help = cmdline.GetHelpString(true).toLocal8Bit();
-            cout << help.constData();
-            return GENERIC_EXIT_INVALID_CMDLINE;
-        }
-    }
-
-    if (cmdline.HasInvalidPreviewGenerationParams())
+    if ((!cmdline.toBool("chanid") || !cmdline.toBool("starttime")) &&
+        !cmdline.toBool("inputfile"))
     {
         cerr << "--generate-preview must be accompanied by either " <<endl
              << "\nboth --chanid and --starttime parameters, " << endl
@@ -228,13 +206,6 @@ int main(int argc, char **argv)
     if (signal(SIGPIPE, SIG_IGN) == SIG_ERR)
         VERBOSE(VB_IMPORTANT, LOC_WARN + "Unable to ignore SIGPIPE");
 
-    {
-        QString versionStr = QString("%1 version: %2 [%3] www.mythtv.org")
-            .arg(MYTH_APPNAME_MYTHPREVIEWGEN).arg(MYTH_SOURCE_PATH)
-            .arg(MYTH_SOURCE_VERSION);
-        VERBOSE(VB_IMPORTANT, versionStr);
-    }
-
     gContext = new MythContext(MYTH_BINARY_VERSION);
 
     if (!gContext->Init(false))
@@ -245,11 +216,10 @@ int main(int argc, char **argv)
     gCoreContext->SetBackend(false); // TODO Required?
 
     int ret = preview_helper(
-        QString::number(cmdline.GetChanID()),
-        cmdline.GetStartTime().toString(Qt::ISODate),
-        cmdline.GetPreviewFrameNumber(), cmdline.GetPreviewSeconds(),
-        cmdline.GetPreviewSize(),
-        cmdline.GetInputFilename(), cmdline.GetOutputFilename());
+        cmdline.toString("chanid"), cmdline.toString("starttime"),
+        cmdline.toLongLong("frame"), cmdline.toLongLong("seconds"),
+        cmdline.toSize("size"),
+        cmdline.toString("inputfile"), cmdline.toString("outputfile"));
     return ret;
 }
 

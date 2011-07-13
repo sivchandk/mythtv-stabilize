@@ -7,13 +7,13 @@ using namespace std;
 
 // POSIX headers
 #include <unistd.h>
-#include <signal.h>
 
 // Qt headers
 #include <QCoreApplication>
 #include <QDomElement>
 #include <QFileInfo>
 #include <QFile>
+#include <QTextStream>
 
 // MythTV headers
 #include "mythcorecontext.h"

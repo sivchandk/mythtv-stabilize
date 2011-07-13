@@ -8,7 +8,6 @@
 #include <QRegExp>
 
 // MythTV headers
-#include "mythverbose.h"
 #include "mythcorecontext.h"
 #include "mythcoreutil.h"
 #include "remotefile.h"
@@ -17,6 +16,7 @@
 #include "mythsystemevent.h"
 #include "util.h"
 #include "mythversion.h"
+#include "mythlogging.h"
 
 // LibMythUI headers
 #include "mythmainwindow.h"
@@ -49,11 +49,13 @@ class ThemeExtractThread : public QRunnable
 
     void run()
     {
+        threadRegister("ThemeExtract");
         extractZIP(m_srcFile, m_destDir);
 
         MythEvent *me =
              new MythEvent("THEME_INSTALLED", QStringList(m_srcFile));
         QCoreApplication::postEvent(m_parent, me);
+        threadDeregister();
     }
 
   private:
@@ -612,7 +614,7 @@ void ThemeChooser::saveAndReload(MythUIButtonListItem *item)
     else
     {
         gCoreContext->SaveSetting("Theme", info->GetDirectoryName());
-        GetMythMainWindow()->JumpTo("Reload Theme");
+        GetMythMainWindow()->JumpTo("Reload Theme", false);
     }
 }
 
@@ -731,6 +733,7 @@ void ThemeChooser::customEvent(QEvent *e)
                         if (file.exists())
                         {
                             remoteFileIsLocal = true;
+                            m_downloadFile = localFile;
                         }
                         else
                         {
@@ -738,8 +741,9 @@ void ThemeChooser::customEvent(QEvent *e)
                                 m_downloadFile, localFile, this);
                             OpenBusyPopup(tr("Copying %1 Theme Package")
                                           .arg(m_downloadTheme->GetName()));
+                            m_downloadFile = localFile;
+                            return;
                         }
-                        m_downloadFile = localFile;
                     }
                     else
                     {
@@ -790,7 +794,7 @@ void ThemeChooser::customEvent(QEvent *e)
             SendMythSystemEvent(event);
 
             gCoreContext->SaveSetting("Theme", m_downloadTheme->GetDirectoryName());
-            GetMythMainWindow()->JumpTo("Reload Theme");
+            GetMythMainWindow()->JumpTo("Reload Theme", false);
         }
     }
 }
@@ -878,8 +882,10 @@ ThemeUpdateChecker::ThemeUpdateChecker() :
         m_mythVersion.replace(QRegExp("\\.[0-9]{8,}.*"), "");
     }
 
-    m_infoPackage = QString("myth://Temp@%1/remotethemes/themes.zip")
-                            .arg(gCoreContext->GetSetting("MasterServerIP"));
+    m_infoPackage = gCoreContext->GenMythURL(gCoreContext->GetSetting("MasterServerIP"),
+                                             0,
+                                             "remotethemes/themes.zip",
+                                             "Temp");
 
     gCoreContext->SaveSetting("ThemeUpdateStatus", QString());
                                  
@@ -908,9 +914,11 @@ void ThemeUpdateChecker::checkForUpdate(void)
     if (RemoteFile::Exists(m_infoPackage))
     {
         QString remoteThemeDir =
-            QString("myth://Temp@%1/remotethemes/%2/%3")
-                    .arg(gCoreContext->GetSetting("MasterServerIP"))
-                    .arg(m_mythVersion).arg(GetMythUI()->GetThemeName());
+            gCoreContext->GenMythURL(gCoreContext->GetSetting("MasterServerIP"),
+                                     0,
+                                     QString("%1/%2").arg(m_mythVersion).arg(GetMythUI()->GetThemeName()),
+                                     "Temp");
+
         QString infoXML = remoteThemeDir;
         infoXML.append("/themeinfo.xml");
 

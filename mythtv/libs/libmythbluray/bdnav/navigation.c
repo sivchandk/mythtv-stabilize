@@ -40,6 +40,9 @@ static int _filter_dup(MPLS_PL *pl_list[], unsigned count, MPLS_PL *pl)
         if (pl->list_count != pl_list[ii]->list_count) {
             continue;
         }
+        if (pl->mark_count != pl_list[ii]->mark_count) {
+            continue;
+        }
         for (jj = 0; jj < pl->list_count; jj++) {
             MPLS_PI *pi1, *pi2;
 
@@ -108,7 +111,7 @@ _pl_duration(MPLS_PL *pl)
     return duration;
 }
 
-NAV_TITLE_LIST* nav_get_title_list(const char *root, uint32_t flags)
+NAV_TITLE_LIST* nav_get_title_list(const char *root, uint32_t flags, uint32_t min_title_length)
 {
     BD_DIR_H *dir;
     BD_DIRENT ent;
@@ -130,6 +133,7 @@ NAV_TITLE_LIST* nav_get_title_list(const char *root, uint32_t flags)
     if (dir == NULL) {
         BD_DEBUG(DBG_NAV, "Failed to open dir: %s\n", path);
         X_FREE(path);
+        X_FREE(title_list->title_info);
         X_FREE(title_list);
         return NULL;
     }
@@ -164,6 +168,11 @@ NAV_TITLE_LIST* nav_get_title_list(const char *root, uint32_t flags)
                 continue;
             }
             if ((flags & TITLES_FILTER_DUP_CLIP) && !_filter_repeats(pl, 2)) {
+                mpls_free(pl);
+                continue;
+            }
+            if (min_title_length > 0 &&
+                _pl_duration(pl) < min_title_length*45000) {
                 mpls_free(pl);
                 continue;
             }
@@ -388,6 +397,7 @@ _extrapolate_title(NAV_TITLE *title)
 static void _fill_clip(NAV_TITLE *title,
                        MPLS_CLIP *mpls_clip,
                        uint8_t connection_condition, uint32_t in_time, uint32_t out_time,
+                       unsigned pi_angle_count,
                        NAV_CLIP *clip,
                        unsigned ref, uint32_t *pos, uint32_t *time)
 
@@ -396,13 +406,20 @@ static void _fill_clip(NAV_TITLE *title,
 
     clip->title = title;
     clip->ref   = ref;
-    clip->angle = 0;
+
+    if (title->angle >= pi_angle_count) {
+        clip->angle = 0;
+    } else {
+        clip->angle = title->angle;
+    }
+
     strncpy(clip->name, mpls_clip[clip->angle].clip_id, 5);
     strncpy(&clip->name[5], ".m2ts", 6);
     clip->clip_id = atoi(mpls_clip[clip->angle].clip_id);
 
     path = str_printf("%s"DIR_SEP"BDMV"DIR_SEP"CLIPINF"DIR_SEP"%s.clpi",
                       title->root, mpls_clip[clip->angle].clip_id);
+    clpi_free(clip->cl);
     clip->cl = clpi_parse(path, 0);
     X_FREE(path);
     if (clip->cl == NULL) {
@@ -417,8 +434,12 @@ static void _fill_clip(NAV_TITLE *title,
             clip->connection = CONNECT_SEAMLESS;
             break;
         default:
-            clip->start_pkt = clpi_lookup_spn(clip->cl, in_time, 1,
+            if (ref) {
+                clip->start_pkt = clpi_lookup_spn(clip->cl, in_time, 1,
                                               mpls_clip[clip->angle].stc_id);
+            } else {
+                clip->start_pkt = 0;
+            }
             clip->connection = CONNECT_NON_SEAMLESS;
             break;
     }
@@ -432,7 +453,7 @@ static void _fill_clip(NAV_TITLE *title,
     *time += clip->out_time - clip->in_time;
 }
 
-NAV_TITLE* nav_title_open(const char *root, const char *playlist)
+NAV_TITLE* nav_title_open(const char *root, const char *playlist, unsigned angle)
 {
     NAV_TITLE *title = NULL;
     char *path;
@@ -451,7 +472,7 @@ NAV_TITLE* nav_title_open(const char *root, const char *playlist)
     path = str_printf("%s" DIR_SEP "BDMV" DIR_SEP "PLAYLIST" DIR_SEP "%s",
                       root, playlist);
     title->angle_count = 0;
-    title->angle = 0;
+    title->angle = angle;
     title->pl = mpls_parse(path, 0);
     if (title->pl == NULL) {
         BD_DEBUG(DBG_NAV, "Fail: Playlist parse %s\n", path);
@@ -472,7 +493,8 @@ NAV_TITLE* nav_title_open(const char *root, const char *playlist)
 
         clip = &title->clip_list.clip[ii];
 
-        _fill_clip(title, pi->clip, pi->connection_condition, pi->in_time, pi->out_time, clip, ii, &pos, &time);
+        _fill_clip(title, pi->clip, pi->connection_condition, pi->in_time, pi->out_time, pi->angle_count,
+                   clip, ii, &pos, &time);
     }
 
     // sub paths
@@ -493,7 +515,8 @@ NAV_TITLE* nav_title_open(const char *root, const char *playlist)
                 MPLS_SUB_PI *pi   = &title->pl->sub_path[ss].sub_play_item[ii];
                 NAV_CLIP    *clip = &sub_path->clip_list.clip[ii];
 
-                _fill_clip(title, pi->clip, pi->connection_condition, pi->in_time, pi->out_time, clip, ii, &pos, &time);
+                _fill_clip(title, pi->clip, pi->connection_condition, pi->in_time, pi->out_time, 0,
+                           clip, ii, &pos, &time);
             }
         }
     }
@@ -511,6 +534,11 @@ NAV_TITLE* nav_title_open(const char *root, const char *playlist)
     title->mark_list.mark = calloc(title->pl->mark_count, sizeof(NAV_MARK));
 
     _extrapolate_title(title);
+
+    if (title->angle >= title->angle_count) {
+        title->angle = 0;
+    }
+
     return title;
 }
 
@@ -744,7 +772,6 @@ NAV_CLIP* nav_next_clip(NAV_TITLE *title, NAV_CLIP *clip)
 
 NAV_CLIP* nav_set_angle(NAV_TITLE *title, NAV_CLIP *clip, unsigned angle)
 {
-    char *path;
     int ii;
     uint32_t pos = 0;
     uint32_t time = 0;
@@ -770,48 +797,9 @@ NAV_CLIP* nav_set_angle(NAV_TITLE *title, NAV_CLIP *clip, unsigned angle)
 
         pi = &title->pl->play_item[ii];
         clip = &title->clip_list.clip[ii];
-        if (title->angle >= pi->angle_count) {
-            clip->angle = 0;
-        } else {
-            clip->angle = title->angle;
-        }
 
-        clpi_free(clip->cl);
-
-        clip->ref = ii;
-        strncpy(clip->name, pi->clip[clip->angle].clip_id, 5);
-        strncpy(&clip->name[5], ".m2ts", 6);
-        clip->clip_id  = atoi(pi->clip[clip->angle].clip_id);
-
-        path = str_printf("%s"DIR_SEP"BDMV"DIR_SEP"CLIPINF"DIR_SEP"%s.clpi",
-                      title->root, pi->clip[clip->angle].clip_id);
-        clip->cl = clpi_parse(path, 0);
-        X_FREE(path);
-        if (clip->cl == NULL) {
-            clip->start_pkt = 0;
-            clip->end_pkt = 0;
-            continue;
-        }
-        switch (pi->connection_condition) {
-            case 5:
-            case 6:
-                clip->start_pkt = 0;
-                clip->connection = CONNECT_SEAMLESS;
-                break;
-            default:
-                clip->start_pkt = clpi_lookup_spn(clip->cl, pi->in_time, 1,
-                                                  pi->clip[clip->angle].stc_id);
-                clip->connection = CONNECT_NON_SEAMLESS;
-            break;
-        }
-        clip->end_pkt = clpi_lookup_spn(clip->cl, pi->out_time, 0,
-                                        pi->clip[clip->angle].stc_id);
-        clip->in_time = pi->in_time;
-        clip->out_time = pi->out_time;
-        clip->pos = pos;
-        pos += clip->end_pkt - clip->start_pkt;
-        clip->start_time = time;
-        time += clip->out_time - clip->in_time;
+        _fill_clip(title, pi->clip, pi->connection_condition, pi->in_time, pi->out_time, pi->angle_count,
+                   clip, ii, &pos, &time);
     }
     _extrapolate_title(title);
     return clip;

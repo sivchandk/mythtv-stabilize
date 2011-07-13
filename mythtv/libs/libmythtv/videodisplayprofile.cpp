@@ -5,7 +5,7 @@ using namespace std;
 #include "videodisplayprofile.h"
 #include "mythcorecontext.h"
 #include "mythdb.h"
-#include "mythverbose.h"
+#include "mythlogging.h"
 #include "videooutbase.h"
 #include "avformatdecoder.h"
 
@@ -639,6 +639,7 @@ QString VideoDisplayProfile::GetDecoderName(const QString &decoder)
         dec_name["ffmpeg"]   = QObject::tr("Standard");
         dec_name["macaccel"] = QObject::tr("Mac hardware acceleration");
         dec_name["vdpau"]    = QObject::tr("NVidia VDPAU acceleration");
+        dec_name["vaapi"]    = QObject::tr("VAAPI acceleration");
         dec_name["dxva2"]    = QObject::tr("Windows hardware acceleration");
     }
 
@@ -680,6 +681,10 @@ QString VideoDisplayProfile::GetDecoderHelp(QString decoder)
             "accelerate video decoding and playback "
             "(requires Windows Vista or later).");
 
+    if (decoder == "vaapi")
+        msg += QObject::tr(
+            "VAAPI will attempt to use the graphics hardware to "
+            "accelerate video decoding.");
     return msg;
 }
 
@@ -737,6 +742,10 @@ QString VideoDisplayProfile::GetDeinterlacerName(const QString short_name)
         return QObject::tr("Advanced (1x, HW)");
     else if ("vdpauadvanceddoublerate" == short_name)
         return QObject::tr("Advanced (2x, HW)");
+    else if ("vaapionefield" == short_name)
+        return QObject::tr("One Field (1x, HW)");
+    else if ("vaapibobdeint" == short_name)
+        return QObject::tr("Bob (2x, HW)");
 
     return "";
 }
@@ -1138,12 +1147,6 @@ QString VideoDisplayProfile::GetVideoRendererHelp(const QString &renderer)
             "XVideo hardware assist for scaling, color conversion. If the "
             "hardware offers picture controls the renderer supports them.");
 
-    if (renderer == "directfb")
-        msg = QObject::tr(
-            "This video renderer uses DirectFB for scaling and color "
-            "conversion. It is not as feature rich as the standard video "
-            "renderer, but can run on Linux hardware without an X11 server.");
-
     if (renderer == "direct3d")
         msg = QObject::tr(
             "Windows video renderer based on Direct3D. Requires "
@@ -1171,6 +1174,13 @@ QString VideoDisplayProfile::GetVideoRendererHelp(const QString &renderer)
     {
         msg = QObject::tr(
             "This is the only video renderer for NVidia VDPAU decoding.");
+    }
+
+    if (renderer == "openglvaapi")
+    {
+        msg = QObject::tr(
+             "This video renderer uses VAAPI for video decoding and "
+             "OpenGL for scaling and color conversion.");
     }
 
     return msg;
@@ -1306,6 +1316,10 @@ QString VideoDisplayProfile::GetDeinterlacerHelp(const QString &deint)
         msg = kBasicMsg + " " +  kDoubleRateMsg + " " + kUsingGPU;
     else if (deint == "vdpauadvanceddoublerate")
         msg = kAdvMsg + " " +  kDoubleRateMsg + " " + kUsingGPU;
+    else if (deint == "vaapionefield")
+        msg = kOneFieldMsg + " " + kUsingGPU;
+    else if (deint == "vaapibobdeint")
+        msg = kBobMsg + " " + kUsingGPU;
     else
         msg = QObject::tr("'%1' has not been documented yet.").arg(deint);
 

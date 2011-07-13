@@ -1,4 +1,5 @@
 #include <iostream>
+#include <stdio.h>
 using namespace std;
 
 #include <QString>
@@ -10,7 +11,7 @@ using namespace std;
 #include "mythcorecontext.h"
 #include "schemawizard.h"
 #include "mythdb.h"
-#include "mythverbose.h"
+#include "mythlogging.h"
 #include "diseqcsettings.h" // for convert_diseqc_db()
 #include "videodbcheck.h"
 
@@ -21,7 +22,7 @@ using namespace std;
    mythtv/bindings/perl/MythTV.pm
 */
 /// This is the DB schema version expected by the running MythTV instance.
-const QString currentDatabaseVersion = "1274";
+const QString currentDatabaseVersion = "1278";
 
 static bool UpdateDBVersionNumber(const QString &newnumber, QString &dbver);
 static bool performActualUpdate(
@@ -5219,8 +5220,7 @@ NULL
 "  description TEXT NOT NULL,"
 "  commandline TEXT NOT NULL,"
 "  version DOUBLE NOT NULL,"
-"  updated TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP "
-"                             ON UPDATE CURRENT_TIMESTAMP,"
+"  updated DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',"
 "  search BOOL NOT NULL,"
 "  tree BOOL NOT NULL,"
 "  podcast BOOL NOT NULL,"
@@ -5240,8 +5240,7 @@ NULL
 "  thumbnail TEXT NOT NULL,"
 "  mediaURL TEXT NOT NULL,"
 "  author VARCHAR(255) NOT NULL,"
-"  date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP "
-"                          ON UPDATE CURRENT_TIMESTAMP,"
+"  date DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',"
 "  time INT NOT NULL,"
 "  rating VARCHAR(255) NOT NULL,"
 "  filesize BIGINT NOT NULL,"
@@ -5650,7 +5649,105 @@ NULL
 
     if (dbver == "1273")
     {
+        const char *updates[] = {
+"ALTER TABLE internetcontent MODIFY COLUMN updated "
+"  DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00';",
+"ALTER TABLE internetcontentarticles MODIFY COLUMN `date` "
+"  DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00';",
+NULL
+};
 
+        if (!performActualUpdate(updates, "1274", dbver))
+            return false;
+    }
+
+    if (dbver == "1274")
+    {
+        const char *updates[] = {
+"UPDATE cardinput SET tunechan=NULL"
+"  WHERE inputname='DVBInput' OR inputname='MPEG2TS';"
+"UPDATE dtv_multiplex SET symbolrate = NULL"
+"  WHERE modulation LIKE 't%' OR modulation LIKE '%t';",
+"UPDATE dtv_multiplex"
+"  SET bandwidth=SUBSTR(modulation,2,1)"
+"  WHERE SUBSTR(modulation,3,3)='qam' OR"
+"        SUBSTR(modulation,3,4)='qpsk';",
+"UPDATE dtv_multiplex"
+"  SET bandwidth=SUBSTR(modulation,5,1)"
+"  WHERE SUBSTR(modulation,1,4)='auto' AND"
+"        LENGTH(modulation)=6;",
+"UPDATE dtv_multiplex SET modulation='auto'"
+"  WHERE modulation LIKE 'auto%';",
+"UPDATE dtv_multiplex SET modulation='qam_16'"
+"  WHERE modulation LIKE '%qam16%';",
+"UPDATE dtv_multiplex SET modulation='qam_32'"
+"  WHERE modulation LIKE '%qam32%';",
+"UPDATE dtv_multiplex SET modulation='qam_64'"
+"  WHERE modulation LIKE '%qam64%';",
+"UPDATE dtv_multiplex SET modulation='qam_128'"
+"  WHERE modulation LIKE '%qam128%';",
+"UPDATE dtv_multiplex SET modulation='qam_256'"
+"  WHERE modulation LIKE '%qam256%';",
+NULL
+};
+        if (!performActualUpdate(updates, "1275", dbver))
+            return false;
+    }
+
+    if (dbver == "1275")
+    {
+        const char *updates[] = {
+"DROP TABLE IF EXISTS `logging`;",
+"CREATE TABLE `logging` ( "
+"  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT, "
+"  `host` varchar(64) NOT NULL, "
+"  `application` varchar(64) NOT NULL, "
+"  `pid` int(11) NOT NULL, "
+"  `thread` varchar(64) NOT NULL, "
+"  `msgtime` datetime NOT NULL, "
+"  `level` int(11) NOT NULL, "
+"  `message` varchar(2048) NOT NULL, "
+"  PRIMARY KEY (`id`), "
+"  KEY `host` (`host`,`application`,`pid`,`msgtime`), "
+"  KEY `msgtime` (`msgtime`), "
+"  KEY `level` (`level`) "
+") ENGINE=MyISAM DEFAULT CHARSET=utf8; ",
+NULL
+};
+        if (!performActualUpdate(updates, "1276", dbver))
+            return false;
+    }
+
+    if (dbver == "1276")
+    {
+        const char *updates[] = {
+"ALTER TABLE record ADD COLUMN filter INT UNSIGNED NOT NULL DEFAULT 0;",
+"CREATE TABLE IF NOT EXISTS recordfilter ("
+"    filterid INT UNSIGNED NOT NULL PRIMARY KEY,"
+"    description VARCHAR(64) DEFAULT NULL,"
+"    clause VARCHAR(256) DEFAULT NULL,"
+"    newruledefault TINYINT(1) DEFAULT 0);",
+"INSERT INTO recordfilter (filterid, description, clause, newruledefault) "
+"    VALUES (0, 'New episode', 'program.previouslyshown = 0', 0);",
+"INSERT INTO recordfilter (filterid, description, clause, newruledefault) "
+"    VALUES (1, 'Identifiable episode', 'program.generic = 0', 0);",
+"INSERT INTO recordfilter (filterid, description, clause, newruledefault) "
+"    VALUES (2, 'First showing', 'program.first > 0', 0);",
+"INSERT INTO recordfilter (filterid, description, clause, newruledefault) "
+"    VALUES (3, 'Primetime', 'HOUR(program.starttime) >= 19 AND HOUR(program.starttime) < 23', 0);",
+"INSERT INTO recordfilter (filterid, description, clause, newruledefault) "
+"    VALUES (4, 'Commercial free', 'channel.commmethod = -2', 0);",
+"INSERT INTO recordfilter (filterid, description, clause, newruledefault) "
+"    VALUES (5, 'High definition', 'program.hdtv > 0', 0);",
+NULL
+};
+
+        if (!performActualUpdate(updates, "1277", dbver))
+            return false;
+    }
+
+    if (dbver == "1277")
+    {
         const char *updates[] = {
 "CREATE TEMPORARY TABLE oldjobqueue LIKE jobqueue;",
 "INSERT INTO oldjobqueue SELECT * FROM jobqueue;",
@@ -5768,11 +5865,10 @@ NULL
     SELECT * FROM jobcommand;
     SELECT * FROM jobrecord;*/
 
-
-
         if (!performActualUpdate(updates, "1274", dbver))
             return false;
     }
+
 
     return true;
 }

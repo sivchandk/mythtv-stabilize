@@ -45,6 +45,7 @@ using namespace std;
 #include "cardutil.h"
 #include "sourceutil.h"
 #include "mythdb.h"
+#include "mythlogging.h"
 
 // MythTV includes - DTV
 #include "dtvsignalmonitor.h"
@@ -60,6 +61,17 @@ using namespace std;
 #include "dvbchannel.h"
 #include "hdhrchannel.h"
 #include "v4lchannel.h"
+
+/** \fn ScannerThread::run(void)
+ *  \brief Thunk that allows scannerThread thread to
+ *         call ChannelScanSM::RunScanner().
+ */
+void ScannerThread::run(void)
+{
+    threadRegister("Scanner");
+    m_parent->RunScanner();
+    threadDeregister();
+}
 
 /// SDT's should be sent every 2 seconds and NIT's every
 /// 10 seconds, so lets wait at least 30 seconds, in
@@ -163,7 +175,8 @@ ChannelScanSM::ChannelScanSM(
       // Misc
       channelsFound(999),
       currentInfo(NULL),
-      analogSignalHandler(new AnalogSignalHandler(this))
+      analogSignalHandler(new AnalogSignalHandler(this)),
+      scannerThread(NULL)
 {
     inputname.detach();
 
@@ -246,8 +259,8 @@ void ChannelScanSM::HandleAllGood(void)
     {
         int chanid = ChannelUtil::CreateChanID(sourceID, freqid);
 
-        QString callsign = QString("%1%2")
-            .arg(ChannelUtil::GetUnknownCallsign()).arg(freqid);
+        QString callsign = QString("%1-%2")
+            .arg(ChannelUtil::GetUnknownCallsign()).arg(chanid);
 
         ok = ChannelUtil::CreateChannel(
             0      /* mplexid */,
@@ -357,7 +370,7 @@ void ChannelScanSM::HandlePMT(uint, const ProgramMapTable *pmt)
             QString("Got a Program Map Table for %1")
             .arg((*current).FriendlyName) + "\n" + pmt->toString());
 
-    if (!currentTestingDecryption && pmt->IsEncrypted())
+    if (!currentTestingDecryption && pmt->IsEncrypted(GetDTVChannel()->GetSIStandard()))
         currentEncryptionStatus[pmt->ProgramNumber()] = kEncUnknown;
 }
 
@@ -527,7 +540,11 @@ bool ChannelScanSM::TestNextProgramEncryption(void)
     {
         uint pnum = 0;
         QMap<uint, uint>::const_iterator it = currentEncryptionStatus.begin();
-        //cerr << currentEncryptionStatusChecked.size() << "/" << currentEncryptionStatus.size() << " checked" << endl;
+#if 0
+        VERBOSE(VB_GENERAL, QString("%1/%2 checked")
+            .arg(currentEncryptionStatusChecked.size())
+            .arg(currentEncryptionStatus.size()));
+#endif
         while (it != currentEncryptionStatus.end())
         {
             if (!currentEncryptionStatusChecked[it.key()])
@@ -1008,7 +1025,9 @@ static void update_info(ChannelInsertInfo &info,
     {
         callsign = desc->ServiceShortName();
         if (callsign.trimmed().isEmpty())
-            callsign = QString::null;
+            callsign = QString("%1-%2-%3")
+                .arg(ChannelUtil::GetUnknownCallsign()).arg(sdt->TSID())
+                .arg(sdt->ServiceID(i));
 
         service_name = desc->ServiceName();
         if (service_name.trimmed().isEmpty())
@@ -1171,7 +1190,7 @@ ChannelScanSM::GetChannelList(transport_scan_items_it_t trans_info,
                 info.is_opencable = true;
         }
 
-        info.is_encrypted |= pmt->IsEncrypted();
+        info.is_encrypted |= pmt->IsEncrypted(GetDTVChannel()->GetSIStandard());
         info.in_pmt = true;
     }
 
@@ -1392,23 +1411,11 @@ const DVBChannel *ChannelScanSM::GetDVBChannel(void) const
 
 V4LChannel *ChannelScanSM::GetV4LChannel(void)
 {
-#ifdef USING_V4L
+#ifdef USING_V4L2
     return dynamic_cast<V4LChannel*>(channel);
 #else
     return NULL;
 #endif
-}
-
-/** \fn ScannerThread::run(void)
- *  \brief Thunk that allows scannerThread thread to
- *         call ChannelScanSM::RunScanner().
- */
-void ScannerThread::run(void)
-{
-    if (!m_parent)
-        return;
-
-    m_parent->RunScanner();
 }
 
 /** \fn ChannelScanSM::StartScanner(void)
@@ -1416,8 +1423,18 @@ void ScannerThread::run(void)
  */
 void ChannelScanSM::StartScanner(void)
 {
-    scannerThread.SetParent(this);
-    scannerThread.start();
+    while (scannerThread)
+    {
+        threadExit = true;
+        if (scannerThread->wait(1000))
+        {
+            delete scannerThread;
+            scannerThread = NULL;
+        }
+    }
+    threadExit = false;
+    scannerThread = new ScannerThread(this);
+    scannerThread->start();
 }
 
 /** \fn ChannelScanSM::RunScanner(void)
@@ -1427,14 +1444,12 @@ void ChannelScanSM::RunScanner(void)
 {
     VERBOSE(VB_CHANSCAN, LOC + "ChannelScanSM::RunScanner -- begin");
 
-    threadExit = false;
-
     while (!threadExit)
     {
         if (scanning)
             HandleActiveScan();
 
-        usleep(250);
+        usleep(10 * 1000);
     }
 
     VERBOSE(VB_CHANSCAN, LOC + "ChannelScanSM::RunScanner -- end");
@@ -1443,8 +1458,12 @@ void ChannelScanSM::RunScanner(void)
 // See if we have timed out
 bool ChannelScanSM::HasTimedOut(void)
 {
-    if (currentTestingDecryption)
-        return (timer.elapsed() > (int)kDecryptionTimeout);
+    if (currentTestingDecryption &&
+        (timer.elapsed() > (int)kDecryptionTimeout))
+    {
+        currentTestingDecryption = false;
+        return true;
+    }
 
     if (!waitingForTables)
         return true;
@@ -1651,7 +1670,7 @@ void ChannelScanSM::ScanTransport(const transport_scan_items_it_t transport)
     }
 
     // Start signal monitor for this channel
-    signalMonitor->Start(false);
+    signalMonitor->Start();
 
     timer.start();
     waitingForTables = (item.tuning.sistandard != "analog");
@@ -1665,10 +1684,15 @@ void ChannelScanSM::StopScanner(void)
 {
     VERBOSE(VB_CHANSCAN, LOC + "ChannelScanSM::StopScanner");
 
-    threadExit = true;
-
-    if (scannerThread.isRunning())
-        scannerThread.wait();
+    while (scannerThread)
+    {
+        threadExit = true;
+        if (scannerThread->wait(1000))
+        {
+            delete scannerThread;
+            scannerThread = NULL;
+        }
+    }
 
     if (signalMonitor)
         signalMonitor->Stop();
@@ -1949,6 +1973,25 @@ bool ChannelScanSM::ScanTransport(uint mplexid, bool follow_nit)
     }
 
     return false;
+}
+
+bool ChannelScanSM::ScanCurrentTransport(const QString &sistandard)
+{
+    scanTransports.clear();
+    nextIt = scanTransports.end();
+
+    signalTimeout = 30000;
+    QString name;
+    TransportScanItem item(sourceID, sistandard, name, 0, signalTimeout);
+    scanTransports.push_back(item);
+
+    timer.start();
+    waitingForTables = false;
+    extend_scan_list = false;
+    transportsScanned = 0;
+    nextIt   = scanTransports.begin();
+    scanning = true;
+    return true;
 }
 
 /** \fn ChannelScanSM::CheckImportedList(const DTVChannelInfoList&,uint,QString&,QString&,QString&)

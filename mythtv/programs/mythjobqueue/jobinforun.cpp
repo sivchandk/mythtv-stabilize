@@ -8,7 +8,7 @@ using namespace std;
 #include "mythsystem.h"
 #include "exitcodes.h"
 #include "mythcorecontext.h"
-#include "mythverbose.h"
+#include "mythlogging.h"
 #include "programinfo.h"
 #include "jobinforun.h"
 #include "recordingprofile.h"
@@ -99,9 +99,9 @@ bool JobInfoRun::Start(void)
     QByteArray adetailstr = detailstr.toLocal8Bit();
     VERBOSE(VB_GENERAL, LOC + getCommand()->getName() + " Starting for "
                             + adetailstr.constData());
-    gCoreContext->LogEntry("jobqueue", LP_NOTICE,
+/*    gCoreContext->LogEntry("jobqueue", LP_NOTICE,
                            QString("%1 Starting").arg(getCommand()->getName()),
-                           detailstr);
+                           detailstr);*/
 
     // connect exit handlersa
     connect(m_process, SIGNAL(finished()), this, SLOT(finished()));
@@ -167,9 +167,9 @@ void JobInfoRun::finished(void)
 
     VERBOSE(VB_GENERAL, LOC + QString(amsg.constData()));
 
-    gCoreContext->LogEntry("jobqueue", LP_NOTICE,
+/*    gCoreContext->LogEntry("jobqueue", LP_NOTICE,
                     QString("Job \"%1\" Finished").arg(getCommand()->getName()),
-                    msg);
+                    msg);*/
 
     saveStatus(JOB_FINISHED, "Successfully Completed.");
 
@@ -196,8 +196,8 @@ void JobInfoRun::error(uint error)
         VERBOSE(VB_IMPORTANT, LOC + QString("Current PATH: '%1'")
                                         .arg(getenv("PATH")));
 
-        gCoreContext->LogEntry("jobqueue", LP_WARNING,
-                            "Job Errored", msg);
+/*        gCoreContext->LogEntry("jobqueue", LP_WARNING,
+                            "Job Errored", msg);*/
 
         saveStatus(JOB_ERRORED, 
             "ERROR: Unable to find executable, check backend logs.");
@@ -207,16 +207,16 @@ void JobInfoRun::error(uint error)
         comment = tr("Aborted by user");
         saveStatus(JOB_ABORTED, comment);
         VERBOSE(VB_IMPORTANT, LOC_ERR + getCommand()->getName() + " " + comment);
-        gCoreContext->LogEntry("jobqueue", LP_WARNING,
-                               getCommand()->getName(), comment);
+/*        gCoreContext->LogEntry("jobqueue", LP_WARNING,
+                               getCommand()->getName(), comment);*/
     }
     else if (error == GENERIC_EXIT_NO_RECORDING_DATA)
     {
         comment = tr("Unable to open file or init decoder");
         saveStatus(JOB_ERRORED, comment);
         VERBOSE(VB_IMPORTANT, LOC_ERR + getCommand()->getName() + " " + comment);
-        gCoreContext->LogEntry("jobqueue", LP_WARNING,
-                               getCommand()->getName(), comment);
+/*        gCoreContext->LogEntry("jobqueue", LP_WARNING,
+                               getCommand()->getName(), comment);*/
     }
     else
     {
@@ -224,8 +224,8 @@ void JobInfoRun::error(uint error)
                     .arg(GetJobCommand()).arg(error);
         VERBOSE(VB_IMPORTANT, LOC_ERR + msg);
 
-        gCoreContext->LogEntry("jobqueue", LP_WARNING,
-                            "Job Errored", msg);
+/*        gCoreContext->LogEntry("jobqueue", LP_WARNING,
+                            "Job Errored", msg);*/
 
         saveStatus(JOB_ERRORED,
             "ERROR: Job returned non-zero, check logs.");
@@ -259,7 +259,7 @@ QString JobInfoRun::GetJobCommand(void)
         pginfo->SubstituteMatches(cmdstr);
         cmdstr.replace("%PREFIX%", GetInstallPrefix());
         cmdstr.replace("%VERBOSELEVEL%",
-                    QString("%1").arg(print_verbose_messages));
+                    QString("%1").arg(verboseMask));
     }
 
     m_cmdstr = cmdstr;

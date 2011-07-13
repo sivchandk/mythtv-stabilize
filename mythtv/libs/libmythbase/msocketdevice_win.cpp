@@ -46,6 +46,7 @@
 #include <QDateTime>
 
 #include <QCoreApplication>
+#include "mythlogging.h"
 
 #include <string.h>
 
@@ -405,7 +406,29 @@ void MSocketDevice::setOption( Option opt, int v )
 bool MSocketDevice::connect( const QHostAddress &addr, quint16 port )
 {
     if ( !isValid() )
-	return false;
+    {
+#if !defined(QT_NO_IPV6)
+        if ( addr.protocol() == QAbstractSocket::IPv6Protocol ) {
+            setProtocol(IPv6);
+            LOG(VB_SOCKET, LOG_INFO,
+                "MSocketDevice::connect: setting Protocol to IPv6");
+        }
+        else
+#endif  
+        if ( addr.protocol() == QAbstractSocket::IPv4Protocol ) {
+            setProtocol(IPv4);
+            LOG(VB_SOCKET, LOG_INFO,
+                "MSocketDevice::connect: setting Protocol to IPv4");
+        }
+
+        LOG(VB_SOCKET, LOG_INFO,
+            "MSocketDevice::connect: attempting to create new socket");
+        MSocketDevice::setSocket( createNewSocket(), t);
+
+       // If still not valid, give up.
+       if ( !isValid() )
+       return false;
+    }
 
     pa = addr;
     pp = port;

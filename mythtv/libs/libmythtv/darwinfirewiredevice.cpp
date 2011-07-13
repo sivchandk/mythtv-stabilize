@@ -6,6 +6,9 @@
  *  Distributed as part of MythTV under GPL v2 and later.
  */
 
+// POSIX headers
+#include <pthread.h>
+
 // OS X headers
 #undef always_inline
 #include <IOKit/IOMessage.h>
@@ -23,14 +26,12 @@ using namespace std;
 // MythTV headers
 #include "darwinfirewiredevice.h"
 #include "darwinavcinfo.h"
-#include "mythverbose.h"
+#include "mythlogging.h"
 
 // Apple Firewire example headers
 #include <AVCVideoServices/StringLogger.h>
 #include <AVCVideoServices/AVSShared.h>
 #include <AVCVideoServices/MPEG2Receiver.h>
-
-#include <QThread>
 
 // header not used because it also requires MPEG2Transmitter.h
 //#include <AVCVideoServices/FireWireMPEG.h>
@@ -64,6 +65,7 @@ static IOReturn dfd_tspacket_handler_thunk(
     long unsigned int tsPacketCount, UInt32 **ppBuf, void *callback_data);
 static void dfd_update_device_list(void *dfd, io_iterator_t iterator);
 static void dfd_streaming_log_message(char *pString);
+void *dfd_controller_thunk(void *param);
 void dfd_stream_msg(long unsigned int msg, long unsigned int param1,
                     long unsigned int param2, void *callback_data);
 int dfd_no_data_notification(void *callback_data);
@@ -94,7 +96,7 @@ class DFDPriv
         }
     }
 
-    DarwinControllerThread    controllerThread;
+    pthread_t                 controller_thread;
     CFRunLoopRef              controller_thread_cf_ref;
     bool                      controller_thread_running;
 
@@ -178,8 +180,8 @@ void DarwinFirewireDevice::StartController(void)
 {
     m_lock.unlock();
 
-    m_priv->controllerThread.SetParent(this);
-    m_priv->controllerThread.start();
+    pthread_create(&m_priv->controller_thread, NULL,
+                   dfd_controller_thunk, this);
 
     m_lock.lock();
     while (!m_priv->controller_thread_running)
@@ -327,7 +329,8 @@ bool DarwinFirewireDevice::OpenAVStream(void)
         return true;
 
     int max_speed = GetMaxSpeed();
-    VERBOSE(VB_IMPORTANT, "Max Speed: "<<max_speed<<" Our speed: "<<m_speed);
+    VERBOSE(VB_IMPORTANT, QString("Max Speed: %1, Our speed: %2")
+                          .arg(max_speed).arg(m_speed));
     m_speed = min((uint)max_speed, m_speed);
 
     uint fwchan = 0;
@@ -469,8 +472,8 @@ bool DarwinFirewireDevice::StartStreaming(void)
 
     m_priv->is_streaming = (kIOReturnSuccess == ret);
 
-    VERBOSE(VB_IMPORTANT, LOC + "Starting A/V streaming: "
-            <<((m_priv->is_streaming)?"success":"failure"));
+    VERBOSE(VB_IMPORTANT, (LOC + "Starting A/V streaming: %1")
+                          .arg((m_priv->is_streaming)?"success":"failure"));
 
     return m_priv->is_streaming;
 }
@@ -583,8 +586,8 @@ void DarwinFirewireDevice::ProcessStreamingMessage(
     {
         int ret = UpdatePlugRegister(plug_number, -1, -1, false, true);
 
-        VERBOSE(VB_IMPORTANT, LOC + "ReleaseIsochPort "
-                <<((kIOReturnSuccess == ret)?"ok":"error"));
+        VERBOSE(VB_IMPORTANT, (LOC + "ReleaseIsochPort %1")
+                              .arg((kIOReturnSuccess == ret)?"ok":"error"));
     }
     else if (AVS::kMpeg2ReceiverDCLOverrun == msg)
     {
@@ -654,7 +657,7 @@ void DarwinFirewireDevice::UpdateDeviceListItem(uint64_t guid, void *pitem)
     {
         DarwinAVCInfo *ptr = new DarwinAVCInfo();
 
-        VERBOSE(VB_IMPORTANT, "Adding   0x"<<hex<<guid<<dec);
+        VERBOSE(VB_IMPORTANT, QString("Adding   0x%1").arg(guid, 0, 16));
 
         m_priv->devices[guid] = ptr;
         it = m_priv->devices.find(guid);
@@ -663,7 +666,7 @@ void DarwinFirewireDevice::UpdateDeviceListItem(uint64_t guid, void *pitem)
     io_object_t &item = *((io_object_t*) pitem);
     if (it != m_priv->devices.end())
     {
-        VERBOSE(VB_IMPORTANT, "Updating 0x"<<hex<<guid<<dec);
+        VERBOSE(VB_IMPORTANT, QString("Updating 0x%1").arg(guid, 0, 16));
         (*it)->Update(guid, this, m_priv->notify_port,
                       m_priv->controller_thread_cf_ref, item);
     }
@@ -713,8 +716,8 @@ bool DarwinFirewireDevice::UpdatePlugRegisterPrivate(
     new_plug_cnt += ((add_plug) ? 1 : 0) - ((remove_plug) ? 1 : 0);
     if ((new_plug_cnt > 0x3f) || (new_plug_cnt < 0))
     {
-        VERBOSE(VB_IMPORTANT, LOC_ERR + "Invalid Plug Count "<<new_plug_cnt);
-
+        VERBOSE(VB_IMPORTANT, (LOC_ERR + "Invalid Plug Count %1")
+                              .arg(new_plug_cnt));
         return false;
     }
 
@@ -866,19 +869,18 @@ void DarwinFirewireDevice::HandleDeviceChange(uint messageType)
         VERBOSE(VB_RECORD, loc + "kIOMessageSystemWillRestart");
     else
     {
-        VERBOSE(VB_RECORD, loc + "unknown message 0x"
-                <<hex<<messageType<<dec);
+        VERBOSE(VB_RECORD, (loc + "unknown message 0x%1")
+                           .arg(messageType, 0, 16));
     }
 }
 
 // Various message callbacks.
 
-void DarwinControllerThread::run(void)
+void *dfd_controller_thunk(void *param)
 {
-    if (!m_parent)
-        return;
-
-    m_parent->RunController();
+    threadRegister("DarwinController");
+    ((DarwinFirewireDevice*)param)->RunController();
+    threadDeregister();
 }
 
 void dfd_update_device_list_item(

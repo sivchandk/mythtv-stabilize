@@ -31,13 +31,16 @@
 #include <sys/utsname.h> 
 #endif
 
+// Qt headers
+#include <QScriptEngine>
+
 // MythTV headers
 #include "httpserver.h"
 #include "upnputil.h"
 #include "upnp.h" // only needed for Config... remove once config is moved.
 #include "compat.h"
 #include "mythdirs.h"
-#include "mythverbose.h"
+#include "mythlogging.h"
 #include "htmlserver.h"
 
 /////////////////////////////////////////////////////////////////////////////
@@ -64,7 +67,7 @@ HttpServer::HttpServer() : QTcpServer(), ThreadPool("HTTP")
     // ----------------------------------------------------------------------
 
 #ifdef USING_MINGW
-    g_sPlatform = QString( "Windows %1.%1" )
+    g_sPlatform = QString( "Windows %1.%2" )
         .arg(LOBYTE(LOWORD(GetVersion())))
         .arg(HIBYTE(LOWORD(GetVersion())));
 #else
@@ -361,7 +364,7 @@ void  HttpWorkerThread::ProcessWork()
                         bKeepAlive = false;
                     }
 
-                    /*
+#if 0
                     // Dump Request Header 
                     if (!bKeepAlive )
                     {
@@ -369,14 +372,15 @@ void  HttpWorkerThread::ProcessWork()
                                                    it != pRequest->m_mapHeaders.end(); 
                                                  ++it ) 
                         {  
-                            cout << it.key() << ": " << it.data() << endl;
+                            VERBOSE(VB_IMPORTANT, QString("%1: %2") 
+                                .arg(it.key()) .arg(it.data()));
                         }
                     }
-                    */
+#endif
 
-                    // ----------------------------------------------------------
+                    // -------------------------------------------------------
                     // Always MUST send a response.
-                    // ----------------------------------------------------------
+                    // -------------------------------------------------------
 
                     if (pRequest->SendResponse() < 0)
                     {

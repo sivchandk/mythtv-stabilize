@@ -20,15 +20,15 @@ class DVBSignalMonitor: public DTVSignalMonitor
                      kDVBSigMon_WaitForBER | kDVBSigMon_WaitForUB);
     virtual ~DVBSignalMonitor();
 
-    virtual QStringList GetStatusList(bool kick);
+    virtual QStringList GetStatusList(void) const;
     void Stop(void);
 
     virtual void SetRotorTarget(float target);
     virtual void GetRotorStatus(bool &was_moving, bool &is_moving);
-    virtual void SetRotorValue(int)
+    virtual void SetRotorValue(int val)
     {
         QMutexLocker locker(&statusLock);
-        rotorPosition.SetValue(100);
+        rotorPosition.SetValue(val);
     }
 
     virtual void EmitStatus(void);

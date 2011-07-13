@@ -1,12 +1,13 @@
-#include "mythverbose.h"
+#include "mythlogging.h"
 
 #include "streamingringbuffer.h"
 
 #define LOC QString("StreamRingBuf(%1): ").arg(filename)
 
 StreamingRingBuffer::StreamingRingBuffer(const QString &lfilename)
-  : m_context(NULL)
+  : RingBuffer(kRingBuffer_HTTP), m_context(NULL)
 {
+    startreadahead = true;
     OpenFile(lfilename);
 }
 
@@ -30,7 +31,9 @@ bool StreamingRingBuffer::OpenFile(const QString &lfilename, uint retry_ms)
 {
     av_register_all();
 
+    safefilename = lfilename;
     filename = lfilename;
+    VERBOSE(VB_GENERAL, LOC + QString("Trying %1").arg(filename));
 
     int res = url_open(&m_context, filename.toAscii(), URL_RDONLY);
 

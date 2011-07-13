@@ -9,7 +9,7 @@ using namespace std;
 #include "jobinfo.h"
 
 
-class JobInfoRun : public QObject, public JobInfo
+class JobInfoRun : public JobInfo
 {
     Q_OBJECT
   public:

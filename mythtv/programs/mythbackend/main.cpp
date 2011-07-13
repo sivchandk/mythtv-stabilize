@@ -11,7 +11,7 @@
 #include <QDir>
 #include <QMap>
 
-#include "mythcommandlineparser.h"
+#include "commandlineparser.h"
 #include "scheduledrecording.h"
 #include "previewgenerator.h"
 #include "mythcorecontext.h"
@@ -21,7 +21,7 @@
 #include "storagegroup.h"
 #include "housekeeper.h"
 #include "mediaserver.h"
-#include "mythverbose.h"
+#include "mythlogging.h"
 #include "mythversion.h"
 #include "programinfo.h"
 #include "autoexpire.h"
@@ -35,15 +35,6 @@
 #include "mythdb.h"
 #include "tv_rec.h"
 
-/*
-#include "storagegroup.h"
-#include "programinfo.h"
-#include "dbcheck.h"
-#include "jobqueue.h"
-#include "mythcommandlineparser.h"
-#include "mythsystemevent.h"
-.r26134
-*/
 
 #define LOC      QString("MythBackend: ")
 #define LOC_WARN QString("MythBackend, Warning: ")
@@ -56,49 +47,31 @@
     #define UNUSED_FILENO 3
 #endif
 
+static void qt_exit(int)
+{
+    signal(SIGINT, SIG_DFL);
+    QCoreApplication::exit(0);
+}
+
 int main(int argc, char **argv)
 {
-    bool cmdline_err;
-    MythCommandLineParser cmdline(
-        kCLPDaemon               |
-        kCLPHelp                 |
-        kCLPOverrideSettingsFile |
-        kCLPOverrideSettings     |
-        kCLPQueryVersion         |
-        kCLPPrintSchedule        |
-        kCLPTestSchedule         |
-        kCLPReschedule           |
-        kCLPNoSchedule           |
-        kCLPScanVideos           |
-        kCLPNoUPnP               |
-        kCLPUPnPRebuild          |
-        kCLPNoJobqueue           |
-        kCLPNoHousekeeper        |
-        kCLPNoAutoExpire         |
-        kCLPClearCache           |
-        kCLPVerbose              |
-        kCLPSetVerbose           |
-        kCLPLogFile              |
-        kCLPPidFile              |
-        kCLPInFile               |
-        kCLPOutFile              |
-        kCLPUsername             |
-        kCLPEvent                |
-        kCLPSystemEvent          |
-        kCLPChannelId            |
-        kCLPStartTime            |
-        kCLPPrintExpire);
-
-    for (int argpos = 0; argpos < argc; ++argpos)
+    MythBackendCommandLineParser cmdline;
+    if (!cmdline.Parse(argc, argv))
     {
-        if (cmdline.PreParse(argc, argv, argpos, cmdline_err))
-        {
-            if (cmdline_err)
-                return GENERIC_EXIT_INVALID_CMDLINE;
+        cmdline.PrintHelp();
+        return GENERIC_EXIT_INVALID_CMDLINE;
+    }
 
-            if (cmdline.WantsToExit())
-                return GENERIC_EXIT_OK;
-        }
+    if (cmdline.toBool("showhelp"))
+    {
+        cmdline.PrintHelp();
+        return GENERIC_EXIT_OK;
+    }
+
+    if (cmdline.toBool("showversion"))
+    {
+        cmdline.PrintVersion();
+        return GENERIC_EXIT_OK;
     }
 
 #ifndef _WIN32
@@ -112,68 +85,54 @@ int main(int argc, char **argv)
 #endif
     QCoreApplication::setApplicationName(MYTH_APPNAME_MYTHBACKEND);
 
-    for (int argpos = 1; argpos < a.argc(); ++argpos)
-    {
-        if (cmdline.Parse(a.argc(), a.argv(), argpos, cmdline_err))
-        {
-            if (cmdline_err)
-                return GENERIC_EXIT_INVALID_CMDLINE;
+    pidfile = cmdline.toString("pidfile");
+    int retval = cmdline.Daemonize();
+    if (retval != GENERIC_EXIT_OK)
+        return retval;
 
-            if (cmdline.WantsToExit())
-                return GENERIC_EXIT_OK;
-        }
-        else
-        {
-            cerr << "Invalid argument: " << a.argv()[argpos] << endl;
-            QByteArray help = cmdline.GetHelpString(true).toLocal8Bit();
-            cout << help.constData();
-            return GENERIC_EXIT_INVALID_CMDLINE;
-        }
-    }
-
-    logfile = cmdline.GetLogFilename();
-    pidfile = cmdline.GetPIDFilename();
+    bool daemonize = cmdline.toBool("daemon");
+    QString mask("important general");
+    if ((retval = cmdline.ConfigureLogging(mask, daemonize)) != GENERIC_EXIT_OK)
+        return retval;
 
     ///////////////////////////////////////////////////////////////////////
-
     // Don't listen to console input
     close(0);
 
-    setupLogfile();
-
     CleanupGuard callCleanup(cleanup);
+    signal(SIGINT, qt_exit);
+    signal(SIGTERM, qt_exit);
 
-    int exitCode = setup_basics(cmdline);
-    if (exitCode != GENERIC_EXIT_OK)
-        return exitCode;
-
-    {
-        QString versionStr = QString("%1 version: %2 [%3] www.mythtv.org")
-            .arg(MYTH_APPNAME_MYTHBACKEND).arg(MYTH_SOURCE_PATH)
-            .arg(MYTH_SOURCE_VERSION);
-        VERBOSE(VB_IMPORTANT, versionStr);
-    }
+    setHttpProxy();
 
     gContext = new MythContext(MYTH_BINARY_VERSION);
 
-    if (cmdline.HasBackendCommand())
+    if (cmdline.toBool("event")         || cmdline.toBool("systemevent") ||
+        cmdline.toBool("setverbose")    || cmdline.toBool("printsched") ||
+        cmdline.toBool("testsched")     || cmdline.toBool("resched") ||
+        cmdline.toBool("scanvideos")    || cmdline.toBool("clearcache") ||
+        cmdline.toBool("printexpire"))
     {
         if (!setup_context(cmdline))
             return GENERIC_EXIT_NO_MYTHCONTEXT;
         return handle_command(cmdline);
     }
 
+#if 0
     /////////////////////////////////////////////////////////////////////////
     // Not sure we want to keep running the backend when there is an error.
     // Currently, it keeps repeating the same error over and over.
     // Removing loop until reason for having it is understood.
     //
-    //while (true)
-    //{
-        exitCode = run_backend(cmdline);
-    //}
+    while (true)
+    {
+#endif
+        retval = run_backend(cmdline);
+#if 0
+    }
+#endif
 
-    return exitCode;
+    return retval;
 }
 
 /* vim: set expandtab tabstop=4 shiftwidth=4: */

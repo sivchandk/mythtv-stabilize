@@ -100,7 +100,8 @@ DVBChannel::DVBChannel(const QString &aDevice, TVRec *parent)
 
 DVBChannel::~DVBChannel()
 {
-    Close();
+    if (IsOpen())
+        Close();
 
     if (dvbcam && !master)
     {
@@ -182,8 +183,6 @@ bool DVBChannel::Open(DVBChannel *who)
             return false;
         }
 
-        nextInputID = m_currentInputID;
-
         return true;
     }
 
@@ -253,8 +252,6 @@ bool DVBChannel::Open(DVBChannel *who)
         return false;
     }
 
-    nextInputID = m_currentInputID;
-
     if (fd_frontend >= 0)
         is_open[who] = true;
 
@@ -275,159 +272,32 @@ bool DVBChannel::Init(QString &inputname, QString &startchannel, bool setchan)
     return ChannelBase::Init(inputname, startchannel, setchan);
 }
 
-// documented in dtvchannel.h
-bool DVBChannel::TuneMultiplex(uint mplexid, QString inputname)
-{
-    DTVMultiplex tuning;
-    if (!tuning.FillFromDB(tunerType, mplexid))
-        return false;
-
-    CheckOptions(tuning);
-
-    return Tune(tuning, inputname);
-}
-
-bool DVBChannel::SetChannelByString(const QString &channum)
-{
-    QString tmp     = QString("SetChannelByString(%1): ").arg(channum);
-    QString loc     = LOC + tmp;
-    QString loc_err = LOC_ERR + tmp;
-
-    VERBOSE(VB_CHANNEL, loc);
-
-    if (!IsOpen())
-    {
-        VERBOSE(VB_IMPORTANT, loc_err + "Channel object "
-                "will not open, cannot change channels.");
-
-        ClearDTVInfo();
-        return false;
-    }
-
-    ClearDTVInfo();
-
-    QString inputName;
-    if (!CheckChannel(channum, inputName))
-    {
-        VERBOSE(VB_IMPORTANT, loc_err +
-                "CheckChannel failed.\n\t\t\tPlease verify the channel "
-                "in the 'mythtv-setup' Channel Editor.");
-
-        return false;
-    }
-
-    // If CheckChannel filled in the inputName we need to change inputs.
-    if (!inputName.isEmpty() && (nextInputID == m_currentInputID))
-        nextInputID = GetInputByName(inputName);
-
-    // Get the input data for the channel
-    int inputid = (nextInputID >= 0) ? nextInputID : m_currentInputID;
-    InputMap::const_iterator it = m_inputs.find(inputid);
-    if (it == m_inputs.end())
-        return false;
-
-    uint mplexid_restriction;
-    if (!IsInputAvailable(inputid, mplexid_restriction))
-    {
-        VERBOSE(VB_IMPORTANT, loc_err + "Input is not available");
-        return false;
-    }
-
-    // Get the input data for the channel
-    QString tvformat, modulation, freqtable, freqid, si_std;
-    int finetune;
-    uint64_t frequency;
-    int mpeg_prog_num;
-    uint atsc_major, atsc_minor, mplexid, tsid, netid;
-
-    if (!ChannelUtil::GetChannelData(
-        (*it)->sourceid, channum,
-        tvformat, modulation, freqtable, freqid,
-        finetune, frequency,
-        si_std, mpeg_prog_num, atsc_major, atsc_minor, tsid, netid,
-        mplexid, m_commfree))
-    {
-        VERBOSE(VB_IMPORTANT, loc_err +
-                "Unable to find channel in database.");
-
-        return false;
-    }
-
-    if (mplexid_restriction && (mplexid != mplexid_restriction))
-    {
-        VERBOSE(VB_IMPORTANT, loc_err + "Multiplex is not available");
-        return false;
-    }
-
-    // Initialize basic the tuning parameters
-    DTVMultiplex tuning;
-    if (!mplexid || !tuning.FillFromDB(tunerType, mplexid))
-    {
-        VERBOSE(VB_IMPORTANT, loc_err +
-                "Failed to initialize multiplex options");
-
-        return false;
-    }
-
-    SetDTVInfo(atsc_major, atsc_minor, netid, tsid, mpeg_prog_num);
-
-    // Try to fix any problems with the multiplex
-    CheckOptions(tuning);
-
-    if (!Tune(tuning, inputid))
-    {
-        VERBOSE(VB_IMPORTANT, loc_err + "Tuning to frequency.");
-
-        ClearDTVInfo();
-        return false;
-    }
-
-    QString tmpX = channum; tmpX.detach();
-    m_curchannelname = tmpX;
-
-    VERBOSE(VB_CHANNEL, loc + "Tuned to frequency.");
-
-    m_currentInputID = nextInputID;
-    QString tmpY = m_curchannelname; tmpY.detach();
-    m_inputs[m_currentInputID]->startChanNum = tmpY;
-
-    return true;
-}
-
-bool DVBChannel::SelectInput(const QString &inputname, const QString &chan,
-                             bool use_sm)
+bool DVBChannel::SwitchToInput(const QString &inputname, const QString &chan)
 {
     int input = GetInputByName(inputname);
 
+    bool ok = false;
     if (input >= 0)
     {
-        nextInputID = input;
-        SelectChannel(chan, use_sm);
+        m_currentInputID = input;
+        ok = SetChannelByString(chan);
     }
     else
     {
         VERBOSE(VB_IMPORTANT,
                 QString("DVBChannel: Could not find input: %1 on card when "
                         "setting channel %2\n").arg(inputname).arg(chan));
-        return false;
     }
-    return true;
+    return ok;
 }
 
 bool DVBChannel::SwitchToInput(int newInputNum, bool setstarting)
 {
-    (void)setstarting;
-
-    InputMap::const_iterator it = m_inputs.find(newInputNum);
-    if (it == m_inputs.end() || (*it)->startChanNum.isEmpty())
+    if (!ChannelBase::SwitchToInput(newInputNum, false))
         return false;
 
-    uint mplexid_restriction;
-    if (!IsInputAvailable(m_currentInputID, mplexid_restriction))
-        return false;
-
-    nextInputID = newInputNum;
-
+    m_currentInputID = newInputNum;
+    InputMap::const_iterator it = m_inputs.find(m_currentInputID);
     return SetChannelByString((*it)->startChanNum);
 }
 
@@ -449,19 +319,15 @@ void DVBChannel::CheckFrequency(uint64_t frequency) const
     }
 }
 
-/** \fn DVBChannel::CheckOptions(DTVMultiplex&) const
- *  \brief Checks tuning for problems, and tries to fix them.
- */
 void DVBChannel::CheckOptions(DTVMultiplex &tuning) const
 {
     if ((tuning.inversion == DTVInversion::kInversionAuto) &&
         !(capabilities & FE_CAN_INVERSION_AUTO))
     {
         VERBOSE(VB_GENERAL, LOC_WARN +
-                "Unsupported inversion option 'auto', "
-                "falling back to 'off'");
-
-        tuning.inversion = DTVInversion::kInversionAuto;
+                "'Auto' inversion parameter unsupported by this driver, "
+                "falling back to 'off'.");
+        tuning.inversion = DTVInversion::kInversionOff;
     }
 
     // DVB-S needs a fully initialized diseqc tree and is checked later in Tune
@@ -483,12 +349,14 @@ void DVBChannel::CheckOptions(DTVMultiplex &tuning) const
 
     if (tunerType.IsFECVariable() && !CheckCodeRate(tuning.fec))
     {
-        VERBOSE(VB_GENERAL, LOC_WARN + "Unsupported fec_inner parameter.");
+        VERBOSE(VB_GENERAL, LOC_WARN + "Selected fec_inner parameter "
+                                       "unsupported by this driver.");
     }
 
     if (tunerType.IsModulationVariable() && !CheckModulation(tuning.modulation))
     {
-        VERBOSE(VB_GENERAL, LOC_WARN + "Unsupported modulation parameter.");
+        VERBOSE(VB_GENERAL, LOC_WARN + "Selected modulation parameter unsupported "
+                                       "by this driver.");
     }
 
     if (DTVTunerType::kTunerTypeDVBT != tunerType)
@@ -501,43 +369,50 @@ void DVBChannel::CheckOptions(DTVMultiplex &tuning) const
 
     if (!CheckCodeRate(tuning.hp_code_rate))
     {
-        VERBOSE(VB_GENERAL, LOC_WARN + "Unsupported code_rate_hp parameter.");
+        VERBOSE(VB_GENERAL, LOC_WARN + "Selected code_rate_hp parameter "
+                                       "unsupported by this driver.");
     }
 
     if (!CheckCodeRate(tuning.lp_code_rate))
     {
-        VERBOSE(VB_GENERAL, LOC_WARN + "Unsupported code_rate_lp parameter.");
+        VERBOSE(VB_GENERAL, LOC_WARN + "Selected code_rate_lp parameter "
+                                       "unsupported by this driver.");
     }
 
     if ((tuning.bandwidth == DTVBandwidth::kBandwidthAuto) &&
         !(capabilities & FE_CAN_BANDWIDTH_AUTO))
     {
-        VERBOSE(VB_GENERAL, LOC_WARN + "Unsupported bandwidth parameter.");
+        VERBOSE(VB_GENERAL, LOC_WARN + "'Auto' bandwidth parameter unsupported "
+                                       "by this driver.");
     }
 
     if ((tuning.trans_mode == DTVTransmitMode::kTransmissionModeAuto) &&
         !(capabilities & FE_CAN_TRANSMISSION_MODE_AUTO))
     {
         VERBOSE(VB_GENERAL, LOC_WARN +
-                "Unsupported transmission_mode parameter.");
+                "'Auto' transmission_mode parameter unsupported "
+                "by this driver.");
     }
 
     if ((tuning.guard_interval == DTVGuardInterval::kGuardIntervalAuto) &&
         !(capabilities & FE_CAN_GUARD_INTERVAL_AUTO))
     {
         VERBOSE(VB_GENERAL, LOC_WARN +
-                "Unsupported guard_interval parameter.");
+                "'Auto' guard_interval parameter unsupported "
+                "by this driver.");
     }
 
     if ((tuning.hierarchy == DTVHierarchy::kHierarchyAuto) &&
         !(capabilities & FE_CAN_HIERARCHY_AUTO))
     {
-        VERBOSE(VB_GENERAL, LOC_WARN + "Unsupported hierarchy parameter.");
+        VERBOSE(VB_GENERAL, LOC_WARN +
+                "'Auto' hierarchy parameter unsupported by this driver. ");
     }
 
     if (!CheckModulation(tuning.modulation))
     {
-        VERBOSE(VB_GENERAL, LOC_WARN + "Unsupported constellation parameter.");
+        VERBOSE(VB_GENERAL, LOC_WARN + "Selected modulation parameter unsupported "
+                                       "by this driver.");
     }
 
     VERBOSE(VB_CHANNEL, LOC + tuning.toString());
@@ -607,7 +482,8 @@ void DVBChannel::SetTimeOffset(double offset)
 
 bool DVBChannel::Tune(const DTVMultiplex &tuning, QString inputname)
 {
-    int inputid = inputname.isEmpty() ? m_currentInputID : GetInputByName(inputname);
+    int inputid = inputname.isEmpty() ?
+        m_currentInputID : GetInputByName(inputname);
     if (inputid < 0)
     {
         VERBOSE(VB_IMPORTANT, LOC_ERR + QString("Tune(): Invalid input '%1'.")
@@ -1036,20 +912,6 @@ int DVBChannel::GetChanID() const
 
     query.next();
     return query.value(0).toInt();
-}
-
-void DVBChannel::SaveCachedPids(const pid_cache_t &pid_cache) const
-{
-    int chanid = GetChanID();
-    if (chanid > 0)
-        DTVChannel::SaveCachedPids(chanid, pid_cache);
-}
-
-void DVBChannel::GetCachedPids(pid_cache_t &pid_cache) const
-{
-    int chanid = GetChanID();
-    if (chanid > 0)
-        DTVChannel::GetCachedPids(chanid, pid_cache);
 }
 
 const DiSEqCDevRotor *DVBChannel::GetRotor(void) const

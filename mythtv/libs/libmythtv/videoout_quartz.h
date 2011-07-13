@@ -13,8 +13,7 @@ class VideoOutputQuartz : public VideoOutput
    ~VideoOutputQuartz();
 
     bool Init(int width, int height, float aspect, WId winid,
-              int winx, int winy, int winw, int winh,
-              MythCodecID codec_id, WId embedid = 0);
+              const QRect &win_rect, MythCodecID codec_id);
 
     void ProcessFrame(VideoFrame *frame, OSD *osd,
                       FilterChain *filterList,
@@ -35,7 +34,7 @@ class VideoOutputQuartz : public VideoOutput
     void Zoom(ZoomDirection direction);
     void ToggleAdjustFill(AdjustFillMode adjustFill);
 
-    void EmbedInWidget(int x, int y, int w, int h);
+    void EmbedInWidget(const QRect &rect);
     void StopEmbedding(void);
 
     void MoveResizeWindow(QRect new_rect) {;}

@@ -11,11 +11,11 @@
 // MythTV headers
 #include "mythcontext.h"
 #include "httpcomms.h"
-#include "mythverbose.h"
 #include "cardutil.h"
 #include "channelutil.h"
 #include "iptvchannelfetcher.h"
 #include "scanmonitor.h"
+#include "mythlogging.h"
 
 #define LOC QString("IPTVChanFetch: ")
 #define LOC_ERR QString("IPTVChanFetch, Error: ")
@@ -35,7 +35,9 @@ static bool parse_extinf(const QString &data,
 */
 void IPTVChannelFetcherThread::run(void)
 {
+    threadRegister("IPTVChannelFetcher");
     iptvfetcher->RunScan();
+    threadDeregister();
 }
 
 IPTVChannelFetcher::IPTVChannelFetcher(
@@ -303,8 +305,8 @@ fbox_chan_map_t IPTVChannelFetcher::ParsePlaylist(
         uint num_channels = estimate_number_of_channels(rawdata);
         fetcher->SetTotalNumChannels(num_channels);
 
-        VERBOSE(VB_CHANNEL, "Estimating there are "<<num_channels
-                <<" channels in playlist");
+        VERBOSE(VB_CHANNEL, QString("Estimating there are %1"
+                " channels in playlist").arg(num_channels));
     }
 
     // Parse each channel

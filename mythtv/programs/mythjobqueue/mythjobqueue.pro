@@ -13,6 +13,6 @@ INSTALLS = target
 QMAKE_CLEAN += $(TARGET)
 
 # Input
-SOURCES += main.cpp jobinforun.cpp jobsocket.cpp clientsocket.cpp
+SOURCES += main.cpp jobinforun.cpp jobsocket.cpp clientsocket.cpp commandlineparser.cpp
 
-HEADERS += jobinforun.h jobsocket.h clientsocket.h
+HEADERS += jobinforun.h jobsocket.h clientsocket.h commandlineparser.h

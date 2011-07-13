@@ -25,7 +25,7 @@ class DTVSignalMonitor : public SignalMonitor,
     virtual ~DTVSignalMonitor();
 
   public:
-    virtual QStringList GetStatusList(bool kick = true);
+    virtual QStringList GetStatusList(void) const;
 
     void SetChannel(int major, int minor);
     int  GetMajorChannel() const { return majorChannel; }
@@ -75,8 +75,6 @@ class DTVSignalMonitor : public SignalMonitor,
 
     bool IsAllGood(void) const;
 
-    bool WaitForLock(int timeout=-1);
-
     // MPEG
     void HandlePAT(const ProgramAssociationTable*);
     void HandleCAT(const ConditionalAccessTable*) {}
@@ -111,7 +109,6 @@ class DTVSignalMonitor : public SignalMonitor,
   protected:
     MPEGStreamData    *stream_data;
     vector<uint>       eit_pids;
-    SignalMonitorValue channelTuned;
     SignalMonitorValue seenPAT;
     SignalMonitorValue seenPMT;
     SignalMonitorValue seenMGT;

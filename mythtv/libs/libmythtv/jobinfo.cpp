@@ -14,7 +14,7 @@ using namespace std;
 #include "jobinfo.h"
 #include "programinfo.h"
 #include "mythcorecontext.h"
-#include "mythverbose.h"
+#include "mythlogging.h"
 
 #define LOC     QString("JobInfo: ")
 #define LOC_ERR QString("JobInfo Error: ")

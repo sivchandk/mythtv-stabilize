@@ -105,7 +105,6 @@ game
 music
 netvision
 news
-video
 weather
 zoneminder
 "
@@ -176,13 +175,10 @@ MythMusic related options:
   --enable-sdl             use SDL for the synaesthesia output [$sdl]
 
 MythNetvision related options:
-  --enable-mythnetvision      build the mythnetvision plugin [$netvision]
+  --enable-mythnetvision   build the mythnetvision plugin [$netvision]
 
 MythNews related options:
   --enable-mythnews        build the mythnews plugin [$news]
-
-MythVideo related options:
-  --enable-mythvideo       build the mythvideo plugin [$video]
 
 MythWeather related options:
   --enable-mythweather     build the mythweather plugin [$weather]
@@ -467,7 +463,7 @@ fi
 
 if test "$dcraw" != "no" ; then
     dcraw="no"
-    if test x`which dcraw` != x ; then
+    if test x`which dcraw 2>/dev/null` != x ; then
         dcraw="yes"
     fi
 fi
@@ -659,13 +655,6 @@ else
   echo "        MythNews       plugin will not be built"
 fi
 
-if test "$video" = "yes" ; then
-  echo "        MythVideo      plugin will be built"
-  echo "SUBDIRS += mythvideo" >> ./config.pro
-else
-  echo "        MythVideo      plugin will not be built"
-fi
-
 if test "$weather" = "yes" ; then
   echo "        MythWeather    plugin will be built"
   echo "SUBDIRS += mythweather" >> ./config.pro
@@ -724,7 +713,7 @@ if test "$gallery" = "yes" ; then
             fi
         else
             if test x"$newexif" = x"yes" ; then
-		echo "#define NEW_LIB_EXIF 1" >> \
+                echo "#define NEW_LIB_EXIF 1" >> \
                     ./mythgallery/mythgallery/config.h
             else
                 echo

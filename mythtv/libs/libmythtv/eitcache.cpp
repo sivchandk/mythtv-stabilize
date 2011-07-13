@@ -10,7 +10,7 @@
 #include "eitcache.h"
 #include "mythcontext.h"
 #include "mythdb.h"
-#include "mythverbose.h"
+#include "mythlogging.h"
 
 #define LOC QString("EITCache: ")
 
@@ -313,7 +313,7 @@ bool EITCache::IsNewEIT(uint chanid,  uint tableid,   uint version,
 
     if (accessCnt % 500000 == 50000)
     {
-        VERBOSE(VB_EIT, endl << GetStatistics());
+        VERBOSE(VB_EIT, "\n" + GetStatistics());
         WriteToDB();
     }
 

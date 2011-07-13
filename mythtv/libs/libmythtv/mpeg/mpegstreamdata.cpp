@@ -35,10 +35,12 @@ void init_sections(sections_t &sect, uint last_section)
     sect[endz] = init_bits[last_section & 0x7];
 
 #if 0
-    cerr<<"init_sections ls("<<last_section<<"): "<<hex;
-    for (uint i = 0 ; i < 32; i++)
-        cerr<<((int)sect[i])<<" ";
-    cerr<<dec<<endl;
+    {
+        QString msg = QString("init_sections ls(%1): ").arg(last_section);
+        for (uint i = 0 ; i < 32; i++)
+            msg += QString("%1 ").arg((int)sect[i], 0, 16);
+        VERBOSE(VB_GENERAL, msg);
+    }
 #endif
 }
 
@@ -66,6 +68,7 @@ MPEGStreamData::MPEGStreamData(int desiredProgram, bool cacheTables)
       _local_utc_offset(0), _si_time_offset_cnt(0),
       _si_time_offset_indx(0),
       _eit_helper(NULL), _eit_rate(0.0f),
+      _listening_disabled(false),
       _encryption_lock(QMutex::Recursive), _listener_lock(QMutex::Recursive),
       _cache_tables(cacheTables), _cache_lock(QMutex::Recursive),
       // Single program stuff
@@ -295,7 +298,7 @@ PSIPTable* MPEGStreamData::AssemblePSIP(const TSPacket* tspacket,
 
                 // If the next section starts in the new tspacket
                 // create a new partial packet to prevent overflow
-                if ((partial->TSSizeInBuffer() > TSPacket::SIZE) &&
+                if ((partial->TSSizeInBuffer() > TSPacket::kSize) &&
                     (packetStart >
                      partial->TSSizeInBuffer() - TSPacket::PAYLOAD_SIZE))
                 {
@@ -370,7 +373,7 @@ PSIPTable* MPEGStreamData::AssemblePSIP(const TSPacket* tspacket,
     // There might be another section after this one in the
     // current packet. We need room before the end of the
     // packet, and it must not be packet stuffing.
-    if ((offset + psip->SectionLength() < TSPacket::SIZE) &&
+    if ((offset + psip->SectionLength() < TSPacket::kSize) &&
         (pesdata[psip->SectionLength() + 1] != 0xff))
     {
         // This isn't sutffing, so we need to put this
@@ -604,16 +607,15 @@ bool MPEGStreamData::CreatePMTSingleProgram(const ProgramMapTable &pmt)
 
     if (video_cnt < _pmt_single_program_num_video)
     {
-        VERBOSE(VB_RECORD, "Only "<<video_cnt<<" video streams seen in PMT, "
-                "but "<<_pmt_single_program_num_video<<" are required.");
+        VERBOSE(VB_RECORD, QString("Only %1 video streams seen in PMT, "
+                "but %2 are required.").arg(video_cnt).arg(_pmt_single_program_num_video));
         return false;
     }
 
     if (audioPIDs.size() < _pmt_single_program_num_audio)
     {
-        VERBOSE(VB_RECORD, "Only "<<audioPIDs.size()
-                <<" audio streams seen in PMT, but "
-                <<_pmt_single_program_num_audio<<" are required.");
+        VERBOSE(VB_RECORD, QString("Only %1 audio streams seen in PMT, but %2"
+                " are required.").arg(audioPIDs.size()).arg(_pmt_single_program_num_audio));
         return false;
     }
 
@@ -944,7 +946,7 @@ int MPEGStreamData::ProcessData(const unsigned char *buffer, int len)
             if (newpos == -1)
                 return len - pos;
             if (newpos == -2)
-                return TSPacket::SIZE;
+                return TSPacket::kSize;
 
             pos = newpos;
         }
@@ -952,7 +954,7 @@ int MPEGStreamData::ProcessData(const unsigned char *buffer, int len)
         const TSPacket *pkt = reinterpret_cast<const TSPacket*>(&buffer[pos]);
         if (ProcessTSPacket(*pkt))
         {
-            pos += TSPacket::SIZE; // Advance to next TS packet
+            pos += TSPacket::kSize; // Advance to next TS packet
             resync = false;
         }
         else // Let it resync in case of dropped bytes
@@ -1018,7 +1020,7 @@ int MPEGStreamData::ResyncStream(const unsigned char *buffer, int curr_pos,
 {
     // Search for two sync bytes 188 bytes apart,
     int pos = curr_pos;
-    int nextpos = pos + TSPacket::SIZE;
+    int nextpos = pos + TSPacket::kSize;
     if (nextpos >= len)
         return -1; // not enough bytes; caller should try again
 
@@ -1035,6 +1037,8 @@ int MPEGStreamData::ResyncStream(const unsigned char *buffer, int curr_pos,
 
 bool MPEGStreamData::IsListeningPID(uint pid) const
 {
+    if (_listening_disabled || IsNotListeningPID(pid))
+        return false;
     pid_map_t::const_iterator it = _pids_listening.find(pid);
     return it != _pids_listening.end();
 }

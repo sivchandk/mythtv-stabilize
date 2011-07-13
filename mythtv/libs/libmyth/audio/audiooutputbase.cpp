@@ -18,6 +18,7 @@
 #include "SoundTouch.h"
 #include "freesurround.h"
 #include "spdifencoder.h"
+#include "mythlogging.h"
 
 #define LOC QString("AO: ")
 #define LOC_ERR QString("AO, ERROR: ")
@@ -523,7 +524,7 @@ void AudioOutputBase::Reconfigure(const AudioSettings &orig_settings)
         lsource_channels == source_channels &&
         lneeds_downmix == needs_downmix;
 
-    if (general_deps)
+    if (general_deps && m_configure_succeeded)
     {
         VBAUDIO("Reconfigure(): No change -> exiting");
         return;
@@ -1166,23 +1167,19 @@ int AudioOutputBase::CopyWithUpmix(char *buffer, int frames, int &org_waud)
     off =  processing ? 4 : output_settings->SampleSize(format);
     off *= source_channels;
 
-    len = 0;
     int i = 0;
+    len = 0;
+    int nFrames, bdFrames;
     while (i < frames)
     {
-        int nFrames;
-
-        i += upmixer->putFrames(buffer + i * off,
-                                frames - i, source_channels);
-
+        i += upmixer->putFrames(buffer + i * off, frames - i, source_channels);
         nFrames = upmixer->numFrames();
-
         if (!nFrames)
             continue;
 
         len += CheckFreeSpace(nFrames);
 
-        int bdFrames = (kAudioRingBufferSize - org_waud) / bpf;
+        bdFrames = (kAudioRingBufferSize - org_waud) / bpf;
         if (bdFrames < nFrames)
         {
             upmixer->receiveFrames((float *)(WPOS), bdFrames);
@@ -1217,13 +1214,10 @@ bool AudioOutputBase::AddFrames(void *in_buffer, int in_frames,
 bool AudioOutputBase::AddData(void *in_buffer, int in_len,
                               int64_t timecode, int /*in_frames*/)
 {
-    int org_waud = waud;
-    int afree    = audiofree();
     int frames   = in_len / source_bytes_per_frame;
     void *buffer = in_buffer;
     int bpf      = bytes_per_frame;
     int len      = in_len;
-    int used     = kAudioRingBufferSize - afree;
     bool music   = false;
     int bdiff;
 
@@ -1245,6 +1239,10 @@ bool AudioOutputBase::AddData(void *in_buffer, int in_len,
 
     // Don't write new samples if we're resetting the buffer or reconfiguring
     QMutexLocker lock(&audio_buflock);
+
+    int org_waud = waud;
+    int afree    = audiofree();
+    int used     = kAudioRingBufferSize - afree;
 
     if (passthru && m_spdifenc)
     {
@@ -1326,8 +1324,7 @@ bool AudioOutputBase::AddData(void *in_buffer, int in_len,
 
     int frames_remaining = frames;
     int frames_final = 0;
-    int maxframes = (kAudioSRCInputSize /
-                     (passthru ? channels : source_channels)) & ~0xf;
+    int maxframes = (kAudioSRCInputSize / source_channels) & ~0xf;
     int offset = 0;
 
     while(frames_remaining > 0)
@@ -1518,16 +1515,13 @@ void AudioOutputBase::OutputAudioLoop(void)
     uchar *zeros        = new uchar[fragment_size];
     uchar *fragment_buf = new uchar[fragment_size + 16];
     uchar *fragment     = (uchar *)AOALIGN(fragment_buf[0]);
-
-    // to reduce startup latency, write silence in 8ms chunks
-    int zero_fragment_size = (int)(0.008*samplerate/channels);
-    // make sure its a multiple of output_bytes_per_frame
-    zero_fragment_size *= output_bytes_per_frame;
-    if (zero_fragment_size > fragment_size)
-        zero_fragment_size = fragment_size;
-
     memset(zeros, 0, fragment_size);
 
+    // to reduce startup latency, write silence in 8ms chunks
+    int zero_fragment_size = 8 * samplerate * output_bytes_per_frame / 1000;
+    if (zero_fragment_size > fragment_size)
+        zero_fragment_size = fragment_size;
+           
     while (!killaudio)
     {
         if (pauseaudio)
@@ -1543,8 +1537,6 @@ void AudioOutputBase::OutputAudioLoop(void)
             actually_paused = true;
             audiotime = 0; // mark 'audiotime' as invalid.
 
-            // only send zeros if card doesn't already have at least one
-            // fragment of zeros -dag
             WriteAudio(zeros, zero_fragment_size);
             continue;
         }
@@ -1700,9 +1692,11 @@ void AudioOutputBase::Drain()
  */
 void AudioOutputBase::run(void)
 {
+    threadRegister("AudioOutputBase");
     VBAUDIO(QString("kickoffOutputAudioLoop: pid = %1").arg(getpid()));
     OutputAudioLoop();
     VBAUDIO("kickoffOutputAudioLoop exiting");
+    threadDeregister();
 }
 
 int AudioOutputBase::readOutputData(unsigned char*, int)

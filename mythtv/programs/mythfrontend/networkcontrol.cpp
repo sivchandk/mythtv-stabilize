@@ -16,9 +16,9 @@
 #include "remoteutil.h"
 #include "previewgenerator.h"
 #include "compat.h"
-#include "mythverbose.h"
 #include "mythsystemevent.h"
 #include "mythdirs.h"
+#include "mythlogging.h"
 
 // libmythui
 #include "mythmainwindow.h"
@@ -48,11 +48,20 @@ static bool is_abbrev(QString const& command,
         return test.toLower() == command.left(test.length()).toLower();
 }
 
+void NetworkCommandThread::run(void)
+{
+    threadRegister("NetworkCommand");
+    m_parent->RunCommandThread();
+    threadDeregister();
+}
+
 NetworkControl::NetworkControl() :
     QTcpServer(),
     prompt("# "),
     gotAnswer(false), answer(""),
-    clientLock(QMutex::Recursive)
+    clientLock(QMutex::Recursive),
+    commandThread(new NetworkCommandThread(this)),
+    stopCommandThread(false)
 {
     // Eventually this map should be in the jumppoints table
     jumpMap["channelpriorities"]     = "Channel Recording Priorities";
@@ -215,9 +224,7 @@ NetworkControl::NetworkControl() :
     keyTextMap[Qt::Key_Greater]         = ">";
     keyTextMap[Qt::Key_Bar]             = "|";
 
-    stopCommandThread = false;
-    command_thread.SetParent(this);
-    command_thread.start();
+    commandThread->start();
 
     gCoreContext->addListener(this);
 
@@ -242,11 +249,13 @@ NetworkControl::~NetworkControl(void)
 
     notifyDataAvailable();
 
-    stopCommandThread = true;
     ncLock.lock();
+    stopCommandThread = true;
     ncCond.wakeOne();
     ncLock.unlock();
-    command_thread.wait();
+    commandThread->wait();
+    delete commandThread;
+    commandThread = NULL;
 }
 
 bool NetworkControl::listen(const QHostAddress & address, quint16 port)
@@ -260,34 +269,21 @@ bool NetworkControl::listen(const QHostAddress & address, quint16 port)
     return false;
 }
 
-void NetworkCommandThread::run(void)
-{
-    if (!m_parent)
-        return;
-
-    m_parent->RunCommandThread();
-}
-
 void NetworkControl::RunCommandThread(void)
 {
-    NetworkCommand *nc;
-
+    QMutexLocker locker(&ncLock);
     while (!stopCommandThread)
     {
-        ncLock.lock();
-        while (!networkControlCommands.size()) {
+        while (networkControlCommands.empty() && !stopCommandThread)
             ncCond.wait(&ncLock);
-            if (stopCommandThread)
-            {
-                ncLock.unlock();
-                return;
-            }
+        if (!stopCommandThread)
+        {
+            NetworkCommand *nc = networkControlCommands.front();
+            networkControlCommands.pop_front();
+            locker.unlock();
+            processNetworkControlCommand(nc);
+            locker.relock();
         }
-        nc = networkControlCommands.front();
-        networkControlCommands.pop_front();
-        ncLock.unlock();
-
-        processNetworkControlCommand(nc);
     }
 }
 
@@ -594,9 +590,10 @@ QString NetworkControl::processPlay(NetworkCommand *nc, int clientID)
 
         if (GetMythUI()->GetCurrentLocation().toLower() == "mainmenu")
         {
-            QString msg = QString("HANDLE_MEDIA Internal %1").arg(nc->getFrom(2));
-            MythEvent me(msg);
-            QCoreApplication::postEvent(GetMythMainWindow(), me.clone());
+            QStringList args;
+            args << nc->getFrom(2);
+            MythEvent *me = new MythEvent(ACTION_HANDLEMEDIA, args);
+            qApp->postEvent(GetMythMainWindow(), me);
         }
         else
             return QString("Unable to change to main menu to start playback!");
@@ -1021,7 +1018,7 @@ QString NetworkControl::processSet(NetworkCommand *nc)
         QString oldVerboseString = verboseString;
         QString result = "OK";
 
-        int pva_result = parse_verbose_arg(nc->getArg(2));
+        int pva_result = verboseArgParse(nc->getArg(2));
 
         if (pva_result != 0 /*GENERIC_EXIT_OK */)
             result = "Failed";
@@ -1030,9 +1027,8 @@ QString NetworkControl::processSet(NetworkCommand *nc)
         result += " Previous filter: " + oldVerboseString + "\r\n";
         result += "      New Filter: " + verboseString + "\r\n";
 
-        VERBOSE(VB_IMPORTANT, QString("Verbose level changed, new level is: %1")
+        VERBOSE(VB_IMPORTANT, QString("Verbose mask changed, new level is: %1")
                                       .arg(verboseString));
-
 
         return result;
     }

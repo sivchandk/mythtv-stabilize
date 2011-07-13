@@ -196,6 +196,42 @@ int pg_decode_object(BITBUFFER *bb, BD_PG_OBJECT *p)
     return _decode_rle(bb, p);
 }
 
+int pg_decode_composition(BITBUFFER *bb, BD_PG_COMPOSITION *p)
+{
+    unsigned ii;
+
+    pg_decode_video_descriptor(bb, &p->video_descriptor);
+    pg_decode_composition_descriptor(bb, &p->composition_descriptor);
+
+    p->palette_update_flag = bb_read(bb, 1);
+    bb_skip(bb, 7);
+
+    p->palette_id_ref      = bb_read(bb, 8);
+
+    p->num_composition_objects = bb_read(bb, 8);
+    p->composition_object      = calloc(p->num_composition_objects, sizeof(BD_PG_COMPOSITION_OBJECT));
+
+    for (ii = 0; ii < p->num_composition_objects; ii++) {
+        pg_decode_composition_object(bb, &p->composition_object[ii]);
+    }
+
+    return 1;
+}
+
+int pg_decode_windows(BITBUFFER *bb, BD_PG_WINDOWS *p)
+{
+    unsigned ii;
+
+    p->num_windows = bb_read(bb, 8);
+    p->window = calloc(p->num_windows, sizeof(BD_PG_WINDOW));
+
+    for (ii = 0; ii < p->num_windows; ii++) {
+        pg_decode_window(bb, &p->window[ii]);
+    }
+
+    return 1;
+}
+
 /*
  * cleanup
  */
@@ -207,10 +243,17 @@ void pg_clean_object(BD_PG_OBJECT *p)
     }
 }
 
-void pg_free_window(BD_PG_WINDOW **p)
+void pg_clean_composition(BD_PG_COMPOSITION *p)
 {
-    if (p && *p) {
-        X_FREE(*p);
+    if (p) {
+        X_FREE(p->composition_object);
+    }
+}
+
+void pg_clean_windows(BD_PG_WINDOWS *p)
+{
+    if (p) {
+        X_FREE(p->window);
     }
 }
 
@@ -225,6 +268,22 @@ void pg_free_object(BD_PG_OBJECT **p)
 {
     if (p && *p) {
         pg_clean_object(*p);
+        X_FREE(*p);
+    }
+}
+
+void pg_free_composition(BD_PG_COMPOSITION **p)
+{
+    if (p && *p) {
+        pg_clean_composition(*p);
+        X_FREE(*p);
+    }
+}
+
+void pg_free_windows(BD_PG_WINDOWS **p)
+{
+    if (p && *p) {
+        pg_clean_windows(*p);
         X_FREE(*p);
     }
 }

@@ -25,7 +25,9 @@
 #include <QFileInfo>
 
 #include "serverSideScripting.h"
-#include "mythverbose.h"
+#include "mythlogging.h"
+
+QScriptValue formatStr(QScriptContext *context, QScriptEngine *interpreter);
 
 //////////////////////////////////////////////////////////////////////////////
 //

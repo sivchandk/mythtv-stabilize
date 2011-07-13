@@ -3,11 +3,13 @@
 #ifndef MYTHREFCOUNT_H_
 #define MYTHREFCOUNT_H_
 
+#include <QObject>
 #include <QMutex>
 #include "mythbaseexp.h"
 
-class MBASE_PUBLIC ReferenceCounter
+class MBASE_PUBLIC ReferenceCounter : public QObject
 {
+    Q_OBJECT
   public:
     ReferenceCounter(void);
    ~ReferenceCounter(void) {};

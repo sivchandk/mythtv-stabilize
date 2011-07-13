@@ -1,6 +1,6 @@
 // -*- Mode: c++ -*-
 // Copyright (c) 2003-2004, Daniel Thor Kristjansson
-#include "mythverbose.h"
+#include "mythlogging.h"
 #include "pespacket.h"
 #include "mpegtables.h"
 
@@ -35,8 +35,8 @@ bool PESPacket::AddTSPacket(const TSPacket* packet, bool &broken)
 
     const int cc = packet->ContinuityCounter();
     const int ccExp = (_ccLast + 1) & 0xf;
-    uint payloadSize  = TSPacket::PAYLOAD_SIZE;
-    uint payloadStart = TSPacket::HEADER_SIZE;
+    uint payloadSize  = TSPacket::kPayloadSize;
+    uint payloadStart = TSPacket::kHeaderSize;
 
     // If the next TS has an offset, we need to strip it out.
     // The offset will be used when a new PESPacket is created.
@@ -114,9 +114,9 @@ void PESPacket::GetAsTSPackets(vector<TSPacket> &output, uint cc) const
     }
 
     output.resize(1);
-    memcpy(output[0].data(), _fullbuffer, TSPacket::SIZE);
+    memcpy(output[0].data(), _fullbuffer, TSPacket::kSize);
     output[0].data()[3] = (output[0].data()[3] & 0xf0) | cc;
-    if (size <= TSPacket::SIZE)
+    if (size <= TSPacket::kSize)
         return;
 
     TSHeader header;
@@ -125,15 +125,15 @@ void PESPacket::GetAsTSPackets(vector<TSPacket> &output, uint cc) const
     header.data()[3] = 0x10; // adaptation field control == payload only
     header.SetPID(tsheader()->PID());
 
-    const unsigned char *data = _fullbuffer + TSPacket::SIZE;
-    size -= TSPacket::SIZE;
+    const unsigned char *data = _fullbuffer + TSPacket::kSize;
+    size -= TSPacket::kSize;
     while (size > 0)
     {
         INCR_CC(cc);
         header.SetContinuityCounter(cc);
         output.resize(output.size()+1);
         output[output.size()-1].InitHeader(header.data());
-        uint write_size = min(size, TSPacket::PAYLOAD_SIZE);
+        uint write_size = min(size, TSPacket::kPayloadSize);
         output[output.size()-1].InitPayload(data, write_size);
         data += write_size;
         size -= write_size;
@@ -259,7 +259,7 @@ static void return_188_block(unsigned char* ptr)
             free(*it);
         mem188.clear();
         free188.clear();
-        //cerr<<"freeing all 188 blocks"<<endl;
+        //VERBOSE(VB_GENERAL, "freeing all 188 blocks");
     }
 }
 
@@ -293,19 +293,20 @@ static void return_4096_block(unsigned char* ptr)
     free4096.push_back(ptr);
 
 #if 0 // enable this to debug memory leaks
-        cerr<<alloc4096.size()<<" 4096 blocks remain"<<endl;
+        VERBOSE(VB_GENERAL, QString("%1 4096 blocks remain")
+            .arg(alloc4096.size()));
         map<unsigned char*, bool>::iterator it;
         for (it = alloc4096.begin(); it != alloc4096.end(); ++it)
         {
             TSPacket *ts = (TSPacket*) it->first;
-            cerr<<QString("PES Packet: pid(0x%1)").arg(ts->PID(),0,16);
+            VERBOSE(VB_GENERAL, QString("PES Packet: pid(0x%1)")
+                .arg(ts->PID(),0,16));
             if (ts->PID() == 0x1ffb)
             {
-                cerr<<QString(" tid(0x%1) ext(0x%2)")
+                VERBOSE(VB_GENERAL, QString(" tid(0x%1) ext(0x%2)")
                     .arg(PSIPTable::View(*ts).TableID(),0,16)
-                    .arg(PSIPTable::View(*ts).TableIDExtension(),0,16);
+                    .arg(PSIPTable::View(*ts).TableIDExtension(),0,16));
             }
-            cerr<<endl;
         }
 #endif
 
@@ -317,7 +318,7 @@ static void return_4096_block(unsigned char* ptr)
             free(*it);
         mem4096.clear();
         free4096.clear();
-        //cerr<<"freeing all 4096 blocks"<<endl;
+        //VERBOSE(VB_GENERAL, "freeing all 4096 blocks");
     }
 }
 

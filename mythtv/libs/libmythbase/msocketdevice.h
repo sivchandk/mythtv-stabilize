@@ -66,6 +66,8 @@ public:
     Type	 type() const;
     Protocol	 protocol() const;
 
+    void setProtocol( Protocol protocol );
+
     int		 socket() const;
     virtual void setSocket( int socket, Type type );
 
@@ -112,10 +114,10 @@ public:
     inline qint64 readBlock(char *data, quint64 maxlen)
         { return qint64(read(data, qint64(maxlen))); }
 
-    quint16	 port() const;
-    quint16	 peerPort() const;
-    QHostAddress address() const;
-    QHostAddress peerAddress() const;
+    virtual quint16	 port() const;
+    virtual quint16	 peerPort() const;
+    virtual QHostAddress address() const;
+    virtual QHostAddress peerAddress() const;
 
     enum Error {
 	NoError,
@@ -133,6 +135,7 @@ public:
     Error	 error() const;
 
     inline bool isSequential() const { return true; }
+    int      createNewSocket();
 
 protected:
     void setError( Error err );
@@ -160,7 +163,6 @@ private:
 #endif
 
     static void  init();
-    int		 createNewSocket();
     Protocol	 getProtocol() const;
 
 private:	// Disabled copy constructor and operator=

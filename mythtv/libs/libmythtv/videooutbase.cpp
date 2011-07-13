@@ -9,7 +9,7 @@
 #include "decoderbase.h"
 
 #include "mythcorecontext.h"
-#include "mythverbose.h"
+#include "mythlogging.h"
 #include "mythmainwindow.h"
 #include "mythuihelper.h"
 #include "mythxdisplay.h"
@@ -18,10 +18,6 @@
 
 #ifdef USING_XV
 #include "videoout_xv.h"
-#endif
-
-#ifdef USING_DIRECTFB
-#include "videoout_directfb.h"
 #endif
 
 #ifdef USING_MINGW
@@ -38,6 +34,10 @@
 
 #ifdef USING_VDPAU
 #include "videoout_vdpau.h"
+#endif
+
+#ifdef USING_VAAPI
+#include "videoout_openglvaapi.h"
 #endif
 
 #include "videoout_null.h"
@@ -73,10 +73,6 @@ void VideoOutput::GetRenderOptions(render_opts &opts)
 
     VideoOutputNull::GetRenderOptions(opts, cpudeints);
 
-#ifdef USING_DIRECTFB
-    VideoOutputDirectfb::GetRenderOptions(opts, cpudeints);
-#endif // USING_DIRECTFB
-
 #ifdef USING_MINGW
     VideoOutputD3D::GetRenderOptions(opts, cpudeints);
 #endif
@@ -96,6 +92,10 @@ void VideoOutput::GetRenderOptions(render_opts &opts)
 #ifdef USING_VDPAU
     VideoOutputVDPAU::GetRenderOptions(opts);
 #endif // USING_VDPAU
+
+#ifdef USING_VAAPI
+    VideoOutputOpenGLVAAPI::GetRenderOptions(opts);
+#endif // USING_VAAPI
 }
 
 /**
@@ -104,20 +104,13 @@ void VideoOutput::GetRenderOptions(render_opts &opts)
  * \return instance of VideoOutput if successful, NULL otherwise.
  */
 VideoOutput *VideoOutput::Create(
-        const QString &decoder,   MythCodecID  codec_id,
-        void          *codec_priv,
-        PIPState pipState,
-        const QSize   &video_dim, float        video_aspect,
-        WId            win_id,    const QRect &display_rect,
-        float          video_prate,     WId    embed_id)
+    const QString &decoder, MythCodecID  codec_id,     void *codec_priv,
+    PIPState pipState,      const QSize &video_dim,    float video_aspect,
+    WId win_id,             const QRect &display_rect, float video_prate)
 {
     (void) codec_priv;
 
     QStringList renderers;
-
-#ifdef USING_DIRECTFB
-    renderers += VideoOutputDirectfb::GetAllowedRenderers(codec_id, video_dim);
-#endif // USING_DIRECTFB
 
 #ifdef USING_MINGW
     renderers += VideoOutputD3D::GetAllowedRenderers(codec_id, video_dim);
@@ -142,6 +135,10 @@ VideoOutput *VideoOutput::Create(
 #ifdef USING_VDPAU
     renderers += VideoOutputVDPAU::GetAllowedRenderers(codec_id, video_dim);
 #endif // USING_VDPAU
+
+#ifdef USING_VAAPI
+    renderers += VideoOutputOpenGLVAAPI::GetAllowedRenderers(codec_id, video_dim);
+#endif // USING_VAAPI
 
     VERBOSE(VB_PLAYBACK, LOC + "Allowed renderers: " +
             to_comma_list(renderers));
@@ -180,11 +177,6 @@ VideoOutput *VideoOutput::Create(
 
         VideoOutput *vo = NULL;
 
-#ifdef USING_DIRECTFB
-        if (renderer == "directfb")
-            vo = new VideoOutputDirectfb();
-#endif // USING_DIRECTFB
-
 #ifdef USING_MINGW
         if (renderer == "direct3d")
             vo = new VideoOutputD3D();
@@ -205,6 +197,11 @@ VideoOutput *VideoOutput::Create(
             vo = new VideoOutputVDPAU();
 #endif // USING_VDPAU
 
+#ifdef USING_VAAPI
+        if (renderer == "openglvaapi")
+            vo = new VideoOutputOpenGLVAAPI();
+#endif // USING_VAAPI
+
 #ifdef USING_XV
         if (xvlist.contains(renderer))
             vo = new VideoOutputXv();
@@ -216,9 +213,7 @@ VideoOutput *VideoOutput::Create(
             vo->SetVideoFrameRate(video_prate);
             if (vo->Init(
                     video_dim.width(), video_dim.height(), video_aspect,
-                    win_id, display_rect.x(), display_rect.y(),
-                    display_rect.width(), display_rect.height(),
-                    codec_id, embed_id))
+                    win_id, display_rect, codec_id))
             {
                 return vo;
             }
@@ -395,40 +390,27 @@ VideoOutput::~VideoOutput()
  * \return true if successful, false otherwise.
  */
 bool VideoOutput::Init(int width, int height, float aspect, WId winid,
-                       int winx, int winy, int winw, int winh,
-                       MythCodecID codec_id, WId embedid)
+                       const QRect &win_rect, MythCodecID codec_id)
 {
     (void)winid;
-    (void)embedid;
 
     video_codec_id = codec_id;
     bool wasembedding = window.IsEmbedding();
     QRect oldrect;
     if (wasembedding)
     {
-        oldrect = window.GetDisplayVisibleRect();
+        oldrect = window.GetEmbeddingRect();
         StopEmbedding();
     }
 
-    bool mainSuccess = window.Init(
-        QSize(width, height), aspect,
-        QRect(winx, winy, winw, winh),
-        db_aspectoverride, db_adjustfill);
+    bool mainSuccess = window.Init(QSize(width, height), aspect, win_rect,
+                                   db_aspectoverride, db_adjustfill);
 
     if (db_vdisp_profile)
         db_vdisp_profile->SetInput(window.GetVideoDim());
 
-/*
-    aspectoverride  = db_aspectoverride;
-    // If autodection is enabled. Start in the defaultmode
-    adjustfill      = db_adjustfill >= kAdjustFill_AutoDetect_DefaultOff ?
-        (AdjustFillMode) (db_adjustfill - kAdjustFill_AutoDetect_DefaultOff) : db_adjustfill;
-*/
     if (wasembedding)
-    {
-        VERBOSE(VB_PLAYBACK, LOC + "Restoring embedded playback");
-        EmbedInWidget(oldrect.x(), oldrect.y(), oldrect.width(), oldrect.height());
-    }
+        EmbedInWidget(oldrect);
 
     VideoAspectRatioChanged(aspect); // apply aspect ratio and letterbox mode
 
@@ -699,21 +681,17 @@ void VideoOutput::ResizeDisplayWindow(const QRect &rect, bool save_visible_rect)
 
 /**
  * \brief Tells video output to embed video in an existing window.
- * \param x   X location where to locate video
- * \param y   Y location where to locate video
- * \param w   width of video
- * \param h   height of video
  * \sa StopEmbedding()
  */
-void VideoOutput::EmbedInWidget(int x, int y, int w, int h)
+void VideoOutput::EmbedInWidget(const QRect &rect)
 {
-    window.EmbedInWidget(QRect(x, y, w, h));
+    window.EmbedInWidget(rect);
 }
 
 /**
  * \fn VideoOutput::StopEmbedding(void)
  * \brief Tells video output to stop embedding video in an existing window.
- * \sa EmbedInWidget(WId, int, int, int, int)
+ * \sa EmbedInWidget(const QRect&)
  */
 void VideoOutput::StopEmbedding(void)
 {

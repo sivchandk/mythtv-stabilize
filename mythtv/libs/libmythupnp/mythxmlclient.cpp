@@ -22,9 +22,9 @@
 //////////////////////////////////////////////////////////////////////////////
 
 #include "mythxmlclient.h"
+#include "mythlogging.h"
 
 #include <QObject>
-#include "mythverbose.h"
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -63,7 +63,8 @@ UPnPResultCode MythXMLClient::GetConnectionInfo( const QString &sPin, DatabasePa
 
     list.insert( "Pin", sPin );
 
-    QDomDocument xmlResults = SendSOAPRequest( "GetConnectionInfo", list, nErrCode, sErrDesc, m_bInQtThread );
+    QDomDocument xmlResults = SendSOAPRequest(
+        "GetConnectionInfo", list, nErrCode, sErrDesc, m_bInQtThread);
 
     // --------------------------------------------------------------
     // Is this a valid response?
@@ -71,7 +72,7 @@ UPnPResultCode MythXMLClient::GetConnectionInfo( const QString &sPin, DatabasePa
 
     QDomNode oNode = xmlResults.namedItem( "GetConnectionInfoResult" );
 
-    if (!oNode.isNull())
+    if (UPnPResult_Success == nErrCode && !oNode.isNull())
     {
         QDomNode dbNode = oNode.namedItem( "Database" );
 
@@ -93,14 +94,7 @@ UPnPResultCode MythXMLClient::GetConnectionInfo( const QString &sPin, DatabasePa
     }
     else
     {
-        
-        nErrCode = GetNodeValue( xmlResults, "Fault/detail/UPnPResult/errorCode"       , 500 );
-        sErrDesc = GetNodeValue( xmlResults, "Fault/detail/UPnPResult/errorDescription", QString( "Unknown" ));
-
         sMsg = sErrDesc;
-
-        if (sMsg.isEmpty())
-            sMsg = QObject::tr("Access Denied");
 
         VERBOSE( VB_IMPORTANT, QString( "MythXMLClient::GetConnectionInfo Failed - (%1) %2" )
                              .arg( nErrCode )

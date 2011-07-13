@@ -16,6 +16,7 @@
 #include <string.h>
 #include <sys/select.h>
 #include <sys/wait.h>
+#include <iostream>
 
 // QT headers
 #include <QCoreApplication>
@@ -28,8 +29,8 @@
 // libmythbase headers
 #include "mythcorecontext.h"
 #include "mythevent.h"
-#include "mythverbose.h"
 #include "exitcodes.h"
+#include "mythlogging.h"
 #include "util.h"
 
 #define CLOSE(x) \
@@ -70,7 +71,8 @@ MythSystemIOHandler::MythSystemIOHandler(bool read) :
 
 void MythSystemIOHandler::run(void)
 {
-    VERBOSE(VB_GENERAL|VB_SYSTEM, QString("Starting IO manager (%1)")
+    threadRegister(QString("SystemIOHandler%1").arg(m_read ? "R" : "W"));
+    LOG(VB_GENERAL, LOG_INFO, QString("Starting IO manager (%1)")
                 .arg(m_read ? "read" : "write"));
 
     m_pLock.lock();
@@ -107,7 +109,7 @@ void MythSystemIOHandler::run(void)
                 retval = select(m_maxfd+1, NULL, &fds, NULL, &tv);
 
             if( retval == -1 )
-                VERBOSE(VB_SYSTEM|VB_IMPORTANT,
+                LOG(VB_SYSTEM, LOG_ERR,
                     QString("MythSystemIOHandler: select(%1, %2) failed: %3")
                         .arg(m_maxfd+1).arg(m_read).arg(strerror(errno)));
 
@@ -130,6 +132,7 @@ void MythSystemIOHandler::run(void)
             m_pLock.unlock();
         }
     }
+    threadDeregister();
 }
 
 void MythSystemIOHandler::HandleRead(int fd, QBuffer *buff)
@@ -238,7 +241,8 @@ MythSystemManager::MythSystemManager() : QThread()
 
 void MythSystemManager::run(void)
 {
-    VERBOSE(VB_GENERAL|VB_SYSTEM, "Starting process manager");
+    threadRegister("SystemManager");
+    LOG(VB_GENERAL, LOG_INFO, "Starting process manager");
 
     // gCoreContext is set to NULL during shutdown, and we need this thread to
     // exit during shutdown.
@@ -268,9 +272,8 @@ void MythSystemManager::run(void)
             // unmanaged process has exited
             if( !m_pMap.contains(pid) )
             {
-                VERBOSE(VB_SYSTEM,
-                    QString("Unmanaged child (PID: %1) has exited!")
-                    .arg(pid));
+                LOG(VB_SYSTEM, LOG_INFO,
+                    QString("Unmanaged child (PID: %1) has exited!") .arg(pid));
                 m_mapLock.unlock();
                 continue;
             }
@@ -284,7 +287,7 @@ void MythSystemManager::run(void)
             if( WIFEXITED(status) )
             {
                 ms->SetStatus(WEXITSTATUS(status));
-                VERBOSE(VB_SYSTEM, 
+                LOG(VB_SYSTEM, LOG_INFO,
                     QString("Managed child (PID: %1) has exited! "
                             "command=%2, status=%3, result=%4")
                     .arg(pid) .arg(ms->GetLogCmd()) .arg(status) 
@@ -300,7 +303,7 @@ void MythSystemManager::run(void)
                 int sig = WTERMSIG(status);
                 ms->SetStatus( GENERIC_EXIT_KILLED );
 
-                VERBOSE(VB_SYSTEM, 
+                LOG(VB_SYSTEM, LOG_INFO,
                     QString("Managed child (PID: %1) has signalled! "
                             "command=%2, status=%3, result=%4, signal=%5")
                     .arg(pid) .arg(ms->GetLogCmd()) .arg(status) 
@@ -311,7 +314,7 @@ void MythSystemManager::run(void)
             else
             {
                 ms->SetStatus( GENERIC_EXIT_NOT_OK );
-                VERBOSE(VB_SYSTEM|VB_IMPORTANT, 
+                LOG(VB_SYSTEM, LOG_ERR,
                     QString("Managed child (PID: %1) has terminated! "
                             "command=%2, status=%3, result=%4")
                     .arg(pid) .arg(ms->GetLogCmd()) .arg(status) 
@@ -340,7 +343,7 @@ void MythSystemManager::run(void)
                 // issuing KILL signal after TERM failed in a timely manner
                 if( ms->GetStatus() == GENERIC_EXIT_TIMEOUT )
                 {
-                    VERBOSE(VB_SYSTEM, 
+                    LOG(VB_SYSTEM, LOG_INFO,
                         QString("Managed child (PID: %1) timed out"
                                 ", issuing KILL signal").arg(pid));
                     // Prevent constant attempts to kill an obstinate child
@@ -351,7 +354,7 @@ void MythSystemManager::run(void)
                 // issuing TERM signal
                 else
                 {
-                    VERBOSE(VB_SYSTEM, 
+                    LOG(VB_SYSTEM, LOG_INFO,
                         QString("Managed child (PID: %1) timed out"
                                 ", issuing TERM signal").arg(pid));
                     ms->SetStatus( GENERIC_EXIT_TIMEOUT );
@@ -378,6 +381,7 @@ void MythSystemManager::run(void)
     // kick to allow them to close themselves cleanly
     readThread->wake();
     writeThread->wake();
+    threadDeregister();
 }
 
 void MythSystemManager::append(MythSystemUnix *ms)
@@ -425,7 +429,8 @@ MythSystemSignalManager::MythSystemSignalManager() : QThread()
 
 void MythSystemSignalManager::run(void)
 {
-    VERBOSE(VB_GENERAL|VB_SYSTEM, "Starting process signal handler");
+    threadRegister("SystemSignalManager");
+    LOG(VB_GENERAL, LOG_INFO, "Starting process signal handler");
     while( gCoreContext )
     {
         usleep(50000); // sleep 50ms
@@ -474,6 +479,7 @@ void MythSystemSignalManager::run(void)
                 ms->deleteLater();
         }
     }
+    threadDeregister();
 }
 
 /*******************************
@@ -526,8 +532,14 @@ MythSystemUnix::~MythSystemUnix(void)
 
 void MythSystemUnix::Term(bool force)
 {
-    if( (GetStatus() != GENERIC_EXIT_RUNNING) || (m_pid <= 0) )
+    int status = GetStatus();
+    if( (status != GENERIC_EXIT_RUNNING && status != GENERIC_EXIT_TIMEOUT) || 
+        (m_pid <= 0) )
+    {
+        LOG(VB_GENERAL, LOG_DEBUG, QString("Terminate skipped. Status: %1")
+            .arg(status));
         return;
+    }
 
     Signal(SIGTERM);
     if( force )
@@ -540,9 +552,16 @@ void MythSystemUnix::Term(bool force)
 
 void MythSystemUnix::Signal( int sig )
 {
-    if( (GetStatus() != GENERIC_EXIT_RUNNING) || (m_pid <= 0) )
+    int status = GetStatus();
+    if( (status != GENERIC_EXIT_RUNNING && status != GENERIC_EXIT_TIMEOUT) || 
+        (m_pid <= 0) )
+    {
+        LOG(VB_GENERAL, LOG_DEBUG, QString("Signal skipped. Status: %1")
+            .arg(status));
         return;
-    VERBOSE(VB_GENERAL, QString("Child PID %1 killed with %2")
+    }
+
+    LOG(VB_GENERAL, LOG_INFO, QString("Child PID %1 killed with %2")
                     .arg(m_pid).arg(strsignal(sig)));
     kill((GetSetting("SetPGID") ? -m_pid : m_pid), sig);
 }
@@ -557,7 +576,7 @@ void MythSystemUnix::Fork(time_t timeout)
     strncpy(locerr, (const char *)LOC_ERR.toUtf8().constData(), MAX_BUFLEN);
     locerr[MAX_BUFLEN-1] = '\0';
 
-    VERBOSE(VB_SYSTEM|VB_EXTRA, QString("Launching: %1").arg(GetLogCmd()));
+    LOG(VB_SYSTEM, LOG_DEBUG, QString("Launching: %1").arg(GetLogCmd()));
 
     GetBuffer(0)->setBuffer(0);
     GetBuffer(1)->setBuffer(0);
@@ -572,8 +591,7 @@ void MythSystemUnix::Fork(time_t timeout)
     {
         if( pipe(p_stdin) == -1 )
         {
-            VERBOSE(VB_SYSTEM|VB_IMPORTANT,
-                        (LOC_ERR + "stdin pipe() failed"));
+            LOG(VB_SYSTEM, LOG_ERR, "stdin pipe() failed");
             SetStatus( GENERIC_EXIT_NOT_OK );
         }
         else
@@ -583,8 +601,7 @@ void MythSystemUnix::Fork(time_t timeout)
     {
         if( pipe(p_stdout) == -1 )
         {
-            VERBOSE(VB_SYSTEM|VB_IMPORTANT,
-                        (LOC_ERR + "stdout pipe() failed"));
+            LOG(VB_SYSTEM, LOG_ERR, "stdout pipe() failed");
             SetStatus( GENERIC_EXIT_NOT_OK );
         }
         else
@@ -594,8 +611,7 @@ void MythSystemUnix::Fork(time_t timeout)
     {
         if( pipe(p_stderr) == -1 )
         {
-            VERBOSE(VB_SYSTEM|VB_IMPORTANT,
-                        (LOC_ERR + "stderr pipe() failed"));
+            LOG(VB_SYSTEM, LOG_ERR, "stderr pipe() failed");
             SetStatus( GENERIC_EXIT_NOT_OK );
         }
         else
@@ -646,9 +662,7 @@ void MythSystemUnix::Fork(time_t timeout)
     if (child < 0)
     {
         /* Fork failed, still in parent */
-        VERBOSE(VB_SYSTEM|VB_IMPORTANT,
-                    (LOC_ERR + "fork() failed because %1")
-                        .arg(strerror(errno)));
+        LOG(VB_SYSTEM, LOG_ERR, "fork() failed: " + ENO);
         SetStatus( GENERIC_EXIT_NOT_OK );
     }
     else if( child > 0 )
@@ -657,7 +671,7 @@ void MythSystemUnix::Fork(time_t timeout)
         m_pid = child;
         SetStatus( GENERIC_EXIT_RUNNING );
 
-        VERBOSE(VB_SYSTEM|VB_EXTRA,
+        LOG(VB_SYSTEM, LOG_INFO,
                     QString("Managed child (PID: %1) has started! "
                             "%2%3 command=%4, timeout=%5")
                         .arg(m_pid) .arg(GetSetting("UseShell") ? "*" : "")
@@ -673,24 +687,10 @@ void MythSystemUnix::Fork(time_t timeout)
         m_stdpipe[0] = p_stdin[1];
         m_stdpipe[1] = p_stdout[0];
         m_stdpipe[2] = p_stderr[0];
-
-        // clean up the memory use
-        if( command )
-            free((void *)command);
-
-        if( directory )
-            free((void *)directory);
-
-        if( cmdargs )
-        {
-            for (i = 0; cmdargs[i]; i++)
-                free( cmdargs[i] );
-            free( cmdargs );
-        }
     }
     else if (child == 0)
     {
-        /* Child - NOTE: it is not safe to use VERBOSE or QString between the 
+        /* Child - NOTE: it is not safe to use LOG or QString between the 
          * fork and execv calls in the child.  It causes occasional locking 
          * issues that cause deadlocked child processes. */
 
@@ -700,7 +700,7 @@ void MythSystemUnix::Fork(time_t timeout)
             /* try to attach stdin to input pipe - failure is fatal */
             if( dup2(p_stdin[0], 0) < 0 )
             {
-                cerr << locerr 
+                cerr << locerr
                      << "Cannot redirect input pipe to standard input: "
                      << strerror(errno) << endl;
                 _exit(GENERIC_EXIT_PIPE_FAILURE);
@@ -787,7 +787,7 @@ void MythSystemUnix::Fork(time_t timeout)
         /* run command */
         if( execv(command, cmdargs) < 0 )
         {
-            // Can't use VERBOSE due to locking fun.
+            // Can't use LOG due to locking fun.
             cerr << locerr
                  << "execv() failed: "
                  << strerror(errno) << endl;
@@ -798,6 +798,21 @@ void MythSystemUnix::Fork(time_t timeout)
     }
 
     /* Parent */
+
+    // clean up the memory use
+    if( command )
+        free((void *)command);
+
+    if( directory )
+        free((void *)directory);
+
+    if( cmdargs )
+    {
+        for (i = 0; cmdargs[i]; i++)
+            free( cmdargs[i] );
+        free( cmdargs );
+    }
+
     if( GetStatus() != GENERIC_EXIT_RUNNING )
     {
         CLOSE(p_stdin[0]);

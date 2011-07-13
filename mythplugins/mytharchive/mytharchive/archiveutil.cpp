@@ -238,8 +238,12 @@ bool getFileDetails(ArchiveItem *a)
     QString outFile = tempDir + "work/file.xml";
 
     // call mytharchivehelper to get files stream info etc.
-    QString command = QString("mytharchivehelper -i \"%1\" \"%2\" %3 > /dev/null 2>&1")
+    QString command = QString("mytharchivehelper --getfileinfo --infile \"%1\" "
+                              "--outfile \"%2\" --method %3")
             .arg(inFile).arg(outFile).arg(lenMethod);
+    command += logPropagateArgs;
+    if (!logPropagateQuiet())
+        command += " --quiet";
 
     uint flags = kMSDontBlockInputDevs | kMSDontDisableDrawing;
     if (myth_system(command, flags) != GENERIC_EXIT_OK)

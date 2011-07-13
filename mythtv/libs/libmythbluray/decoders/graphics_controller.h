@@ -40,15 +40,21 @@ typedef struct graphics_controller_s GRAPHICS_CONTROLLER;
 typedef void (*gc_overlay_proc_f)(void *, const struct bd_overlay_s * const);
 
 typedef enum {
-    GC_CTRL_NOP,
+    /* */
+    GC_CTRL_NOP,             /* No input. Render page / run timers / run animations */
+    GC_CTRL_RESET,           /* reset graphics controller */
+
+    /* user input */
     GC_CTRL_VK_KEY,          /* param: bd_vk_key_e */
+    GC_CTRL_MOUSE_MOVE,      /* move selected button to (x,y), param: (x<<16 | y) */
+
+    /* HDMV VM control messages */
     GC_CTRL_ENABLE_BUTTON,   /* param: button_id */
     GC_CTRL_DISABLE_BUTTON,  /* param: button_id */
     GC_CTRL_SET_BUTTON_PAGE,
     GC_CTRL_POPUP,           /* param: on/off */
     GC_CTRL_IG_END,          /* execution of IG object is complete */
-    GC_CTRL_RESET,           /* reset graphics controller */
-    GC_CTRL_MOUSE_MOVE,      /* move selected button to (x,y), param: (x<<16 | y) */
+
 } gc_ctrl_e;
 
 typedef struct {
@@ -69,11 +75,18 @@ BD_PRIVATE GRAPHICS_CONTROLLER *gc_init(struct bd_registers_s *regs,
 
 BD_PRIVATE void                 gc_free(GRAPHICS_CONTROLLER **p);
 
-/*
- * input stream (MPEG-TS IG stream)
+/**
+ *
+ *  Decode data from MPEG-TS input stream
+ *
+ * @param p  GRAPHICS_CONTROLLER object
+ * @param pid  mpeg-ts PID to decode (HDMV IG/PG stream)
+ * @param block  mpeg-ts data
+ * @param num_blocks  number of aligned units in data
+ * @param stc  current playback time
+ * @return <0 on error, 0 when not complete, >0 when complete
  */
-
-BD_PRIVATE void                 gc_decode_ts(GRAPHICS_CONTROLLER *p,
+BD_PRIVATE int                  gc_decode_ts(GRAPHICS_CONTROLLER *p,
                                              uint16_t pid,
                                              uint8_t *block, unsigned num_blocks,
                                              int64_t stc);

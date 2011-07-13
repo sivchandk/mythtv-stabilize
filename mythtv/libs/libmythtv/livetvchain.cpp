@@ -1,7 +1,7 @@
 #include "livetvchain.h"
 #include "mythcontext.h"
 #include "mythdb.h"
-#include "mythverbose.h"
+#include "mythlogging.h"
 #include "programinfo.h"
 #include "mythsocket.h"
 #include "cardutil.h"
@@ -247,9 +247,9 @@ void LiveTVChain::GetEntryAt(int at, LiveTVChainEntry &entry) const
     QMutexLocker lock(&m_lock);
 
     int size = m_chain.count();
-    int new_at = (at < 0 || at >= size) ? size - 1 : at;
+    int new_at = (size && (at < 0 || at >= size)) ? size - 1 : at;
 
-    if (new_at >= 0 && new_at <= size)
+    if (size && new_at >= 0 && new_at <= size)
         entry = m_chain[new_at];
     else
     {
@@ -459,7 +459,7 @@ void LiveTVChain::SwitchTo(int num)
 {
     QMutexLocker lock(&m_lock);
 
-    VERBOSE(VB_PLAYBACK, LOC + "SwitchTo("<<num<<")");
+    VERBOSE(VB_PLAYBACK, LOC + QString("SwitchTo(%1)").arg(num));
 
     int size = m_chain.count();
     if ((num < 0) || (num >= size))
@@ -479,7 +479,7 @@ void LiveTVChain::SwitchTo(int num)
         GetEntryAt(num, e);
         QString msg = QString("%1_%2")
             .arg(e.chanid).arg(e.starttime.toString("yyyyMMddhhmmss"));
-        VERBOSE(VB_PLAYBACK, LOC + "Entry@"<<num<<": '"<<msg<<"'");
+        VERBOSE(VB_PLAYBACK, LOC + QString("Entry@%1: '%2')").arg(num).arg(msg));
     }
 }
 

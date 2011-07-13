@@ -2,6 +2,8 @@
 #define MAINSERVER_H_
 
 #include <QReadWriteLock>
+#include <QThreadPool>
+#include <QRunnable>
 #include <QEvent>
 #include <QMutex>
 #include <QHash>
@@ -28,6 +30,7 @@ using namespace std;
 class QUrl;
 class VideoScanner;
 class QTimer;
+class FileSystemInfo;
 
 class MainServer : public SocketRequestHandler
 {
@@ -154,7 +157,7 @@ class MainServer : public SocketRequestHandler
 
     QString LocalFilePath(const QUrl &url, const QString &wantgroup);
 
-    int GetfsID(vector<FileSystemInfo>::iterator fsInfo);
+    int GetfsID(QList<FileSystemInfo>::iterator fsInfo);
 
     LiveTVChain *GetExistingChain(const QString &id);
     LiveTVChain *GetExistingChain(const MythSocket *sock);

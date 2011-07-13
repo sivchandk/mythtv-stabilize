@@ -10,7 +10,7 @@ using namespace std;
 #include "format.h"
 #include "cc608decoder.h"
 #include "mythcontext.h"
-#include "mythverbose.h"
+#include "mythlogging.h"
 #include "vbilut.h"
 
 #define DEBUG_XDS 0
@@ -266,10 +266,10 @@ void CC608Decoder::FormatCCField(int tc, int field, int data)
             switch (b1 & 0x07)
             {
                 case 0x00:          //attribute
-                    /*
-                      printf ("<ATTRIBUTE %d %d>\n", b1, b2);
-                      fflush (stdout);
-                    */
+#if 0
+                    LOG(VB_GENERAL, LOG_DEBUG, 
+                        QString("<ATTRIBUTE %1 %2>").arg(b1).arg(b2);
+#endif
                     break;
                 case 0x01:          //midrow or char
                     if (newrow[mode])
@@ -320,7 +320,11 @@ void CC608Decoder::FormatCCField(int tc, int field, int data)
                     break;
                 case 0x04:          //misc
                 case 0x05:          //misc + F
-//                 printf("ccmode %d cmd %02x\n",ccmode,b2);
+#if 0
+                    LOG(VB_GENERAL, LOG_DEBUG,
+                        QString("ccmode %1 cmd %2").arg(ccmode)
+                            .arg(b2, 2, 16, '0'));
+#endif
                     switch (b2)
                     {
                         case 0x21:      //backspace
@@ -1252,8 +1256,8 @@ bool CC608Decoder::XDSPacketParseProgram(
             {
                 xds_rating_systems[cf]            |= kHasCanEnglish;
                 xds_rating[cf][kRatingCanEnglish]  = tv_rating;
-                VERBOSE(VB_VBI, loc + "VChip "
-                        << GetRatingString(kRatingCanEnglish, future));
+                VERBOSE(VB_VBI, loc + QString("VChip %1")
+                        .arg(GetRatingString(kRatingCanEnglish, future)));
             }
         }
         else if (sel == 7)
@@ -1263,8 +1267,8 @@ bool CC608Decoder::XDSPacketParseProgram(
             {
                 xds_rating_systems[cf]           |= kHasCanFrench;
                 xds_rating[cf][kRatingCanFrench]  = tv_rating;
-                VERBOSE(VB_VBI, loc + "VChip "
-                        << GetRatingString(kRatingCanFrench, future));
+                VERBOSE(VB_VBI, loc + QString("VChip %1")
+                        .arg(GetRatingString(kRatingCanFrench, future)));
             }
         }
         else if (sel == 0x13 || sel == 0x1f)
@@ -1277,8 +1281,8 @@ bool CC608Decoder::XDSPacketParseProgram(
                 uint f = ((xds_buf[0]<<3) & 0x80) | ((xds_buf[1]<<1) & 0x70);
                 xds_rating_systems[cf]     |= kHasTPG;
                 xds_rating[cf][kRatingTPG]  = tv_rating | f;
-                VERBOSE(VB_VBI, loc + "VChip "
-                        << GetRatingString(kRatingTPG, future));
+                VERBOSE(VB_VBI, loc + QString("VChip %1")
+                        .arg(GetRatingString(kRatingTPG, future)));
             }
         }
         else if (rating_system == 0)
@@ -1288,14 +1292,15 @@ bool CC608Decoder::XDSPacketParseProgram(
             {
                 xds_rating_systems[cf]      |= kHasMPAA;
                 xds_rating[cf][kRatingMPAA]  = movie_rating;
-                VERBOSE(VB_VBI, loc + "VChip "
-                        << GetRatingString(kRatingMPAA, future));
+                VERBOSE(VB_VBI, loc + QString("VChip %1")
+                        .arg(GetRatingString(kRatingMPAA, future)));
             }
         }
         else
         {
-            VERBOSE(VB_VBI, loc + "VChip Unhandled -- rs("<<rating_system
-                    <<") rating("<<tv_rating<<":"<<movie_rating<<")");
+            VERBOSE(VB_VBI, loc + 
+                    QString("VChip Unhandled -- rs(%1) rating(%2:%3)")
+		    .arg(rating_system).arg(tv_rating).arg(movie_rating));
         }
     }
 #if 0

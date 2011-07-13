@@ -4,14 +4,13 @@
 #include <cerrno>
 #include <cstring>
 
-#include <pthread.h>
 #include <fcntl.h>
 #include <unistd.h>
 #ifndef USING_MINGW
 #include <sys/select.h>
 #endif
 
-#include "mythverbose.h"
+#include "mythlogging.h"
 #include "mythdbcon.h"
 #include "hdhrsignalmonitor.h"
 #include "atscstreamdata.h"
@@ -90,7 +89,7 @@ HDHRChannel *HDHRSignalMonitor::GetHDHRChannel(void)
  */
 void HDHRSignalMonitor::UpdateValues(void)
 {
-    if (!monitor_thread.isRunning() || exit)
+    if (!running || exit)
         return;
 
     if (streamHandlerStarted)
@@ -104,9 +103,6 @@ void HDHRSignalMonitor::UpdateValues(void)
         update_done = true;
         return;
     }
-
-    if (!IsChannelTuned())
-        return;
 
     struct hdhomerun_tuner_status_t status;
     streamHandler->GetTunerStatus(&status);

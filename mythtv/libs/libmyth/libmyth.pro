@@ -29,13 +29,14 @@ HEADERS += settings.h
 HEADERS += uilistbtntype.h uitypes.h
 HEADERS += volumebase.h visual.h xmlparse.h
 HEADERS += storagegroupeditor.h
-HEADERS += mythcommandlineparser.h mythterminal.h
-HEADERS += remoteutil.h           filesysteminfo.h
+HEADERS += mythterminal.h
+HEADERS += remoteutil.h
 HEADERS += rawsettingseditor.h    hardwareprofile.h
 HEADERS += programinfo.h          programinfoupdater.h
 HEADERS += programtypes.h         recordingtypes.h
 HEADERS += mythrssmanager.h       netgrabbermanager.h
 HEADERS += rssparse.h             netutils.h
+HEADERS += filesysteminfo.h
 
 # remove when everything is switched to mythui
 HEADERS += virtualkeyboard_qt.h
@@ -58,13 +59,14 @@ SOURCES += output.cpp
 SOURCES += settings.cpp
 SOURCES += uilistbtntype.cpp uitypes.cpp
 SOURCES += storagegroupeditor.cpp
-SOURCES += mythcommandlineparser.cpp mythterminal.cpp
-SOURCES += remoteutil.cpp         filesysteminfo.cpp
+SOURCES += mythterminal.cpp
+SOURCES += remoteutil.cpp
 SOURCES += rawsettingseditor.cpp  hardwareprofile.cpp
 SOURCES += programinfo.cpp        programinfoupdater.cpp
 SOURCES += programtypes.cpp       recordingtypes.cpp
 SOURCES += mythrssmanager.cpp     netgrabbermanager.cpp
 SOURCES += rssparse.cpp           netutils.cpp
+SOURCES += filesysteminfo.cpp
 
 # remove when everything is switched to mythui
 SOURCES += virtualkeyboard_qt.cpp
@@ -86,6 +88,7 @@ LIBS += -L../libmythbase           -lmythbase-$${LIBVERSION}
 LIBS += -L../libmythui           -lmythui-$${LIBVERSION}
 LIBS += -L../libmythupnp         -lmythupnp-$${LIBVERSION}
 LIBS += -L../libmythfreesurround -lmythfreesurround-$${LIBVERSION}
+LIBS += -L../libmythservicecontracts -lmythservicecontracts-$${LIBVERSION}
 LIBS += -L../../external/FFmpeg/libavcodec -lmythavcodec
 LIBS += -L../../external/FFmpeg/libavutil  -lmythavutil
 LIBS += -L../../external/FFmpeg/libavformat  -lmythavformat
@@ -109,7 +112,7 @@ inc.files += visual.h volumebase.h output.h langsettings.h
 inc.files += mythexp.h mythpluginapi.h storagegroupeditor.h
 inc.files += mythconfigdialogs.h mythconfiggroups.h
 inc.files += mythterminal.h
-inc.files += remoteutil.h
+inc.files += remoteutil.h         filesysteminfo.h
 inc.files += programinfo.h        hardwareprofile.h
 inc.files += programtypes.h       recordingtypes.h
 inc.files += mythrssmanager.h     netgrabbermanager.h
@@ -142,6 +145,7 @@ using_pulse {
 unix:!cygwin {
     SOURCES += mediamonitor-unix.cpp
     HEADERS += mediamonitor-unix.h
+    using_qtdbus: CONFIG += qdbus
 }
 
 linux:DEFINES += linux
@@ -175,7 +179,7 @@ macx {
     }
 
     # Mac OS X Frameworks
-    FWKS = ApplicationServices AudioUnit Carbon CoreAudio IOKit
+    FWKS = ApplicationServices AudioUnit AudioToolbox Carbon CoreAudio IOKit
 
     darwin_da : FWKS += DiskArbitration
 

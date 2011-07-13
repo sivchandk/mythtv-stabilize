@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include <cstdlib>
 #include "compat.h"
 
 #ifdef linux
@@ -21,7 +22,6 @@ using namespace std;
 #include <QString>
 #include <QStringList>
 
-#include "decodeencode.h"
 #include "filesysteminfo.h"
 #include "mythcoreutil.h"
 
@@ -33,7 +33,7 @@ using namespace std;
 // for deserialization
 #define NEXT_STR()        do { if (it == listend)                    \
                                {                                     \
-                                   VERBOSE(VB_IMPORTANT, listerror); \
+                                   LOG(VB_GENERAL, LOG_ALERT, listerror); \
                                    clear();                          \
                                    return false;                     \
                                }                                     \
@@ -195,10 +195,15 @@ void FileSystemInfo::Consolidate(QList<FileSystemInfo> &disks,
 
             int bSize = max(32, max(it1->getBlockSize(), it2->getBlockSize())
                                         / 1024);
-            if (absLongLong(it1->getTotalSpace() -
-                            it2->getTotalSpace()) <= bSize &&
-                (size_t)absLongLong(it1->getUsedSpace() -
-                                    it2->getUsedSpace()) <= fuzz)
+            long long diffSize = it1->getTotalSpace() - it2->getTotalSpace();
+            long long diffUsed = it1->getUsedSpace() - it2->getUsedSpace();
+
+            if (diffSize < 0)
+                diffSize = 0 - diffSize;
+            if (diffUsed < 0)
+                diffUsed = 0 - diffUsed;
+
+            if ((diffSize <= bSize) && ((size_t)diffUsed <= fuzz))
             {
                 it2->setFSysID(it1->getFSysID());
 

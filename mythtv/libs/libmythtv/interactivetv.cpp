@@ -3,9 +3,6 @@
  * engine and the rest of Myth.
  */
 
-// POSIX header
-#include <pthread.h>
-
 // Qt headers
 #include <QString>
 #include <QImage>
@@ -13,7 +10,7 @@
 // MythTV headers
 #include "interactivetv.h"
 #include "mhi.h"
-#include "mythverbose.h"
+#include "mythlogging.h"
 
 InteractiveTV::InteractiveTV(MythPlayer *nvp)
     : m_context(new MHIContext(this)), m_nvp(nvp)

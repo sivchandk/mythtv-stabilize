@@ -30,6 +30,7 @@ HEADERS += datacontracts/videoSourceList.h       datacontracts/videoMultiplex.h
 HEADERS += datacontracts/videoMultiplexList.h    datacontracts/videoMetadataInfo.h
 HEADERS += datacontracts/videoMetadataInfoList.h datacontracts/blurayInfo.h
 HEADERS += datacontracts/jobCommandList.h        datacontracts/jobCommandAndHost.h
+HEADERS += datacontracts/timeZoneInfo.h
 
 SOURCES += service.cpp
 
@@ -60,11 +61,11 @@ incDatacontracts.files += datacontracts/videoMultiplex.h      datacontracts/vide
 incDatacontracts.files += datacontracts/videoMetadataInfo.h   datacontracts/videoMetadataInfoList.h
 incDatacontracts.files += datacontracts/jobCommandList.h      datacontracts/jobCommandAndHost.h
 incDatacontracts.files += datacontracts/blurayInfo.h
+incDatacontracts.files += datacontracts/timeZoneInfo.h
 
 INSTALLS += inc incServices incDatacontracts
 
 macx {
-
     QMAKE_LFLAGS_SHLIB += -flat_namespace
 }
 

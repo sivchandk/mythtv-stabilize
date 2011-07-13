@@ -1,96 +1,180 @@
 #include <sys/time.h>
-#include <unistd.h>
 #include <cstdlib>
-#include <cstring>
-#include <cstdio>
 #include <cmath>
 
+#include "mythlogging.h"
 #include "jitterometer.h"
 
-Jitterometer::Jitterometer(const char *nname, int ncycles) :
-    count(0), num_cycles(ncycles), starttime_valid(0)
+#define UNIX_PROC_STAT "/proc/stat"
+#define MAX_CORES 8
+
+Jitterometer::Jitterometer(QString nname, int ncycles)
+  : count(0), num_cycles(ncycles), starttime_valid(0), last_fps(0),
+    last_sd(0), name(nname), cpustat(NULL), laststats(NULL)
 {
-    times = (unsigned*) malloc(ncycles * sizeof(unsigned));
+    times = (unsigned*) malloc(num_cycles * sizeof(unsigned));
     memset(&starttime, 0, sizeof(struct timeval));
 
-    if (nname)
-        name = strdup(nname);
-    else
-        name = strdup("jitterometer");
+    if (name.isEmpty())
+        name = "Jitterometer";
+
+#ifdef __linux__
+    if (QFile::exists(UNIX_PROC_STAT))
+    {
+        cpustat = new QFile(UNIX_PROC_STAT);
+        if (cpustat)
+        {
+            if (!cpustat->open(QIODevice::ReadOnly))
+            {
+                delete cpustat;
+                cpustat = NULL;
+            }
+            else
+            {
+                laststats = new unsigned long long[MAX_CORES * 9];
+            }
+        }
+    }
+#endif
 }
 
 Jitterometer::~Jitterometer()
 {
-  free(times);
-  free(name);
+    if (cpustat)
+        cpustat->close();
+    delete cpustat;
+    delete [] laststats;
+
+    free(times);
+}
+
+void Jitterometer::SetNumCycles(int cycles)
+{
+    num_cycles = cycles;
+    times = (unsigned*) realloc(times, num_cycles * sizeof(unsigned));
 }
 
 bool Jitterometer::RecordCycleTime()
 {
-  bool ret = RecordEndTime();
-  RecordStartTime();
-
-  return ret;
+    if (!num_cycles)
+        return false;
+    bool ret = RecordEndTime();
+    RecordStartTime();
+    return ret;
 }
 
 bool Jitterometer::RecordEndTime()
 {
-  struct timeval timenow;
+    if (!num_cycles)
+        return false;
 
-  gettimeofday(&timenow, NULL);
+    int cycles = num_cycles;
+    struct timeval timenow;
+    gettimeofday(&timenow, NULL);
 
-  if (starttime_valid)
+    if (starttime_valid)
     {
-      times[count] =
-        (timenow.tv_sec  - starttime.tv_sec ) * 1000000 +
-        (timenow.tv_usec - starttime.tv_usec) ;
-
-      //printf("recorded timediff '%d'\n", times[count]);
-
-      count++;
+        times[count] = (timenow.tv_sec  - starttime.tv_sec ) * 1000000 +
+                       (timenow.tv_usec - starttime.tv_usec) ;
+        count++;
     }
 
-  starttime_valid = 0;
+    starttime_valid = 0;
 
-  if (count==num_cycles)
+    if (count >= cycles)
     {
-      /* compute and display stuff, reset count to -1  */
+        /* compute and display stuff, reset count to -1  */
+        double mean = 0, sum_of_squared_deviations=0;
+        double standard_deviation;
+        double tottime = 0;
+        int i;
 
-      double mean = 0, sum_of_squared_deviations=0;
-      double standard_deviation;
-      double fps = 0, tottime = 0;
-      int i;
+        /* compute the mean */
+        for(i = 0; i < cycles; i++)
+            mean += times[i];
 
-      /* compute the mean */
-      for(i=0; i<num_cycles; i++)
-        {
-          mean += times[i];
-        }
-      tottime = mean;
-      mean /= num_cycles;
+        tottime = mean;
+        mean /= cycles;
 
-      fps = num_cycles / tottime * 1000000;
+        if (tottime > 0)
+            last_fps = cycles / tottime * 1000000;
 
-      /* compute the sum of the squares of each deviation from the mean */
-      for(i=0; i<num_cycles;i++)
-        {
-          sum_of_squared_deviations += (mean - times[i]) * (mean - times[i]);
-        }
+        /* compute the sum of the squares of each deviation from the mean */
+        for(i = 0; i < cycles; i++)
+            sum_of_squared_deviations += (mean - times[i]) * (mean - times[i]);
 
-      /* compute standard deviation */
-      standard_deviation = sqrt(sum_of_squared_deviations / (num_cycles - 1));
+        /* compute standard deviation */
+        standard_deviation = sqrt(sum_of_squared_deviations / (cycles - 1));
+        if (mean > 0)
+            last_sd = standard_deviation / mean;
 
-      printf("'%s' mean = '%.2f', std. dev. = '%.2f', fps = '%.2f'\n", name, mean, standard_deviation, fps);
+        /* retrieve load if available */
+        QString extra;
+        lastcpustats = GetCPUStat();
+        if (!lastcpustats.isEmpty())
+            extra = QString("CPUs: ") + lastcpustats;
 
-      count = 0;
+        VERBOSE(VB_PLAYBACK, name + QString("Mean: %1 Std.Dev: %2 fps: %3 ")
+            .arg((int)mean).arg((int)standard_deviation)
+            .arg(last_fps, 0, 'f', 2) + extra);
 
-      return true;
+        count = 0;
+        return true;
     }
     return false;
 }
 
 void Jitterometer::RecordStartTime()
 {
-  gettimeofday(&starttime, NULL);
-  starttime_valid = 1;
+    if (!num_cycles)
+        return;
+    gettimeofday(&starttime, NULL);
+    starttime_valid = 1;
+}
+
+QString Jitterometer::GetCPUStat(void)
+{
+    if (!cpustat)
+        return "N/A";
+
+#ifdef __linux__
+    QString res;
+    cpustat->seek(0);
+    cpustat->flush();
+
+    QByteArray line = cpustat->readLine(256);
+    if (line.isEmpty())
+        return res;
+
+    int cores = 0;
+    int ptr   = 0;
+    line = cpustat->readLine(256);
+    while (!line.isEmpty() && cores < MAX_CORES)
+    {
+        static const int size = sizeof(unsigned long long) * 9;
+        unsigned long long stats[9];
+        memset(stats, 0, size);
+        int num = 0;
+        if (sscanf(line.constData(),
+                   "cpu%d %llu %llu %llu %llu %llu %llu %llu %llu %llu %*s\n",
+                   &num, &stats[0], &stats[1], &stats[2], &stats[3],
+                   &stats[4], &stats[5], &stats[6], &stats[7], &stats[8]) >= 4)
+        {
+            float load  = stats[0] + stats[1] + stats[2] + stats[4] +
+                          stats[5] + stats[6] + stats[7] + stats[8] -
+                          laststats[ptr + 0] - laststats[ptr + 1] -
+                          laststats[ptr + 2] - laststats[ptr + 4] -
+                          laststats[ptr + 5] - laststats[ptr + 6] -
+                          laststats[ptr + 7] - laststats[ptr + 8];
+            float total = load + stats[3] - laststats[ptr + 3];
+            if (total > 0)
+                res += QString("%1% ").arg(load / total * 100, 0, 'f', 0);
+            memcpy(&laststats[ptr], stats, size);
+        }
+        line = cpustat->readLine(256);
+        cores++;
+        ptr += 9;
+    }
+    return res;
+#endif
 }

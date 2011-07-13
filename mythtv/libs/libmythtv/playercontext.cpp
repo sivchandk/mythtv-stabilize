@@ -16,23 +16,13 @@
 #include "storagegroup.h"
 #include "mythcorecontext.h"
 #include "videometadatautil.h"
+#include "mythlogging.h"
 
 #define LOC QString("playCtx: ")
 #define LOC_ERR QString("playCtx, Error: ")
 
 const uint PlayerContext::kSMExitTimeout     = 2000;
 const uint PlayerContext::kMaxChannelHistory = 30;
-
-void PlayerThread::run(void)
-{
-    if (!m_player)
-        return;
-
-    VERBOSE(VB_PLAYBACK, QString("PiP thread starting"));
-    m_player->StartPlaying();
-    exec();
-    VERBOSE(VB_PLAYBACK, QString("PiP thread finishing"));
-}
 
 PlayerContext::PlayerContext(const QString &inUseID) :
     recUsage(inUseID), player(NULL), playerUnsafe(false), recorder(NULL),
@@ -54,9 +44,7 @@ PlayerContext::PlayerContext(const QString &inUseID) :
     stateLock(QMutex::Recursive),
     // pip
     pipState(kPIPOff), pipRect(0,0,0,0), parentWidget(NULL), pipLocation(0),
-    useNullVideo(false), playerNeedsThread(false), playerThread(NULL),
-    // embedding
-    embedWinID(0), embedBounds(0,0,0,0)
+    useNullVideo(false)
 {
     lastSignalMsgTime.start();
     lastSignalMsgTime.addMSecs(-2 * kSMExitTimeout);
@@ -80,7 +68,6 @@ void PlayerContext::TeardownPlayer(void)
     SetRingBuffer(NULL);
     SetTVChain(NULL);
     SetPlayingInfo(NULL);
-    DeletePlayerThread();
 }
 
 /**
@@ -136,7 +123,7 @@ bool PlayerContext::IsPIPSupported(void) const
     QMutexLocker locker(&deletePlayerLock);
     if (player)
     {
-        const VideoOutput *vid = player->getVideoOutput();
+        const VideoOutput *vid = player->GetVideoOutput();
         if (vid)
             supported = vid->IsPIPSupported();
     }
@@ -154,7 +141,7 @@ bool PlayerContext::IsPBPSupported(void) const
     QMutexLocker locker(&deletePlayerLock);
     if (player)
     {
-        const VideoOutput *vid = player->getVideoOutput();
+        const VideoOutput *vid = player->GetVideoOutput();
         if (vid)
             supported = vid->IsPBPSupported();
     }
@@ -213,13 +200,12 @@ QRect PlayerContext::GetStandAlonePIPRect(void)
 bool PlayerContext::StartPIPPlayer(TV *tv, TVState desiredState)
 {
     bool ok = false;
-    playerNeedsThread = true;
 
     if (!useNullVideo && parentWidget)
     {
         const QRect rect = QRect(pipRect);
         ok = CreatePlayer(tv, parentWidget, desiredState,
-                          parentWidget->winId(), &rect);
+                          true, rect);
     }
 
     if (useNullVideo || !ok)
@@ -227,10 +213,9 @@ bool PlayerContext::StartPIPPlayer(TV *tv, TVState desiredState)
         SetPlayer(NULL);
         useNullVideo = true;
         ok = CreatePlayer(tv, NULL, desiredState,
-                          0, NULL);
+                          false);
     }
 
-    playerNeedsThread = false;
     return ok;
 }
 
@@ -274,8 +259,8 @@ void PlayerContext::ResizePIPWindow(const QRect &rect)
         tmpRect = QRect(rect);
 
     LockDeletePlayer(__FILE__, __LINE__);
-    if (player && player->getVideoOutput())
-        player->getVideoOutput()->ResizeDisplayWindow(tmpRect, false);
+    if (player && player->GetVideoOutput())
+        player->GetVideoOutput()->ResizeDisplayWindow(tmpRect, false);
     UnlockDeletePlayer(__FILE__, __LINE__);
 
     pipRect = QRect(rect);
@@ -283,21 +268,15 @@ void PlayerContext::ResizePIPWindow(const QRect &rect)
 
 bool PlayerContext::StartEmbedding(WId wid, const QRect &embedRect)
 {
-    embedWinID = 0;
-
+    bool ret = false;
     LockDeletePlayer(__FILE__, __LINE__);
     if (player)
     {
-        embedWinID = wid;
-        embedBounds = embedRect;
-        player->EmbedInWidget(
-            embedRect.topLeft().x(), embedRect.topLeft().y(),
-            embedRect.width(),       embedRect.height(),
-            embedWinID);
+        ret = true;
+        player->EmbedInWidget(embedRect);
     }
     UnlockDeletePlayer(__FILE__, __LINE__);
-
-    return embedWinID;
+    return ret;
 }
 
 bool PlayerContext::IsEmbedding(void) const
@@ -312,8 +291,6 @@ bool PlayerContext::IsEmbedding(void) const
 
 void PlayerContext::StopEmbedding(void)
 {
-    embedWinID = 0;
-
     LockDeletePlayer(__FILE__, __LINE__);
     if (player)
         player->StopEmbedding();
@@ -395,7 +372,7 @@ bool PlayerContext::IsRecorderErrored(void) const
 
 bool PlayerContext::CreatePlayer(TV *tv, QWidget *widget,
                                  TVState desiredState,
-                                 WId embedwinid, const QRect *embedbounds,
+                                 bool embed, const QRect &embedbounds,
                                  bool muted)
 {
     int exact_seeking = gCoreContext->GetNumSetting("ExactSeeking", 0);
@@ -444,12 +421,8 @@ bool PlayerContext::CreatePlayer(TV *tv, QWidget *widget,
             player->GetSubReader()->LoadExternalSubtitles(subfn);
     }
 
-    if ((embedwinid > 0) && embedbounds)
-    {
-        player->EmbedInWidget(
-            embedbounds->x(), embedbounds->y(),
-            embedbounds->width(), embedbounds->height(), embedwinid);
-    }
+    if (embed && !embedbounds.isNull())
+        player->EmbedInWidget(embedbounds);
 
     bool isWatchingRecording = (desiredState == kState_WatchingRecording);
     player->SetWatchingRecording(isWatchingRecording);
@@ -479,17 +452,7 @@ bool PlayerContext::StartPlaying(int maxWait)
     if (!player)
         return false;
 
-    DeletePlayerThread();
-    if (playerNeedsThread)
-    {
-        playerThread = new PlayerThread(player);
-        if (playerThread)
-            playerThread->start();
-    }
-    else
-    {
-        player->StartPlaying();
-    }
+    player->StartPlaying();
 
     maxWait = (maxWait <= 0) ? 20000 : maxWait;
 #ifdef USING_VALGRIND
@@ -503,8 +466,8 @@ bool PlayerContext::StartPlaying(int maxWait)
 
     if (player->IsPlaying())
     {
-        VERBOSE(VB_PLAYBACK, LOC + "StartPlaying(): took "<<t.elapsed()
-                <<" ms to start player.");
+        VERBOSE(VB_PLAYBACK, LOC + QString("StartPlaying(): took %1"
+                " ms to start player.").arg(t.elapsed()));
         return true;
     }
     else
@@ -518,20 +481,8 @@ bool PlayerContext::StartPlaying(int maxWait)
 
 void PlayerContext::StopPlaying(void)
 {
-    DeletePlayerThread();
     if (player)
         player->StopPlaying();
-}
-
-void PlayerContext::DeletePlayerThread(void)
-{
-    if (playerThread)
-    {
-        playerThread->exit();
-        playerThread->wait();
-        delete playerThread;
-        playerThread = NULL;
-    }
 }
 
 void PlayerContext::UpdateTVChain(void)

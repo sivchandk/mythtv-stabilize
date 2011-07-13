@@ -6,10 +6,6 @@
 #include <fcntl.h>
 #include <libgen.h>
 #include <signal.h>
-#ifndef _WIN32
-#include <pwd.h>
-#include <grp.h>
-#endif
 
 #include "mythconfig.h"
 #if CONFIG_DARWIN
@@ -37,7 +33,6 @@
 #include "housekeeper.h"
 
 #include "mythcontext.h"
-#include "mythverbose.h"
 #include "mythversion.h"
 #include "mythdb.h"
 #include "exitcodes.h"
@@ -46,7 +41,7 @@
 #include "programinfo.h"
 #include "dbcheck.h"
 #include "previewgenerator.h"
-#include "mythcommandlineparser.h"
+#include "commandlineparser.h"
 #include "mythsystemevent.h"
 #include "main_helpers.h"
 #include "backendcontext.h"
@@ -56,6 +51,7 @@
 
 #include "mediaserver.h"
 #include "httpstatus.h"
+#include "mythlogging.h"
 
 #define LOC      QString("MythBackend: ")
 #define LOC_WARN QString("MythBackend, Warning: ")
@@ -141,12 +137,9 @@ bool setupTVs(bool ismaster, bool &error)
 
         if (host.isEmpty())
         {
-            QString msg = cidmsg + " does not have a hostname defined.\n"
-                "Please run setup and confirm all of the capture cards.\n";
-
-            VERBOSE(VB_IMPORTANT, msg);
-            gCoreContext->LogEntry("mythbackend", LP_CRITICAL,
-                               "Problem with capture cards", msg);
+            VERBOSE(VB_IMPORTANT, cidmsg +
+                    " does not have a hostname defined.\n"
+                    "Please run setup and confirm all of the capture cards.\n");
             continue;
         }
 
@@ -178,9 +171,8 @@ bool setupTVs(bool ismaster, bool &error)
                 }
                 else
                 {
-                    gCoreContext->LogEntry("mythbackend", LP_CRITICAL,
-                                       "Problem with capture cards",
-                                       cidmsg + " failed init");
+                    VERBOSE(VB_IMPORTANT, "Problem with capture cards. " +
+                            cidmsg + " failed init");
                     delete tv;
                     // The master assumes card comes up so we need to
                     // set error and exit if a non-master card fails.
@@ -200,9 +192,8 @@ bool setupTVs(bool ismaster, bool &error)
                 }
                 else
                 {
-                    gCoreContext->LogEntry("mythbackend", LP_CRITICAL,
-                                       "Problem with capture cards",
-                                       cidmsg + "failed init");
+                    VERBOSE(VB_IMPORTANT, "Problem with capture cards" +
+                            cidmsg + "failed init");
                     delete tv;
                 }
             }
@@ -218,23 +209,27 @@ bool setupTVs(bool ismaster, bool &error)
     {
         VERBOSE(VB_IMPORTANT, LOC_WARN +
                 "No valid capture cards are defined in the database.");
-
-        gCoreContext->LogEntry("mythbackend", LP_WARNING,
-                           "No capture cards are defined",
-                           "This backend will not be used for recording.");
     }
 
     return true;
 }
 
-bool setup_context(const MythCommandLineParser &cmdline)
+bool setup_context(MythBackendCommandLineParser &cmdline)
 {
     if (!gContext->Init(false))
     {
         VERBOSE(VB_IMPORTANT, "Failed to init MythContext.");
         return false;
     }
-    gCoreContext->SetBackend(!cmdline.HasBackendCommand());
+
+    if (cmdline.toBool("event")         || cmdline.toBool("systemevent") ||
+        cmdline.toBool("setverbose")    || cmdline.toBool("printsched") ||
+        cmdline.toBool("testsched")     || cmdline.toBool("resched") ||
+        cmdline.toBool("scanvideos")    || cmdline.toBool("clearcache") ||
+        cmdline.toBool("printexpire"))
+            gCoreContext->SetBackend(false);
+    else
+        gCoreContext->SetBackend(true);
 
     QMap<QString,QString> settingsOverride = cmdline.GetSettingsOverride();
     if (settingsOverride.size())
@@ -253,6 +248,11 @@ bool setup_context(const MythCommandLineParser &cmdline)
 
 void cleanup(void)
 {
+    signal(SIGTERM, SIG_DFL);
+#ifndef _MSC_VER
+    signal(SIGUSR1, SIG_DFL);
+#endif
+
     delete sched;
     sched = NULL;
 
@@ -267,48 +267,9 @@ void cleanup(void)
         unlink(pidfile.toAscii().constData());
         pidfile.clear();
     }
-
-    signal(SIGHUP, SIG_DFL);
-
-#ifndef _MSC_VER
-    signal(SIGUSR1, SIG_DFL);
-#endif
 }
 
-int log_rotate(int report_error)
-{
-    /* http://www.gossamer-threads.com/lists/mythtv/dev/110113 */
-
-    int new_logfd = open(logfile.toLocal8Bit().constData(),
-                         O_WRONLY|O_CREAT|O_APPEND|O_SYNC, 0664);
-    if (new_logfd < 0)
-    {
-        // If we can't open the new logfile, send data to /dev/null
-        if (report_error)
-        {
-            VERBOSE(VB_IMPORTANT, LOC_ERR +
-                    QString("Cannot open logfile '%1'").arg(logfile));
-            return -1;
-        }
-        new_logfd = open("/dev/null", O_WRONLY);
-        if (new_logfd < 0)
-        {
-            // There's not much we can do, so punt.
-            return -1;
-        }
-    }
-    while (dup2(new_logfd, 1) < 0 && errno == EINTR) ;
-    while (dup2(new_logfd, 2) < 0 && errno == EINTR) ;
-    while (close(new_logfd) < 0 && errno == EINTR) ;
-    return 0;
-}
-
-void log_rotate_handler(int)
-{
-    log_rotate(0);
-}
-
-void showUsage(const MythCommandLineParser &cmdlineparser, const QString &version)
+void showUsage(const MythBackendCommandLineParser &cmdlineparser, const QString &version)
 {
     QString    help  = cmdlineparser.GetHelpString(false);
     QByteArray ahelp = help.toLocal8Bit();
@@ -319,124 +280,33 @@ void showUsage(const MythCommandLineParser &cmdlineparser, const QString &versio
          << endl << ahelp.constData() << endl;
 }
 
-void setupLogfile(void)
+int handle_command(const MythBackendCommandLineParser &cmdline)
 {
-    if (!logfile.isEmpty())
-    {
-        if (log_rotate(1) < 0)
-        {
-            VERBOSE(VB_IMPORTANT, LOC_WARN +
-                    "Cannot open logfile; using stdout/stderr instead");
-        }
-        else
-            signal(SIGHUP, &log_rotate_handler);
-    }
-}
+    QString eventString;
 
-bool openPidfile(ofstream &pidfs, const QString &pidfile)
-{
-    if (!pidfile.isEmpty())
-    {
-        pidfs.open(pidfile.toAscii().constData());
-        if (!pidfs)
-        {
-            VERBOSE(VB_IMPORTANT, LOC_ERR +
-                    "Could not open pid file" + ENO);
-            return false;
-        }
-    }
-    return true;
-}
+    if (cmdline.toBool("event"))
+        eventString = cmdline.toString("event");
+    else if (cmdline.toBool("systemevent"))
+        eventString = "SYSTEM_EVENT " +
+                      cmdline.toString("systemevent") +
+                      QString(" SENDER %1").arg(gCoreContext->GetHostName());
 
-bool setUser(const QString &username)
-{
-    if (username.isEmpty())
-        return true;
-
-#ifdef _WIN32
-    VERBOSE(VB_IMPORTANT, "--user option is not supported on Windows");
-    return false;
-#else // ! _WIN32
-    struct passwd *user_info = getpwnam(username.toLocal8Bit().constData());
-    const uid_t user_id = geteuid();
-
-    if (user_id && (!user_info || user_id != user_info->pw_uid))
-    {
-        VERBOSE(VB_IMPORTANT,
-                "You must be running as root to use the --user switch.");
-        return false;
-    }
-    else if (user_info && user_id == user_info->pw_uid)
-    {
-        VERBOSE(VB_IMPORTANT,
-                QString("Already running as '%1'").arg(username));
-    }
-    else if (!user_id && user_info)
-    {
-        if (setenv("HOME", user_info->pw_dir,1) == -1)
-        {
-            VERBOSE(VB_IMPORTANT, "Error setting home directory.");
-            return false;
-        }
-        if (setgid(user_info->pw_gid) == -1)
-        {
-            VERBOSE(VB_IMPORTANT, "Error setting effective group.");
-            return false;
-        }
-        if (initgroups(user_info->pw_name, user_info->pw_gid) == -1)
-        {
-            VERBOSE(VB_IMPORTANT, "Error setting groups.");
-            return false;
-        }
-        if (setuid(user_info->pw_uid) == -1)
-        {
-            VERBOSE(VB_IMPORTANT, "Error setting effective user.");
-            return false;
-        }
-    }
-    else
-    {
-        VERBOSE(VB_IMPORTANT,
-                QString("Invalid user '%1' specified with --user")
-                .arg(username));
-        return false;
-    }
-    return true;
-#endif // ! _WIN32
-}
-
-int handle_command(const MythCommandLineParser &cmdline)
-{
-    QString eventString = cmdline.GetEventString();
     if (!eventString.isEmpty())
     {
         if (gCoreContext->ConnectToMasterServer())
         {
-            if (eventString.startsWith("SYSTEM_EVENT"))
-            {
-                eventString += QString(" SENDER %1")
-                    .arg(gCoreContext->GetHostName());
-            }
-
             RemoteSendMessage(eventString);
             return GENERIC_EXIT_OK;
         }
         return GENERIC_EXIT_NO_MYTHCONTEXT;
     }
 
-    if (cmdline.WantUPnPRebuild())
-    {
-        VERBOSE(VB_GENERAL, "Rebuilding UPNP Media Map is no longer supported.  Rescan videos using MythVideo.");
-
-        return GENERIC_EXIT_OK;
-    }
-
-    if (cmdline.SetVerbose())
+    if (cmdline.toBool("setverbose"))
     {
         if (gCoreContext->ConnectToMasterServer())
         {
             QString message = "SET_VERBOSE ";
-            message += cmdline.GetNewVerbose();
+            message += cmdline.toString("setverbose");
 
             RemoteSendMessage(message);
             VERBOSE(VB_IMPORTANT, QString("Sent '%1' message").arg(message));
@@ -450,7 +320,7 @@ int handle_command(const MythCommandLineParser &cmdline)
         }
     }
 
-    if (cmdline.ClearSettingsCache())
+    if (cmdline.toBool("clearcache"))
     {
         if (gCoreContext->ConnectToMasterServer())
         {
@@ -466,11 +336,11 @@ int handle_command(const MythCommandLineParser &cmdline)
         }
     }
 
-    if (cmdline.IsPrintScheduleEnabled() ||
-        cmdline.IsTestSchedulerEnabled())
+    if (cmdline.toBool("printsched") ||
+        cmdline.toBool("testsched"))
     {
         sched = new Scheduler(false, &tvList);
-        if (!cmdline.IsTestSchedulerEnabled() &&
+        if (!cmdline.toBool("testsched") &&
             gCoreContext->ConnectToMasterServer())
         {
             cout << "Retrieving Schedule from Master backend.\n";
@@ -484,12 +354,12 @@ int handle_command(const MythCommandLineParser &cmdline)
             sched->FillRecordListFromDB();
         }
 
-        print_verbose_messages |= VB_SCHEDULE;
+        verboseMask |= VB_SCHEDULE;
         sched->PrintList(true);
         return GENERIC_EXIT_OK;
     }
 
-    if (cmdline.Reschedule())
+    if (cmdline.toBool("resched"))
     {
         bool ok = false;
         if (gCoreContext->ConnectToMasterServer())
@@ -504,7 +374,7 @@ int handle_command(const MythCommandLineParser &cmdline)
         return (ok) ? GENERIC_EXIT_OK : GENERIC_EXIT_CONNECT_ERROR;
     }
 
-    if (cmdline.ScanVideos())
+    if (cmdline.toBool("scanvideos"))
     {
         bool ok = false;
         if (gCoreContext->ConnectToMasterServer())
@@ -519,10 +389,10 @@ int handle_command(const MythCommandLineParser &cmdline)
         return (ok) ? GENERIC_EXIT_OK : GENERIC_EXIT_CONNECT_ERROR;
     }
 
-    if (!cmdline.GetPrintExpire().isEmpty())
+    if (!cmdline.toBool("printexpire"))
     {
         expirer = new AutoExpire();
-        expirer->PrintExpireList(cmdline.GetPrintExpire());
+        expirer->PrintExpireList(cmdline.toString("printexpire"));
         return GENERIC_EXIT_OK;
     }
 
@@ -605,55 +475,28 @@ int connect_to_master(void)
     return GENERIC_EXIT_OK;
 }
 
-int setup_basics(const MythCommandLineParser &cmdline)
+
+void print_warnings(const MythBackendCommandLineParser &cmdline)
 {
-    ofstream pidfs;
-    if (!openPidfile(pidfs, cmdline.GetPIDFilename()))
-        return GENERIC_EXIT_PERMISSIONS_ERROR;
-
-    if (signal(SIGPIPE, SIG_IGN) == SIG_ERR)
-        VERBOSE(VB_IMPORTANT, LOC_WARN + "Unable to ignore SIGPIPE");
-
-    if (cmdline.IsDaemonizeEnabled() && (daemon(0, 1) < 0))
-    {
-        VERBOSE(VB_IMPORTANT, LOC_ERR + "Failed to daemonize" + ENO);
-        return GENERIC_EXIT_DAEMONIZING_ERROR;
-    }
-
-    QString username = cmdline.GetUsername();
-    if (!username.isEmpty() && !setUser(username))
-        return GENERIC_EXIT_PERMISSIONS_ERROR;
-
-    if (pidfs)
-    {
-        pidfs << getpid() << endl;
-        pidfs.close();
-    }
-
-    return GENERIC_EXIT_OK;
-}
-
-void print_warnings(const MythCommandLineParser &cmdline)
-{
-    if (!cmdline.IsHouseKeeperEnabled())
+    if (cmdline.toBool("nohousekeeper"))
     {
         VERBOSE(VB_IMPORTANT, LOC_WARN +
                 "****** The Housekeeper has been DISABLED with "
                 "the --nohousekeeper option ******");
     }
-    if (!cmdline.IsSchedulerEnabled())
+    if (cmdline.toBool("nosched"))
     {
         VERBOSE(VB_IMPORTANT, LOC_WARN +
                 "********** The Scheduler has been DISABLED with "
                 "the --nosched option **********");
     }
-    if (!cmdline.IsAutoExpirerEnabled())
+    if (cmdline.toBool("noautoexpire"))
     {
         VERBOSE(VB_IMPORTANT, LOC_WARN +
                 "********* Auto-Expire has been DISABLED with "
                 "the --noautoexpire option ********");
     }
-    if (!cmdline.IsJobQueueEnabled())
+    if (cmdline.toBool("nojobqueue"))
     {
         VERBOSE(VB_IMPORTANT, LOC_WARN +
                 "********* The JobQueue has been DISABLED with "
@@ -661,7 +504,7 @@ void print_warnings(const MythCommandLineParser &cmdline)
     }
 }
 
-int run_backend(const MythCommandLineParser &cmdline)
+int run_backend(MythBackendCommandLineParser &cmdline)
 {
     if (!setup_context(cmdline))
         return GENERIC_EXIT_NO_MYTHCONTEXT;
@@ -698,14 +541,10 @@ int run_backend(const MythCommandLineParser &cmdline)
     if (ismaster)
     {
         VERBOSE(VB_GENERAL, LOC + "Starting up as the master server.");
-        gCoreContext->LogEntry("mythbackend", LP_INFO,
-                           "MythBackend started as master server", "");
     }
     else
     {
         VERBOSE(VB_GENERAL, LOC + "Running as a slave backend.");
-        gCoreContext->LogEntry("mythbackend", LP_INFO,
-                           "MythBackend started as a slave backend", "");
     }
 
     print_warnings(cmdline);
@@ -730,15 +569,14 @@ int run_backend(const MythCommandLineParser &cmdline)
                 return err;
 
             sched->SetFileServer(fileServer);
-
-            if (!cmdline.IsSchedulerEnabled())
+            if (cmdline.toBool("nosched"))
                 sched->DisableScheduling();
         }
 
-        if (cmdline.IsHouseKeeperEnabled())
+        if (!cmdline.toBool("nohousekeeper"))
             housekeeping = new HouseKeeper(true, ismaster, sched);
 
-        if (cmdline.IsAutoExpirerEnabled())
+        if (!cmdline.toBool("noautoexpire"))
         {
             expirer = new AutoExpire(&tvList);
             expirer->SetFileServer(fileServer);
@@ -746,7 +584,7 @@ int run_backend(const MythCommandLineParser &cmdline)
                 sched->SetExpirer(expirer);
         }
     }
-    else if (cmdline.IsHouseKeeperEnabled())
+    else if (!cmdline.toBool("nohousekeeper"))
     {
         housekeeping = new HouseKeeper(true, ismaster, NULL);
     }
@@ -759,7 +597,7 @@ int run_backend(const MythCommandLineParser &cmdline)
     {
         g_pUPnp = new MediaServer();
 
-        g_pUPnp->Init(ismaster, !cmdline.IsUPnPEnabled());
+        g_pUPnp->Init(ismaster, cmdline.toBool("noupnp"));
     }
 
     // ----------------------------------------------------------------------
@@ -822,7 +660,7 @@ int run_backend(const MythCommandLineParser &cmdline)
         qApp->processEvents();
     }
 
-    gCoreContext->LogEntry("mythbackend", LP_INFO, "MythBackend exiting", "");
+    VERBOSE(VB_GENERAL, "MythBackend exiting");
 
     delete sysEventHandler;
     delete socketManager;

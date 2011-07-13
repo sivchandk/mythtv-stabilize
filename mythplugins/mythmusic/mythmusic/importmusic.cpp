@@ -16,6 +16,7 @@
 #include "cdrip.h"
 #include "editmetadata.h"
 #include "musicplayer.h"
+#include "metaio.h"
 
 #include <mythdialogbox.h>
 #include <mythuitext.h>
@@ -26,6 +27,7 @@
 #include <mythuibuttonlist.h>
 #include <mythprogressdialog.h>
 #include <mythuifilebrowser.h>
+#include "mythlogging.h"
 
 static bool copyFile(const QString &src, const QString &dst)
 {
@@ -45,11 +47,11 @@ static bool copyFile(const QString &src, const QString &dst)
         return false;
     }
 
-    len = s.readBlock(buffer, bufferSize);
+    len = s.read(buffer, bufferSize);
     do
     {
-        d.writeBlock(buffer, len);
-        len = s.readBlock(buffer, bufferSize);
+        d.write(buffer, len);
+        len = s.read(buffer, bufferSize);
     } while (len > 0);
 
     s.close();
@@ -67,7 +69,9 @@ FileScannerThread::FileScannerThread(ImportMusicDialog *parent)
 
 void FileScannerThread::run()
 {
+    threadRegister("FileScanner");
     m_parent->doScan();
+    threadDeregister();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -342,7 +346,7 @@ void ImportMusicDialog::addPressed()
 
         // we need to manually copy the file extension
         QFileInfo fi(meta->Filename());
-        saveFilename += "." + fi.extension(false);
+        saveFilename += "." + fi.suffix();
 
         // copy the file to the new location
         if (!copyFile(meta->Filename(), saveFilename))
@@ -367,6 +371,16 @@ void ImportMusicDialog::addPressed()
 
         // update the database
         meta->dumpToDatabase();
+
+        // read any embedded images from the tag
+        MetaIO *tagger = meta->getTagger();
+        if (tagger && tagger->supportsEmbeddedImages())
+        {
+            AlbumArtList artList = tagger->getAlbumArtList(meta->Filename());
+            meta->setEmbeddedAlbumArt(artList);
+            meta->getAlbumArtImages()->dumpToDatabase();
+        }
+
         m_somethingWasImported = true;
 
         m_tracks->at(m_currentTrack)->isNewTune = Ripper::isNewTune(
@@ -689,11 +703,11 @@ void ImportMusicDialog::setTitleInitialCap(void)
         {
             if (bFoundCap == false)
             {
-                title[x] = title[x].upper();
+                title[x] = title[x].toUpper();
                 bFoundCap = true;
             }
             else
-                title[x] = title[x].lower();
+                title[x] = title[x].toLower();
         }
     }
 
@@ -717,11 +731,11 @@ void ImportMusicDialog::setTitleWordCaps(void)
             {
                 if (!bInWord)
                 {
-                    title[x] = title[x].upper();
+                    title[x] = title[x].toUpper();
                     bInWord = true;
                 }
                 else
-                    title[x] = title[x].lower();
+                    title[x] = title[x].toLower();
             }
         }
     }
@@ -740,7 +754,7 @@ void ImportMusicDialog::showImportCoverArtDialog(void)
     MythScreenStack *mainStack = GetMythMainWindow()->GetMainStack();
 
     ImportCoverArtDialog *import = new ImportCoverArtDialog(mainStack,
-                                        fi.dirPath(true),
+                                        fi.absolutePath(),
                                         m_tracks->at(m_currentTrack)->metadata);
 
     if (import->Create())
@@ -926,7 +940,7 @@ void ImportCoverArtDialog::scanDirectory()
         ++it;
         if (fi->fileName() == "." || fi->fileName() == "..")
             continue;
-        QString filename = fi->absFilePath();
+        QString filename = fi->absoluteFilePath();
         if (!fi->isDir())
         {
             m_filelist.append(filename);
@@ -951,22 +965,22 @@ void ImportCoverArtDialog::updateStatus()
 
         QString saveFilename = Ripper::filenameFromMetadata(m_metadata, false);
         QFileInfo fi(saveFilename);
-        QString saveDir = fi.dirPath(true);
+        QString saveDir = fi.absolutePath();
 
         fi.setFile(m_filelist[m_currentFile]);
         switch (m_typeList->GetItemCurrent()->GetData().toInt())
         {
             case 0:
-                saveFilename = "front." + fi.extension(false);
+                saveFilename = "front." + fi.suffix();
                 break;
             case 1:
-                saveFilename = "back." + fi.extension(false);
+                saveFilename = "back." + fi.suffix();
                 break;
             case 2:
-                saveFilename = "cd." + fi.extension(false);
+                saveFilename = "cd." + fi.suffix();
                 break;
             case 3:
-                saveFilename = "inlay." + fi.extension(false);
+                saveFilename = "inlay." + fi.suffix();
                 break;
             default:
                 saveFilename = fi.fileName();

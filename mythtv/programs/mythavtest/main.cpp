@@ -10,15 +10,15 @@ using namespace std;
 
 #include "tv_play.h"
 #include "programinfo.h"
-#include "mythcommandlineparser.h"
+#include "commandlineparser.h"
 
 #include "exitcodes.h"
 #include "mythcontext.h"
-#include "mythverbose.h"
 #include "mythversion.h"
 #include "mythdbcon.h"
 #include "compat.h"
 #include "dbcheck.h"
+#include "mythlogging.h"
 
 // libmythui
 #include "mythuihelper.h"
@@ -27,69 +27,45 @@ using namespace std;
 
 int main(int argc, char *argv[])
 {
-    bool cmdline_err;
-    MythCommandLineParser cmdline(
-        kCLPOverrideSettings     |
-        kCLPWindowed             |
-        kCLPNoWindowed           |
-#ifdef USING_X11
-        kCLPDisplay              |
-#endif // USING_X11
-        kCLPGeometry             |
-        kCLPVerbose              |
-        kCLPExtra                |
-        kCLPHelp);
-
-    print_verbose_messages |= VB_PLAYBACK | VB_LIBAV;
-
-    for (int argpos = 1; argpos < argc; ++argpos)
+    MythAVTestCommandLineParser cmdline;
+    if (!cmdline.Parse(argc, argv))
     {
-        if (cmdline.PreParse(argc, argv, argpos, cmdline_err))
-        {
-            if (cmdline_err)
-                return GENERIC_EXIT_INVALID_CMDLINE;
-            if (cmdline.WantsToExit())
-                return GENERIC_EXIT_OK;
-        }
+        cmdline.PrintHelp();
+        return GENERIC_EXIT_INVALID_CMDLINE;
+    }
+
+    if (cmdline.toBool("showhelp"))
+    {
+        cmdline.PrintHelp();
+        return GENERIC_EXIT_OK;
+    }
+
+    if (cmdline.toBool("showversion"))
+    {
+        cmdline.PrintVersion();
+        return GENERIC_EXIT_OK;
     }
 
     QApplication a(argc, argv);
-
     QCoreApplication::setApplicationName(MYTH_APPNAME_MYTHAVTEST);
 
-    int argpos = 1;
+    int retval;
+    if ((retval = cmdline.ConfigureLogging()) != GENERIC_EXIT_OK)
+        return retval;
+
+    if (!cmdline.toString("display").isEmpty())
+    {
+        MythUIHelper::SetX11Display(cmdline.toString("display"));
+    }
+
+    if (!cmdline.toString("geometry").isEmpty())
+    {
+        MythUIHelper::ParseGeometryOverride(cmdline.toString("geometry"));
+    }
+
     QString filename = "";
-
-    while (argpos < a.argc())
-    {
-        if (cmdline.Parse(a.argc(), a.argv(), argpos, cmdline_err))
-        {
-            if (cmdline_err)
-                return GENERIC_EXIT_INVALID_CMDLINE;
-            if (cmdline.WantsToExit())
-                return GENERIC_EXIT_OK;
-        }
-        else if (a.argv()[argpos][0] != '-')
-        {
-            filename = a.argv()[argpos];
-        }
-        else
-        {
-            return GENERIC_EXIT_INVALID_CMDLINE;
-        }
-
-        ++argpos;
-    }
-
-    if (!cmdline.GetDisplay().isEmpty())
-    {
-        MythUIHelper::SetX11Display(cmdline.GetDisplay());
-    }
-
-    if (!cmdline.GetGeometry().isEmpty())
-    {
-        MythUIHelper::ParseGeometryOverride(cmdline.GetGeometry());
-    }
+    if (cmdline.GetArgs().size() >= 1)
+        filename = cmdline.GetArgs()[0];
 
     gContext = new MythContext(MYTH_BINARY_VERSION);
     if (!gContext->Init())
@@ -98,17 +74,7 @@ int main(int argc, char *argv[])
         return GENERIC_EXIT_NO_MYTHCONTEXT;
     }
 
-    QMap<QString, QString> settingsOverride = cmdline.GetSettingsOverride();
-    if (settingsOverride.size())
-    {
-        QMap<QString, QString>::iterator it;
-        for (it = settingsOverride.begin(); it != settingsOverride.end(); ++it)
-        {
-            VERBOSE(VB_IMPORTANT, QString("Setting '%1' being forced to '%2'")
-                                          .arg(it.key()).arg(*it));
-            gCoreContext->OverrideSettingForSession(it.key(), *it);
-        }
-    }
+    cmdline.ApplySettingsOverride();
 
     setuid(getuid());
 

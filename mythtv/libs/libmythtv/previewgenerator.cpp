@@ -28,13 +28,12 @@
 #include "remotefile.h"
 #include "storagegroup.h"
 #include "util.h"
-#include "decodeencode.h"
 #include "playercontext.h"
 #include "mythdirs.h"
-#include "mythverbose.h"
 #include "remoteutil.h"
 #include "mythsystem.h"
 #include "exitcodes.h"
+#include "mythlogging.h"
 
 #define LOC QString("Preview: ")
 #define LOC_ERR QString("Preview Error: ")
@@ -233,23 +232,26 @@ bool PreviewGenerator::Run(void)
             else
                 command += QString(" --frame %1").arg(captureTime);
         }
-        command += " ";
-        command += QString("--chanid %1 ").arg(programInfo.GetChanID());
-        command += QString("--starttime %1 ")
+        command += QString(" --chanid %1").arg(programInfo.GetChanID());
+        command += QString(" --starttime %1")
             .arg(programInfo.GetRecordingStartTime(MythDate));
 
         if (!outFileName.isEmpty())
-            command += QString("--outfile \"%1\" ").arg(outFileName);
+            command += QString(" --outfile \"%1\"").arg(outFileName);
 
-        command += " > /dev/null";
+        command += logPropagateArgs;
+        if (!logPropagateQuiet())
+            command += " --quiet";
 
+        // Timeout in 30s
         uint ret = myth_system(command, kMSDontBlockInputDevs |
                                         kMSDontDisableDrawing |
-                                        kMSProcessEvents);
+                                        kMSProcessEvents, 30);
         if (ret != GENERIC_EXIT_OK)
         {
-            msg = QString("Encountered problems running '%1'").arg(command);
-            VERBOSE(VB_IMPORTANT, LOC_ERR + msg);
+            VERBOSE(VB_IMPORTANT, LOC_ERR + 
+                              QString("Encountered problems running '%1' (%2)")
+                .arg(command) .arg(ret));
         }
         else
         {
@@ -278,10 +280,10 @@ bool PreviewGenerator::Run(void)
             else
             {
                 VERBOSE(VB_IMPORTANT, LOC_ERR + "Preview process not ok." +
-                        QString("\n\t\t\tfileinfo(%1)").arg(outname)
-                        <<" exists: "<<fi.exists()
-                        <<" readable: "<<fi.isReadable()
-                        <<" size: "<<fi.size());
+                        QString("\n\t\t\tfileinfo(%1)").arg(outname) +
+                        QString(" exists: %1").arg(fi.exists()) +
+                        QString(" readable: %1").arg(fi.isReadable()) +
+                        QString(" size: %1").arg(fi.size()));
                 VERBOSE(VB_IMPORTANT, LOC_ERR +
                         QString("Despite command '%1' returning success")
                         .arg(command));
@@ -324,10 +326,12 @@ bool PreviewGenerator::Run(void)
 
 void PreviewGenerator::run(void)
 {
+    threadRegister("PreviewGenerator");
     setPriority(QThread::LowPriority);
     Run();
     connect(this, SIGNAL(finished()),
             this, SLOT(deleteLater()));
+    threadDeregister();
 }
 
 bool PreviewGenerator::RemotePreviewRun(void)
@@ -341,7 +345,7 @@ bool PreviewGenerator::RemotePreviewRun(void)
     strlist.push_back(token);
     programInfo.ToStringList(strlist);
     strlist.push_back(timeInSeconds ? "s" : "f");
-    encodeLongLong(strlist, captureTime);
+    strlist.push_back(QString::number(captureTime));
     if (outFileName.isEmpty())
     {
         strlist.push_back("<EMPTY>");
@@ -368,7 +372,7 @@ bool PreviewGenerator::RemotePreviewRun(void)
         else if (strlist.size() > 1)
         {
             VERBOSE(VB_IMPORTANT, LOC_ERR +
-                    "Remote Preview failed, reason given: " <<strlist[1]);
+                    "Remote Preview failed, reason given: " + strlist[1]);
         }
 
         gCoreContext->removeListener(this);

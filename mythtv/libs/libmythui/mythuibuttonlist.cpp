@@ -7,7 +7,7 @@
 #include <QDomDocument>
 
 // libmyth headers
-#include "mythverbose.h"
+#include "mythlogging.h"
 
 // mythui headers
 #include "mythmainwindow.h"
@@ -272,7 +272,7 @@ bool MythUIButtonList::DistributeRow(int & first_button, int & last_button,
     int  max_width, max_height;
     int  left_width, right_width;
     int  begin, end;
-    bool underflow = false;	// keep from being uninitialized
+    bool underflow = false;     // keep from being uninitialized
     bool added;
     bool hsplit, vsplit;
     int  selectedIdx;
@@ -298,7 +298,7 @@ bool MythUIButtonList::DistributeRow(int & first_button, int & last_button,
 
     if (buttonstate == NULL)
     {
-        VERBOSE(VB_IMPORTANT, QString("Failed to query buttonlist state: %1")
+        LOG(VB_GENERAL, LOG_ERR, QString("Failed to query buttonlist state: %1")
                 .arg(last_button));
         return false;
     }
@@ -345,9 +345,8 @@ bool MythUIButtonList::DistributeRow(int & first_button, int & last_button,
         ((vsplit ? split_height : total_height) +
          m_itemVertSpacing + row_height > max_height))
     {
-        VERBOSE(VB_GENERAL|VB_EXTRA,
-                QString("%1 Height exceeded %2 + (%3) + %4 = %5 "
-                        "which is > %6")
+        LOG(VB_GUI, LOG_DEBUG,
+                QString("%1 Height exceeded %2 + (%3) + %4 = %5 which is > %6")
                 .arg(vsplit ? "Centering" : "Total")
                 .arg(split_height).arg(m_itemVertSpacing).arg(row_height)
                 .arg(split_height + m_itemVertSpacing + row_height)
@@ -357,8 +356,7 @@ bool MythUIButtonList::DistributeRow(int & first_button, int & last_button,
         return false;
     }
 
-    VERBOSE(VB_GENERAL|VB_EXTRA, QString("Added button item %1 "
-                                         "width %2 height %3")
+    LOG(VB_GUI, LOG_DEBUG, QString("Added button item %1 width %2 height %3")
             .arg(grow_right ? last_item : first_item)
             .arg(width).arg(row_height));
 
@@ -421,7 +419,7 @@ bool MythUIButtonList::DistributeRow(int & first_button, int & last_button,
                     m_itemHorizSpacing + width > max_width)
                 {
                     int total = hsplit ? right_width : left_width + right_width;
-                    VERBOSE(VB_GENERAL|VB_EXTRA,
+                    LOG(VB_GUI, LOG_DEBUG,
                             QString("button on right would exceed width: "
                                     "%1+(%2)+%3 == %4 which is > %5")
                             .arg(total).arg(m_itemHorizSpacing).arg(width)
@@ -439,7 +437,7 @@ bool MythUIButtonList::DistributeRow(int & first_button, int & last_button,
                     height = minButtonHeight(buttonstate->GetArea());
                     if (row_height < height)
                         row_height = height;
-                    VERBOSE(VB_GENERAL|VB_EXTRA,
+                    LOG(VB_GUI, LOG_DEBUG,
                             QString("Added button item %1 "
                                     "r.width %2 height %3 total width %4+%5")
                             .arg(last_item).arg(width).arg(height)
@@ -487,7 +485,7 @@ bool MythUIButtonList::DistributeRow(int & first_button, int & last_button,
                     m_itemHorizSpacing + width > max_width)
                 {
                     int total = hsplit ? left_width : left_width + right_width;
-                    VERBOSE(VB_GENERAL|VB_EXTRA,
+                    LOG(VB_GUI, LOG_DEBUG,
                             QString("button on left would exceed width: "
                                     "%1+(%2)+%3 == %4 which is > %5")
                             .arg(total).arg(m_itemHorizSpacing).arg(width)
@@ -506,7 +504,7 @@ bool MythUIButtonList::DistributeRow(int & first_button, int & last_button,
                     height = minButtonHeight(buttonstate->GetArea());
                     if (row_height < height)
                         row_height = height;
-                    VERBOSE(VB_GENERAL|VB_EXTRA,
+                    LOG(VB_GUI, LOG_DEBUG,
                             QString("Added button item %1 "
                                     "l.width %2 height %3 total width %4+%5")
                             .arg(first_item).arg(width).arg(height)
@@ -527,9 +525,8 @@ bool MythUIButtonList::DistributeRow(int & first_button, int & last_button,
         ((vsplit ? split_height : total_height) +
          m_itemVertSpacing + row_height > max_height))
     {
-        VERBOSE(VB_GENERAL|VB_EXTRA,
-                QString("%1 Height exceeded %2 + (%3) + %4 = %5 "
-                        "which is > %6")
+        LOG(VB_GUI, LOG_DEBUG,
+                QString("%1 Height exceeded %2 + (%3) + %4 = %5 which is > %6")
                 .arg(vsplit ? "Centering" : "Total")
                 .arg(split_height).arg(m_itemVertSpacing).arg(row_height)
                 .arg(split_height + m_itemVertSpacing + row_height)
@@ -735,8 +732,8 @@ bool MythUIButtonList::DistributeButtons(void)
     col_widths = 0;
     first_button = last_button = start_button = 0;
 
-    VERBOSE(VB_GENERAL|VB_EXTRA, QString("DistributeButtons: "
-                                         "selected item %1 total items %2")
+    LOG(VB_GUI, LOG_DEBUG, QString("DistributeButtons: "
+                            "selected item %1 total items %2")
             .arg(start_item).arg(m_itemCount));
 
     /*
@@ -850,7 +847,7 @@ bool MythUIButtonList::DistributeButtons(void)
 
     m_rows = row_heights.size();
 
-    VERBOSE(VB_GENERAL|VB_EXTRA,
+    LOG(VB_GUI, LOG_DEBUG,
             QString("%1 rows, %2 columns fit inside parent area %3x%4")
             .arg(m_rows).arg(m_columns).arg(m_contentsRect.width())
             .arg(m_contentsRect.height()));
@@ -975,7 +972,7 @@ bool MythUIButtonList::DistributeButtons(void)
                   .arg(top_spacing).arg(bottom_spacing)
                   .arg(m_itemVertSpacing).arg(y);
 
-    VERBOSE(VB_GENERAL|VB_EXTRA, status_msg);
+    LOG(VB_GUI, LOG_DEBUG, status_msg);
 
     /*
      * Calculate width of buttons on each side of selected button
@@ -1091,7 +1088,7 @@ bool MythUIButtonList::DistributeButtons(void)
     status_msg += QString(" spacing left %1 right %2 fixed %3 offset %4")
                   .arg(left_spacing).arg(right_spacing)
                   .arg(m_itemHorizSpacing).arg(x_init);
-    VERBOSE(VB_GENERAL|VB_EXTRA, status_msg);
+    LOG(VB_GUI, LOG_DEBUG, status_msg);
 
     top_spacing    += m_itemVertSpacing;
     bottom_spacing += m_itemVertSpacing;
@@ -1346,10 +1343,21 @@ void MythUIButtonList::ItemVisible(MythUIButtonListItem* item)
         emit itemVisible(item);
 }
 
-void MythUIButtonList::InsertItem(MythUIButtonListItem *item)
+void MythUIButtonList::InsertItem(MythUIButtonListItem *item, int listPosition)
 {
     bool wasEmpty = m_itemList.isEmpty();
-    m_itemList.append(item);
+    if (listPosition >= 0 && listPosition <= m_itemList.count())
+    {
+        m_itemList.insert(listPosition, item);
+
+        if (listPosition <= m_selPosition)
+            m_selPosition++;
+
+        if (listPosition <= m_topPosition)
+            m_topPosition++;
+    }
+    else
+        m_itemList.append(item);
 
     m_itemCount++;
 
@@ -1604,8 +1612,8 @@ int MythUIButtonList::PageUp(void)
                          (realButton->GetCurrentState());
             if (buttonstate == NULL)
             {
-                VERBOSE(VB_IMPORTANT,
-                        QString("PageUp: Failed to query buttonlist state"));
+                LOG(VB_GENERAL, LOG_ERR, 
+                    "PageUp: Failed to query buttonlist state");
                 return pos;
             }
             if (total + m_itemHorizSpacing +
@@ -1650,8 +1658,8 @@ int MythUIButtonList::PageUp(void)
                       (realButton->GetCurrentState());
         if (buttonstate == NULL)
         {
-            VERBOSE(VB_IMPORTANT,
-                    QString("PageUp: Failed to query buttonlist state"));
+            LOG(VB_GENERAL, LOG_ERR,
+                "PageUp: Failed to query buttonlist state");
             return pos;
         }
         if (total + m_itemHorizSpacing +
@@ -1699,8 +1707,8 @@ int MythUIButtonList::PageDown(void)
                          (realButton->GetCurrentState());
             if (buttonstate == NULL)
             {
-                VERBOSE(VB_IMPORTANT,
-                        QString("PageDown: Failed to query buttonlist state"));
+                LOG(VB_GENERAL, LOG_ERR,
+                    "PageDown: Failed to query buttonlist state");
                 return pos;
             }
             if (total + m_itemHorizSpacing +
@@ -1745,8 +1753,8 @@ int MythUIButtonList::PageDown(void)
                       (realButton->GetCurrentState());
         if (buttonstate == NULL)
         {
-            VERBOSE(VB_IMPORTANT,
-                    QString("PageDown: Failed to query buttonlist state"));
+            LOG(VB_GENERAL, LOG_ERR,
+                "PageDown: Failed to query buttonlist state");
             return pos;
         }
         if (total + m_itemHorizSpacing +
@@ -2025,8 +2033,8 @@ void MythUIButtonList::Init()
 
     if (!m_buttontemplate)
     {
-        VERBOSE(VB_IMPORTANT, QString("Statetype buttonitem is required in "
-                                      "mythuibuttonlist: %1")
+        LOG(VB_GENERAL, LOG_ERR, QString("Statetype buttonitem is required in "
+                                         "mythuibuttonlist: %1")
                 .arg(objectName()));
         return;
     }
@@ -2645,10 +2653,10 @@ bool MythUIButtonList::DoFind(bool doMove, bool searchForward)
 MythUIButtonListItem::MythUIButtonListItem(MythUIButtonList* lbtype,
                                       const QString& text, const QString& image,
                                       bool checkable, CheckState state,
-                                      bool showArrow)
+                                      bool showArrow, int listPosition)
 {
     if (!lbtype)
-        VERBOSE(VB_IMPORTANT, "Cannot add a button to a non-existent list!");
+        LOG(VB_GENERAL, LOG_ERR, "Cannot add a button to a non-existent list!");
 
     m_parent    = lbtype;
     m_text      = text;
@@ -2663,15 +2671,15 @@ MythUIButtonListItem::MythUIButtonListItem(MythUIButtonList* lbtype,
         m_checkable = true;
 
     if (m_parent)
-        m_parent->InsertItem(this);
+        m_parent->InsertItem(this, listPosition);
 }
 
 MythUIButtonListItem::MythUIButtonListItem(MythUIButtonList* lbtype,
                                        const QString& text,
-                                       QVariant data)
+                                       QVariant data, int listPosition)
 {
     if (!lbtype)
-        VERBOSE(VB_IMPORTANT, "Cannot add a button to a non-existent list!");
+        LOG(VB_GENERAL, LOG_ERR, "Cannot add a button to a non-existent list!");
 
     m_parent    = lbtype;
     m_text      = text;
@@ -2684,7 +2692,7 @@ MythUIButtonListItem::MythUIButtonListItem(MythUIButtonList* lbtype,
     m_showArrow = false;
 
     if (m_parent)
-        m_parent->InsertItem(this);
+        m_parent->InsertItem(this, listPosition);
 }
 
 MythUIButtonListItem::~MythUIButtonListItem()
@@ -2837,10 +2845,18 @@ void MythUIButtonListItem::setImage(MythImage *image, const QString &name)
     if (!name.isEmpty())
     {
         if (m_images.contains(name))
-            m_images.value(name)->DownRef();
-        m_images.insert(name, image);
+        {
+            if (m_images.value(name))
+                m_images.value(name)->DownRef();
+        }
+
         if (image)
+        {
+            m_images.insert(name, image);
             image->UpRef();
+        }
+        else
+            m_images.remove(name);
     }
     else
     {
@@ -3019,8 +3035,8 @@ void MythUIButtonListItem::SetToRealButton(MythUIStateType *button, bool selecte
 
     if (!buttonstate)
     {
-        VERBOSE(VB_IMPORTANT, QString("Failed to query buttonlist state: %1")
-                                                                    .arg(state));
+        LOG(VB_GENERAL, LOG_ERR, QString("Failed to query buttonlist state: %1")
+                .arg(state));
         return;
     }
 
@@ -3188,7 +3204,7 @@ bool SearchButtonListDialog::Create(void)
 
     if (err)
     {
-        VERBOSE(VB_IMPORTANT, "Cannot load screen 'MythSearchListDialog'");
+        LOG(VB_GENERAL, LOG_ERR, "Cannot load screen 'MythSearchListDialog'");
         return false;
     }
 
@@ -3205,8 +3221,11 @@ bool SearchButtonListDialog::Create(void)
 
 bool SearchButtonListDialog::keyPressEvent(QKeyEvent *event)
 {
+    if (GetFocusWidget() && GetFocusWidget()->keyPressEvent(event))
+        return true;
+
     QStringList actions;
-    bool handled = GetMythMainWindow()->TranslateKeyPress("Music", event, actions, false);
+    bool handled = GetMythMainWindow()->TranslateKeyPress("Global", event, actions, false);
 
     for (int i = 0; i < actions.size() && !handled; i++)
     {

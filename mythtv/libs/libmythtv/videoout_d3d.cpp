@@ -169,8 +169,7 @@ bool VideoOutputD3D::InputChanged(const QSize &input_size,
     TearDown();
     QRect disp = window.GetDisplayVisibleRect();
     if (Init(input_size.width(), input_size.height(),
-             aspect, m_hWnd, disp.left(), disp.top(),
-             disp.width(), disp.height(), av_codec_id, m_hEmbedWnd))
+             aspect, m_hWnd, disp, av_codec_id))
     {
         BestDeint();
         return true;
@@ -203,9 +202,8 @@ bool VideoOutputD3D::SetupContext()
     return true;
 }
 
-bool VideoOutputD3D::Init(int width, int height, float aspect,
-                          WId winid, int winx, int winy, int winw,
-                          int winh, MythCodecID codec_id, WId embedid)
+bool VideoOutputD3D::Init(int width, int height, float aspect, WId winid,
+                          const QRect &win_rect,MythCodecID codec_id)
 {
     MythPainter *painter = GetMythPainter();
     if (painter)
@@ -213,11 +211,9 @@ bool VideoOutputD3D::Init(int width, int height, float aspect,
 
     QMutexLocker locker(&m_lock);
     m_hWnd      = winid;
-    m_hEmbedWnd = embedid;
     window.SetAllowPreviewEPG(true);
 
-    VideoOutput::Init(width, height, aspect, winid,
-                      winx, winy, winw, winh, codec_id, embedid);
+    VideoOutput::Init(width, height, aspect, winid, win_rect, codec_id);
 
     VERBOSE(VB_PLAYBACK, LOC + QString("Init with codec: %1")
                          .arg(toString(codec_id)));
@@ -307,11 +303,12 @@ bool VideoOutputD3D::CreatePauseFrame(void)
     if (codec_is_dxva2(video_codec_id))
         return true;
 
-    m_pauseFrame.height = vbuffers.GetScratchFrame()->height;
-    m_pauseFrame.width  = vbuffers.GetScratchFrame()->width;
-    m_pauseFrame.bpp    = vbuffers.GetScratchFrame()->bpp;
-    m_pauseFrame.size   = vbuffers.GetScratchFrame()->size;
-    m_pauseFrame.buf    = new unsigned char[m_pauseFrame.size + 128];
+    init(&m_pauseFrame, FMT_YV12,
+         new unsigned char[vbuffers.GetScratchFrame()->size + 128],
+         vbuffers.GetScratchFrame()->width,
+         vbuffers.GetScratchFrame()->height,
+         vbuffers.GetScratchFrame()->size);
+
     m_pauseFrame.frameNumber = vbuffers.GetScratchFrame()->frameNumber;
     return true;
 }
@@ -400,12 +397,12 @@ void VideoOutputD3D::Show(FrameScanType )
         m_render->Present(window.IsEmbedding() ? m_hEmbedWnd : NULL);
 }
 
-void VideoOutputD3D::EmbedInWidget(int x, int y, int w, int h)
+void VideoOutputD3D::EmbedInWidget(const QRect &rect)
 {
     if (window.IsEmbedding())
         return;
 
-    VideoOutput::EmbedInWidget(x, y, w, h);
+    VideoOutput::EmbedInWidget(rect);
     // TODO: Initialise m_hEmbedWnd?
 }
 
@@ -704,8 +701,10 @@ MythCodecID VideoOutputD3D::GetBestSupportedCodec(
 }
 
 
-void* VideoOutputD3D::GetDXVA2Decoder(void)
+void* VideoOutputD3D::GetDecoderContext(unsigned char* buf, uint8_t*& id)
 {
+    (void)buf;
+    (void)id;
 #ifdef USING_DXVA2
     if (m_decoder)
         return (void*)&m_decoder->m_context;

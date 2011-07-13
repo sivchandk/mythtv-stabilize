@@ -30,12 +30,10 @@
 #include <QFile>
 
 // MythTV headers
-#include "mythverbose.h"
-#include "upnp.h"
-#include "multicast.h"
-#include "broadcast.h"
-
+#include "mmulticastsocketdevice.h"
+#include "mythlogging.h"
 #include "compat.h"
+#include "upnp.h"
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
@@ -93,10 +91,11 @@ void UPnpNotifyTask::SendNotifyMsg( MSocketDevice *pSocket,
                             .arg( sUSN         )
                             .arg( m_nMaxAge    );
 
-//    VERBOSE(VB_UPNP, QString("UPnpNotifyTask::SendNotifyMsg : %1 : %2 : %3")
-//                        .arg( pSocket->address().toString() )
-//                        .arg( sNT  )
-//                        .arg( sUSN ));
+    VERBOSE(VB_UPNP, QString("UPnpNotifyTask::SendNotifyMsg : %1:%2 : %3 : %4")
+                        .arg( pSocket->address().toString() )
+                        .arg( pSocket->port() )
+                        .arg( sNT  )
+                        .arg( sUSN ));
 
     {
     QMutexLocker qml(&m_mutex); // for addressList
@@ -114,16 +113,22 @@ void UPnpNotifyTask::SendNotifyMsg( MSocketDevice *pSocket,
         if ((*it).isEmpty())
         {
             VERBOSE(VB_GENERAL,
-                    "UPnpNotifyTask::SendNotifyMsg - NULL in m_addressList");
+                    "UPnpNotifyTask::SendNotifyMsg - NULL in address list");
             continue;
         }
+
+        QString ipaddress = *it;
+
+        // If this looks like an IPv6 address, then enclose it in []'s
+        if (ipaddress.contains(":"))
+            ipaddress = "[" + ipaddress + "]";
 
         QString sHeader = QString( "NOTIFY * HTTP/1.1\r\n"
                                    "HOST: %1:%2\r\n"    
                                    "LOCATION: http://%3:%4/getDeviceDesc\r\n" )
-                             .arg( SSDP_GROUP ) // pSocket->address().toString() )
-                             .arg( SSDP_PORT )  // pSocket->port() )
-                             .arg( *it )
+                             .arg( pSocket->address().toString() )
+                             .arg( pSocket->port() )
+                             .arg( ipaddress )
                              .arg( m_nServicePort);
 
         QString  sPacket  = sHeader + sData;
@@ -147,9 +152,8 @@ void UPnpNotifyTask::SendNotifyMsg( MSocketDevice *pSocket,
 
 void UPnpNotifyTask::Execute( TaskQueue *pQueue )
 {
-
-    MSocketDevice *pMulticast = new QMulticastSocket(SSDP_GROUP, SSDP_PORT);
-//    QSocketDevice *pBroadcast = new QBroadcastSocket( "255.255.255.255", SSDP_PORT );
+    MSocketDevice *pMulticast = new MMulticastSocketDevice(
+        SSDP_GROUP, SSDP_PORT);
 
     // ----------------------------------------------------------------------
     // Must send rootdevice Notification for first device.
@@ -158,24 +162,20 @@ void UPnpNotifyTask::Execute( TaskQueue *pQueue )
     UPnpDevice &device = UPnp::g_UPnpDeviceDesc.m_rootDevice;
 
     SendNotifyMsg( pMulticast, "upnp:rootdevice", device.GetUDN() );
-//    SendNotifyMsg( pBroadcast, "upnp:rootdevice", device.GetUDN() );
 
     // ----------------------------------------------------------------------
     // Process rest of notifications
     // ----------------------------------------------------------------------
 
     ProcessDevice( pMulticast, &device );
-//    ProcessDevice( pBroadcast, &device );
 
     // ----------------------------------------------------------------------
     // Clean up and reshedule task if needed (timeout = m_nMaxAge / 2).
     // ----------------------------------------------------------------------
 
     delete pMulticast;
-//    delete pBroadcast;
 
     pMulticast = NULL;
-//    pBroadcast = NULL;
 
     m_mutex.lock();
 

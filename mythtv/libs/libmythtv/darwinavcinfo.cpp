@@ -11,7 +11,7 @@ using namespace std;
 // MythTV headers
 #include "darwinfirewiredevice.h"
 #include "darwinavcinfo.h"
-#include "mythverbose.h"
+#include "mythlogging.h"
 
 #ifndef kIOFireWireAVCLibUnitInterfaceID2
 #define kIOFireWireAVCLibUnitInterfaceID2 \
@@ -97,7 +97,7 @@ void DarwinAVCInfo::Update(uint64_t _guid, DarwinFirewireDevice *dev,
     //////////////////////////
     // get subunit info
 
-    VERBOSE(VB_RECORD, "Scanning guid: 0x"<<hex<<guid<<dec);
+    VERBOSE(VB_RECORD, QString("Scanning guid: 0x%1").arg(guid, 0, 16));
 
     bool wasOpen = IsAVCInterfaceOpen();
     if (OpenAVCInterface(thread_cf_ref))

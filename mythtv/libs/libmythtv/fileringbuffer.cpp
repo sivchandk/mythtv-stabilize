@@ -43,8 +43,10 @@ static int posix_fadvise(int, off_t, off_t, int) { return 0; }
 
 FileRingBuffer::FileRingBuffer(const QString &lfilename,
                                bool write, bool readahead, int timeout_ms)
+  : RingBuffer(kRingBuffer_File)
 {
     startreadahead = readahead;
+    safefilename = lfilename;
     filename = lfilename;
 
     if (write)
@@ -560,7 +562,7 @@ long long FileRingBuffer::Seek(long long pos, int whence, bool has_lock)
         {
             int min_safety = max(fill_min, readblocksize);
             int free = ((rbwpos >= rbrpos) ?
-                        rbrpos + kBufferSize : rbrpos) - rbwpos;
+                        rbrpos + bufferSize : rbrpos) - rbwpos;
             int internal_backbuf =
                 (rbwpos >= rbrpos) ? rbrpos : rbrpos - rbwpos;
             internal_backbuf = min(internal_backbuf, free - min_safety);
@@ -571,7 +573,7 @@ long long FileRingBuffer::Seek(long long pos, int whence, bool has_lock)
             if (internal_backbuf >= sba)
             {
                 rbrpos = (rbrpos>=sba) ? rbrpos - sba :
-                    kBufferSize + rbrpos - sba;
+                    bufferSize + rbrpos - sba;
                 used_opt = true;
                 VERBOSE(VB_FILE, LOC +
                         QString("Seek(): OPT1 rbrpos: %1 rbwpos: %2"
@@ -582,7 +584,7 @@ long long FileRingBuffer::Seek(long long pos, int whence, bool has_lock)
         }
         else if ((new_pos >= readpos) && (new_pos <= internalreadpos))
         {
-            rbrpos = (rbrpos + (new_pos - readpos)) % kBufferSize;
+            rbrpos = (rbrpos + (new_pos - readpos)) % bufferSize;
             used_opt = true;
             VERBOSE(VB_FILE, LOC +
                     QString("Seek(): OPT2 rbrpos: %1 sba: %2")

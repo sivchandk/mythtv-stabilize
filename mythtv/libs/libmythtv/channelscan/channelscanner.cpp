@@ -28,19 +28,20 @@
  */
 
 #include <algorithm>
+using namespace std;
 
-#include "channelscanner.h"
-#include "cardutil.h"
-#include "iptvchannelfetcher.h"
-#include "channelscan_sm.h"
-#include "scanmonitor.h"
-#include "scanwizardconfig.h"
-
-#include "v4lchannel.h"
 #include "analogsignalmonitor.h"
-#include "dvbchannel.h"
+#include "iptvchannelfetcher.h"
 #include "dvbsignalmonitor.h"
+#include "scanwizardconfig.h"
+#include "channelscan_sm.h"
+#include "channelscanner.h"
 #include "hdhrchannel.h"
+#include "scanmonitor.h"
+#include "asichannel.h"
+#include "dvbchannel.h"
+#include "v4lchannel.h"
+#include "cardutil.h"
 
 #define LOC QString("ChScan: ")
 #define LOC_ERR QString("ChScan, Error: ")
@@ -139,7 +140,8 @@ void ChannelScanner::Scan(
         (ScanTypeSetting::FullScan_Analog == scantype))
     {
         VERBOSE(VB_CHANSCAN, LOC +
-                "ScanTransports("<<freq_std<<", "<<mod<<", "<<tbl<<")");
+                QString("ScanTransports(%1, %2, %3)")
+                .arg(freq_std).arg(mod).arg(tbl));
 
         // HACK HACK HACK -- begin
         // if using QAM we may need additional time... (at least with HD-3000)
@@ -166,7 +168,8 @@ void ChannelScanner::Scan(
     }
     else if (ScanTypeSetting::FullTransportScan == scantype)
     {
-        VERBOSE(VB_CHANSCAN, LOC + "ScanExistingTransports("<<sourceid<<")");
+        VERBOSE(VB_CHANSCAN, LOC + QString("ScanExistingTransports(%1)")
+                .arg(sourceid));
 
         ok = sigmonScanner->ScanExistingTransports(sourceid, do_follow_nit);
         if (ok)
@@ -183,7 +186,7 @@ void ChannelScanner::Scan(
     {
         ok = true;
 
-        VERBOSE(VB_CHANSCAN, LOC + "ScanForChannels("<<sourceid<<")");
+        VERBOSE(VB_CHANSCAN, LOC + QString("ScanForChannels(%1)").arg(sourceid));
 
         QString card_type = CardUtil::GetRawCardType(cardid);
         QString sub_type  = card_type;
@@ -213,10 +216,17 @@ void ChannelScanner::Scan(
     }
     else if (ScanTypeSetting::TransportScan == scantype)
     {
-        VERBOSE(VB_CHANSCAN, LOC + "ScanTransport("<<mplexid<<")");
+        VERBOSE(VB_CHANSCAN, LOC + QString("ScanTransport(%1)").arg(mplexid));
 
         ok = sigmonScanner->ScanTransport(mplexid, do_follow_nit);
     }
+    else if (ScanTypeSetting::CurrentTransportScan == scantype)
+    {
+        QString sistandard = "mpeg";
+        VERBOSE(VB_CHANSCAN, LOC + "ScanCurrentTransport(" + sistandard + ")");
+        ok = sigmonScanner->ScanCurrentTransport(sistandard);
+    }
+
     if (!ok)
     {
         VERBOSE(VB_IMPORTANT, LOC_ERR + "Failed to handle tune complete.");
@@ -342,7 +352,7 @@ void ChannelScanner::PreScanCommon(
         channel = new DVBChannel(device);
 #endif
 
-#ifdef USING_V4L
+#ifdef USING_V4L2
     if (("V4L" == card_type) || ("MPEG" == card_type))
         channel = new V4LChannel(NULL, device);
 #endif
@@ -353,6 +363,13 @@ void ChannelScanner::PreScanCommon(
         channel = new HDHRChannel(NULL, device);
     }
 #endif // USING_HDHOMERUN
+
+#ifdef USING_ASI
+    if ("ASI" == card_type)
+    {
+        channel = new ASIChannel(NULL, device);
+    }
+#endif // USING_ASI
 
     if (!channel)
     {

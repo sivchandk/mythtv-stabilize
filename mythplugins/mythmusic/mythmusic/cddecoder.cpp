@@ -26,6 +26,7 @@ extern "C" {
 #include "cddecoder.h"
 #include "constants.h"
 #include "metadata.h"
+#include "mythlogging.h"
 
 CdDecoder::CdDecoder(const QString &file, DecoderFactory *d, QIODevice *i,
                      AudioOutput *o) :
@@ -189,6 +190,7 @@ void CdDecoder::run()
     if (!inited)
         return;
 
+    threadRegister("CdDecoder");
     stat = DecoderEvent::Decoding;
     {
         DecoderEvent e((DecoderEvent::Type) stat);
@@ -221,10 +223,15 @@ void CdDecoder::run()
                 {
                     cdbuffer = paranoia_read(paranoia, paranoia_cb);
 
-                    memcpy((char *)(output_buf + output_at), (char *)cdbuffer,
-                           CD_FRAMESIZE_RAW);
+                    if (cdbuffer)
+                    {
+                        memcpy((char *)(output_buf + output_at), (char *)cdbuffer,
+                                CD_FRAMESIZE_RAW);
 
-                    output_at += CD_FRAMESIZE_RAW;
+                        output_at += CD_FRAMESIZE_RAW;
+                    }
+                    else
+                        finish = true;
                 }
                 else
                     finish = TRUE;
@@ -276,6 +283,7 @@ void CdDecoder::run()
     }
 
     deinit();
+    threadDeregister();
 }
 
 void CdDecoder::setCDSpeed(int speed)
@@ -582,7 +590,7 @@ const QString &CdDecoderFactory::extension() const
 
 const QString &CdDecoderFactory::description() const
 {
-    static QString desc(QObject::tr("Ogg Vorbis Audio"));
+    static QString desc(QObject::tr("CD Audio decoder"));
     return desc;
 }
 

@@ -10,6 +10,9 @@
 #include <vector>
 using namespace std;
 
+// POSIX
+#include <pthread.h>
+
 // Qt
 #include <QReadWriteLock>
 #include <QWaitCondition>
@@ -94,25 +97,6 @@ typedef void (*EMBEDRETURNVOIDSCHEDIT) (const ProgramInfo *, void *);
 // desirable and should be avoided when possible.)
 //
 
-class VBIMode
-{
-  public:
-    typedef enum
-    {
-        None    = 0,
-        PAL_TT  = 1,
-        NTSC_CC = 2,
-    } vbimode_t;
-
-    static uint Parse(QString vbiformat)
-    {
-        QString fmt = vbiformat.toLower().left(3);
-        vbimode_t mode;
-        mode = (fmt == "pal") ? PAL_TT : ((fmt == "nts") ? NTSC_CC : None);
-        return (uint) mode;
-    }
-};
-
 enum scheduleEditTypes {
     kScheduleProgramGuide = 0,
     kScheduleProgramFinder,
@@ -159,21 +143,6 @@ class AskProgramInfo
     ProgramInfo *info;
 };
 
-class TV;
-
-class TVDDMapThread : public QThread
-{
-    Q_OBJECT
-  public:
-    TVDDMapThread() : m_parent(NULL), m_sourceid(0) {}
-    void run(void);
-    void SetParent(TV *parent)      { m_parent = parent; }
-    void SetSourceId(uint sourceid) { m_sourceid = sourceid; }
-  private:
-    TV   *m_parent;
-    uint  m_sourceid;
-};
-
 class MTV_PUBLIC TV : public QObject
 {
     friend class PlaybackBox;
@@ -182,7 +151,6 @@ class MTV_PUBLIC TV : public QObject
     friend class ViewScheduled;
     friend class TvPlayWindow;
     friend class TVBrowseHelper;
-    friend class TVDDMapThread;
 
     Q_OBJECT
   public:
@@ -313,6 +281,7 @@ class MTV_PUBLIC TV : public QObject
     static EMBEDRETURNVOIDSCHEDIT RunScheduleEditorPtr;
 
   private:
+    void PlaybackLoop(void);
     bool ContextIsPaused(PlayerContext *ctx, const char *file, int location);
     void SetActive(PlayerContext *lctx, int index, bool osd_msg);
 
@@ -341,7 +310,7 @@ class MTV_PUBLIC TV : public QObject
     void PrepToSwitchToRecordedProgram(PlayerContext*,
                                        const ProgramInfo &);
     void PrepareToExitPlayer(PlayerContext*, int line,
-                             bool bookmark = true) const;
+                             bool bookmark = true);
     void SetExitPlayer(bool set_it, bool wants_to) const;
     void SetUpdateOSDPosition(bool set_it);
 
@@ -428,6 +397,8 @@ class MTV_PUBLIC TV : public QObject
         ARBSEEK_END
     };
     void DoArbSeek(PlayerContext*, ArbSeekWhence whence);
+    void DoJumpFFWD(PlayerContext *ctx);
+    void DoJumpRWND(PlayerContext *ctx);
     void NormalSpeed(PlayerContext*);
     void ChangeSpeed(PlayerContext*, int direction);
     void ToggleTimeStretch(PlayerContext*);
@@ -456,11 +427,10 @@ class MTV_PUBLIC TV : public QObject
     void DoSwitchAngle(PlayerContext*, int angle);
     void DoJumpChapter(PlayerContext*, int direction);
     void DoSkipCommercials(PlayerContext*, int direction);
-
     void DoQueueTranscode(PlayerContext*, QString profile);
-
     void SetAutoCommercialSkip(const PlayerContext*,
                                CommSkipMode skipMode = kCommSkipOff);
+    void SetBookmark(PlayerContext* ctx, bool clear = false);
 
     // Manual zoom mode
     void SetManualZoom(const PlayerContext *, bool enabled, QString msg);
@@ -469,6 +439,8 @@ class MTV_PUBLIC TV : public QObject
 
     bool ClearOSD(const PlayerContext*);
     void ToggleOSD(PlayerContext*, bool includeStatusOSD);
+    void ToggleOSDDebug(PlayerContext*);
+    void UpdateOSDDebug(const PlayerContext *ctx);
     void UpdateOSDProgInfo(const PlayerContext*, const char *whichInfo);
     void UpdateOSDStatus(const PlayerContext *ctx, QString title, QString desc,
                          QString value, int type, QString units,
@@ -526,6 +498,8 @@ class MTV_PUBLIC TV : public QObject
         PictureAdjustType type, PictureAttribute attr, bool up);
     bool PictureAttributeHandleAction(PlayerContext*,
                                       const QStringList &actions);
+    static PictureAttribute NextPictureAdjustType(
+        PictureAdjustType type, MythPlayer *mp, PictureAttribute attr);
 
     // Channel editing support
     void StartChannelEditMode(PlayerContext*);
@@ -716,10 +690,10 @@ class MTV_PUBLIC TV : public QObject
     mutable QMutex chanEditMapLock; ///< Lock for chanEditMap and ddMap
     InfoMap   chanEditMap;          ///< Channel Editing initial map
 
-    DDKeyMap      ddMap;                 ///< DataDirect channel map
-    uint          ddMapSourceId;         ///< DataDirect channel map sourceid
-    bool          ddMapLoaderRunning;    ///< DataDirect thread running
-    QPointer<TVDDMapThread> ddMapLoader; ///< DataDirect map loader thread
+    DDKeyMap  ddMap;                ///< DataDirect channel map
+    uint      ddMapSourceId;        ///< DataDirect channel map sourceid
+    bool      ddMapLoaderRunning;   ///< Is DataDirect loader thread running
+    pthread_t ddMapLoader;          ///< DataDirect map loader thread
 
     /// Vector or sleep timer sleep times in seconds,
     /// with the appropriate UI message.
@@ -837,6 +811,7 @@ class MTV_PUBLIC TV : public QObject
     volatile int         queueInputTimerId;
     volatile int         browseTimerId;
     volatile int         updateOSDPosTimerId;
+    volatile int         updateOSDDebugTimerId;
     volatile int         endOfPlaybackTimerId;
     volatile int         embedCheckTimerId;
     volatile int         endOfRecPromptTimerId;

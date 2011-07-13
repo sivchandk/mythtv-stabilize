@@ -1,3 +1,6 @@
+// POSIX
+#include <pthread.h>
+
 // C
 #include <cstdlib>
 
@@ -24,9 +27,6 @@ extern "C"
 #include <QMap>
 #include <QStringList>
 #include <QDateTime>
-#include <QThread>
-#include <QMutex>
-#include <QWaitCondition>
 
 #include <Q3PtrList>
 #include <Q3PtrQueue>
@@ -112,23 +112,9 @@ class PTSOffsetQueue
     int vid_id;
 };
 
-class MPEG2replex;
-
-class MPEG2ReplexThread : public QThread
-{
-    Q_OBJECT
-  public:
-    MPEG2ReplexThread() : m_parent(NULL) {}
-    void SetParent(MPEG2replex *parent) { m_parent = parent; }
-    void run(void);
-  private:
-    MPEG2replex *m_parent;
-};
-
 //container for all multiplex related variables
 class MPEG2replex
 {
-    friend class MPEG2ReplexThread;
   public:
     MPEG2replex();
     ~MPEG2replex();
@@ -145,12 +131,13 @@ class MPEG2replex
     int exttype[N_AUDIO];
     int exttypcnt[N_AUDIO];
 
-    QMutex mutex;
-    QWaitCondition cond;
-    MPEG2ReplexThread thread;
-
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
     audio_frame_t extframe[N_AUDIO];
     sequence_t seq_head;
+
+  private:
+    multiplex_t *mplex;
 };
 
 class MPEG2fixup
@@ -255,6 +242,8 @@ class MPEG2fixup
     frm_dir_map_t delMap;
     frm_dir_map_t saveMap;
 
+    pthread_t thread;
+
     AVFormatContext *inputFC;
     int vid_id;
     int ext_count;
@@ -289,10 +278,10 @@ class MPEG2fixup
 
     using namespace std;
 
-    extern int print_verbose_messages;
+    extern int verboseMask;
     #define VERBOSE(mask,args...) \
     do { \
-        if ((print_verbose_messages & mask) != 0) \
+        if ((verboseMask & mask) != 0) \
         { \
             cout << args << endl; \
         } \

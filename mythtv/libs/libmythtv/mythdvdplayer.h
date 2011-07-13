@@ -21,7 +21,6 @@ class MythDVDPlayer : public MythPlayer
     virtual uint64_t GetBookmark(void);
 
     // DVD public stuff
-    virtual void ChangeDVDTrack(bool ffw);
     virtual bool GoToMenu(QString str);
     virtual void GoToDVDProgram(bool direction);
 
@@ -36,10 +35,14 @@ class MythDVDPlayer : public MythPlayer
     virtual QString GetAngleName(int angle) const;
     virtual bool SwitchAngle(int angle);
 
+    // Chapter public stuff
+    virtual int  GetNumChapters(void);
+    virtual int  GetCurrentChapter(void);
+    virtual void GetChapterTimes(QList<long long> &times);
+
   protected:
     // Non-public sets
-    virtual void SetBookmark(void);
-    virtual void ClearBookmark(bool message = true);
+    virtual void SetBookmark(bool clear = false);
 
     // Start/Reset/Stop playing
     virtual void ResetPlaying(bool resetframes = true);
@@ -59,7 +62,6 @@ class MythDVDPlayer : public MythPlayer
     virtual void PreProcessNormalFrame(void);
     virtual bool VideoLoop(void);
     virtual void EventStart(void);
-    virtual void EventLoop(void);
     virtual void EventEnd(void);
     virtual void InitialSeek(void);
 
@@ -90,6 +92,9 @@ class MythDVDPlayer : public MythPlayer
     virtual void CreateDecoder(char *testbuf, int testreadsize,
                                bool allow_libmpeg2, bool no_accel);
 
+    // Private chapter stuff
+    virtual bool DoJumpChapter(int chapter);
+
   private:
     void DoChangeDVDTrack(void);
     void SetDVDBookmark(uint64_t frame);
@@ -99,7 +104,6 @@ class MythDVDPlayer : public MythPlayer
 
     int  m_buttonVersion;
     bool dvd_stillframe_showing;
-    int  need_change_dvd_track;
 
     // additional bookmark seeking information
     int m_initial_title;

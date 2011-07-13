@@ -27,7 +27,7 @@
 #include <mythconfig.h>
 #include <mythcontext.h>
 #include <audiooutput.h>
-#include <mythverbose.h>
+#include <mythlogging.h>
 
 using namespace std;
 
@@ -284,7 +284,7 @@ bool avfDecoder::initialize()
     if (m_sampleFmt == FORMAT_NONE)
     {
         int bps =
-            av_get_bits_per_sample_format(m_audioDec->sample_fmt);
+            av_get_bits_per_sample_fmt(m_audioDec->sample_fmt);
         if (m_audioDec->sample_fmt == SAMPLE_FMT_S32 &&
             m_audioDec->bits_per_raw_sample)
         {
@@ -371,6 +371,7 @@ void avfDecoder::run()
     if (!inited)
         return;
 
+    threadRegister("avfDecoder");
     AVPacket pkt, tmp_pkt;
     char *s;
     int data_size, dec_len;
@@ -491,6 +492,7 @@ void avfDecoder::run()
     }
 
     deinit();
+    threadDeregister();
 }
 
 MetaIO* avfDecoder::doCreateTagger(void)

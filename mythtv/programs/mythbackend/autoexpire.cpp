@@ -11,7 +11,6 @@
 
 // POSIX headers
 #include <unistd.h>
-#include <signal.h>
 
 // C headers
 #include <cstdlib>
@@ -24,6 +23,7 @@ using namespace std;
 // Qt headers
 #include <QDateTime>
 #include <QFileInfo>
+#include <QList>
 
 // MythTV headers
 #include "autoexpire.h"
@@ -38,6 +38,7 @@ using namespace std;
 #include "backendutil.h"
 #include "mainserver.h"
 #include "compat.h"
+#include "mythlogging.h"
 
 #define LOC     QString("AutoExpire: ")
 #define LOC_ERR QString("AutoExpire Error: ")
@@ -52,13 +53,17 @@ extern AutoExpire *expirer;
 /// \brief This calls AutoExpire::RunExpirer() from within a new thread.
 void ExpireThread::run(void)
 {
+    threadRegister("Expire");
     m_parent->RunExpirer();
+    threadDeregister();
 }
 
 /// \brief This calls AutoExpire::RunUpdate() from within a new thread.
 void UpdateThread::run(void)
 {
+    threadRegister("Update");
     m_parent->RunUpdate();
+    threadDeregister();
 }
 
 /** \class AutoExpire
@@ -144,6 +149,7 @@ void AutoExpire::CalcParams()
     VERBOSE(VB_FILE, LOC + "CalcParams()");
 
     QList<FileSystemInfo> fsInfos;
+
     instance_lock.lock();
     if (fileServer)
         fsInfos = fileServer->QueryAllFileSystems();
@@ -151,11 +157,8 @@ void AutoExpire::CalcParams()
 
     if (fsInfos.empty())
     {
-        QString msg = "ERROR: Filesystem Info cache is empty, unable to "
-                      "calculate necessary parameters.";
-        VERBOSE(VB_IMPORTANT, LOC + msg);
-        gCoreContext->LogEntry("mythbackend", LP_WARNING,
-                           "Autoexpire CalcParams", msg);
+        VERBOSE(VB_IMPORTANT, LOC + "ERROR: Filesystem Info cache is empty, "
+                "unable to calculate necessary parameters.");
 
         return;
     }
@@ -399,11 +402,8 @@ void AutoExpire::ExpireRecordings(void)
 
     if (fsInfos.empty())
     {
-        QString msg = "ERROR: Filesystem Info cache is empty, unable to "
-                      "determine what Recordings to expire";
-        VERBOSE(VB_IMPORTANT, LOC + msg);
-        gCoreContext->LogEntry("mythbackend", LP_WARNING,
-                           "Autoexpire Recording", msg);
+        VERBOSE(VB_IMPORTANT, LOC + "ERROR: Filesystem Info cache is empty, "
+                "unable to determine what Recordings to expire");
 
         return;
     }
@@ -573,7 +573,7 @@ void AutoExpire::ExpireRecordings(void)
                 QFileInfo vidFile(p->GetPathname());
                 if (dirList.contains(p->GetHostname() + ':' + vidFile.path()))
                 {
-                    fsit->setUsedSpace(fsit->getUsedSpace() 
+                    fsit->setUsedSpace(fsit->getUsedSpace()
                                                 - (p->GetFilesize() / 1024));
                     deleteList.push_back(p);
 
@@ -621,9 +621,6 @@ void AutoExpire::SendDeleteMessages(pginfolist_t &deleteList)
             VERBOSE(VB_IMPORTANT, msg);
         else
             VERBOSE(VB_FILE, QString("    ") +  msg);
-
-        gCoreContext->LogEntry("autoexpire", LP_NOTICE,
-                           "Expiring Program", msg);
 
         // send auto expire message to backend's event thread.
         MythEvent me(QString("AUTO_EXPIRE %1 %2").arg((*it)->GetChanID())
@@ -712,8 +709,7 @@ void AutoExpire::ExpireEpisodesOverMax(void)
                     (!episodeParts.contains(episodeKey)) &&
                     (found > *maxIter))
                 {
-                    long long spaceFreed =
-                        query.value(5).toLongLong() >> 20;
+                    long long spaceFreed = query.value(5).toLongLong() >> 20;
                     QString msg =
                         QString("Expiring %1 MBytes for %2 at %3 => %4.  Too "
                                 "many episodes, we only want to keep %5.")
@@ -725,9 +721,6 @@ void AutoExpire::ExpireEpisodesOverMax(void)
                         VERBOSE(VB_IMPORTANT, msg);
                     else
                         VERBOSE(VB_FILE, QString("    ") +  msg);
-
-                    gCoreContext->LogEntry("autoexpire", LP_NOTICE,
-                                       "Expired program", msg);
 
                     msg = QString("AUTO_EXPIRE %1 %2")
                                   .arg(chanid)

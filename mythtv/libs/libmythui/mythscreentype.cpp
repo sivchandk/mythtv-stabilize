@@ -6,7 +6,6 @@
 #include <QRunnable>
 #include <QThreadPool>
 
-#include "mythverbose.h"
 #include "mythobservable.h"
 
 #include "mythscreenstack.h"
@@ -14,6 +13,7 @@
 #include "mythuihelper.h"
 #include "mythprogressdialog.h"
 #include "mythuigroup.h"
+#include "mythlogging.h"
 
 QEvent::Type ScreenLoadCompletionEvent::kEventType =
     (QEvent::Type) QEvent::registerEventType();
@@ -27,7 +27,11 @@ class ScreenLoadTask : public QRunnable
     void run()
     {
         if (m_parent)
+        {
+            threadRegister("ScreenLoad");
             m_parent->LoadInForeground();
+            threadDeregister();
+        }
     }
 
     MythScreenType *m_parent;
@@ -534,7 +538,7 @@ void MythScreenType::CopyFrom(MythUIType *base)
     MythScreenType *st = dynamic_cast<MythScreenType *>(base);
     if (!st)
     {
-        VERBOSE(VB_IMPORTANT, "ERROR, bad parsing");
+        LOG(VB_GENERAL, LOG_ERR, "ERROR, bad parsing");
         return;
     }
 
@@ -554,7 +558,7 @@ void MythScreenType::CopyFrom(MythUIType *base)
  */
 void MythScreenType::CreateCopy(MythUIType *)
 {
-    VERBOSE(VB_IMPORTANT, "CreateCopy called on screentype - bad.");
+    LOG(VB_GENERAL, LOG_ERR, "CreateCopy called on screentype - bad.");
 }
 
 MythPainter* MythScreenType::GetPainter(void)

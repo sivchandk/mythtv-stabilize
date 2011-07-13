@@ -8,7 +8,7 @@
 #include "mythbaseexp.h"
 #include "mythobservable.h"
 #include "mythsocket_cb.h"
-#include "mythverbose.h"
+#include "mythlogging.h"
 #include "mythlocale.h"
 
 #define MYTH_APPNAME_MYTHBACKEND "mythbackend"
@@ -24,23 +24,11 @@
 #define MYTH_APPNAME_MYTHMESSAGE "mythmessage"
 #define MYTH_APPNAME_MYTHLCDSERVER "mythlcdserver"
 #define MYTH_APPNAME_MYTHAVTEST "mythavtest"
+#define MYTH_APPNAME_MYTHMEDIASERVER "mythmediaserver"
 
 class MDBManager;
 class MythCoreContextPrivate;
 class MythSocket;
-
-/// These are the database logging priorities used for filterig the logs.
-enum LogPriorities
-{
-    LP_EMERG     = 0,
-    LP_ALERT     = 1,
-    LP_CRITICAL  = 2,
-    LP_ERROR     = 3,
-    LP_WARNING   = 4,
-    LP_NOTICE    = 5,
-    LP_INFO      = 6,
-    LP_DEBUG     = 7
-};
 
 /** \class MythCoreContext
  *  \brief This class contains the runtime context for MythTV.
@@ -81,12 +69,18 @@ class MBASE_PUBLIC MythCoreContext : public MythObservable, public MythSocketCBs
                            uint timeout_ms = kMythSocketLongTimeout,
                            bool error_dialog_desired = false);
 
+    QString MythHostAddressAny(void);
+
+    QString GenMythURL(QString host = QString(), QString port = QString(),
+                       QString path = QString(), QString storageGroup = QString());
+
+    QString GenMythURL(QString host = QString(), int port = 0, 
+                       QString path = QString(), QString storageGroup = QString());
+
     QString GetMasterHostPrefix(QString storageGroup = QString());
     QString GetMasterHostName(void);
     QString GetHostName(void);
     QString GetFilePrefix(void);
-
-    void RefreshBackendConfig(void);
 
     bool IsConnectedToMaster(void);
     void SetBackend(bool backend);
@@ -146,9 +140,6 @@ class MBASE_PUBLIC MythCoreContext : public MythObservable, public MythSocketCBs
     void dispatch(const MythEvent &event);
     void dispatchNow(const MythEvent &event) MDEPRECATED;
 
-    void LogEntry(const QString &module, int priority,
-                  const QString &message, const QString &details);
-
     void InitLocale(void);
     const MythLocale *GetLocale(void);
     void SaveLocaleDefaults(void);
@@ -158,6 +149,8 @@ class MBASE_PUBLIC MythCoreContext : public MythObservable, public MythSocketCBs
 
   private:
     MythCoreContextPrivate *d;
+
+    bool has_ipv6;
 
     void connected(MythSocket *sock)         { (void)sock; }
     void connectionFailed(MythSocket *sock)  { (void)sock; }

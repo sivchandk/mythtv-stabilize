@@ -186,8 +186,10 @@ bool HttpConfig::ProcessRequest(HttpWorkerThread*, HTTPRequest *request)
                     if (dir == "/")
                         dir = "";
                     QString path =
-                        QString("myth://%1@%2%3%4").arg(storageGroup)
-                                .arg(host).arg(dir).arg(parts[1]);
+                            gCoreContext->GenMythURL(host,
+                                                     port,
+                                                     dir + parts[1],
+                                                     storageGroup);
                     if (entry.startsWith("sgdir::"))
                     {
                         os << "    <li class=\"directory collapsed\"><a href=\"#\" rel=\""

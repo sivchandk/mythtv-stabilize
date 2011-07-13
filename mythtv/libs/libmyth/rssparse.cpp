@@ -35,7 +35,10 @@ ResultItem::ResultItem(const QString& title, const QString& subtitle,
     m_thumbnail = thumbnail;
     m_mediaURL = mediaURL;
     m_author = author;
-    m_date = date;
+    if (!date.isNull())
+        m_date = date;
+    else
+        m_date = QDateTime::fromString("0000-00-00T00:00:00", Qt::ISODate);
     m_time = time;
     m_rating = rating;
     m_filesize = filesize;
@@ -55,6 +58,7 @@ ResultItem::ResultItem(const QString& title, const QString& subtitle,
 
 ResultItem::ResultItem()
 {
+    m_date = QDateTime::fromString("0000-00-00T00:00:00", Qt::ISODate);
 }
 
 ResultItem::~ResultItem()
@@ -707,7 +711,7 @@ ResultItem::resultList Parse::parseRSS(QDomDocument domDoc)
     ResultItem::resultList vList;
 
     QString document = domDoc.toString();
-    VERBOSE(VB_GENERAL|VB_EXTRA, QString("Will Be Parsing: %1").arg(document));
+    LOG(VB_GENERAL, LOG_DEBUG, "Will Be Parsing: " + document);
 
     QDomElement root = domDoc.documentElement();
     QDomElement channel = root.firstChildElement("channel");

@@ -36,13 +36,12 @@ using namespace std;
 #include <QUrl>
 #include <QTcpServer>
 #include <QTimer>
+#include <QNetworkInterface>
 
 #include "previewgeneratorqueue.h"
 #include "exitcodes.h"
 #include "mythcontext.h"
-#include "mythverbose.h"
 #include "mythversion.h"
-#include "decodeencode.h"
 #include "mythdb.h"
 #include "mainserver.h"
 #include "scheduler.h"
@@ -65,6 +64,8 @@ using namespace std;
 #include "mythdownloadmanager.h"
 #include "videoscan.h"
 #include "videoutils.h"
+#include "mythlogging.h"
+#include "filesysteminfo.h"
 
 /** Milliseconds to wait for an existing thread from
  *  process request thread pool.
@@ -118,7 +119,6 @@ int delete_file_immediately(const QString &filename,
 
 QMutex MainServer::truncate_and_close_lock;
 const uint MainServer::kMasterServerReconnectTimeout = 1000; //ms
-
 
 MainServer::MainServer(bool master, QMap<int, EncoderLink *> *tvList,
                        Scheduler *sched, AutoExpire *expirer,
@@ -1175,8 +1175,7 @@ void MainServer::HandleQueryRecordings(QString type, PlaybackSock *pbs)
         if ((proginfo->GetHostname() == gCoreContext->GetHostName()) ||
             (!slave && masterBackendOverride))
         {
-            proginfo->SetPathname(QString("myth://") + ip + ':' + port +
-                                  '/' + proginfo->GetBasename());
+            proginfo->SetPathname(gCoreContext->GenMythURL(ip,port,proginfo->GetBasename()));
             if (!proginfo->GetFilesize())
             {
                 QString tmpURL = GetPlaybackURL(proginfo);
@@ -1240,10 +1239,9 @@ void MainServer::HandleQueryRecordings(QString type, PlaybackSock *pbs)
                     backendPortMap[p->GetHostname()] =
                         gCoreContext->GetSettingOnHost("BackendServerPort",
                                                    p->GetHostname());
-                p->SetPathname(QString("myth://") +
-                               backendIpMap[p->GetHostname()] + ":" +
-                               backendPortMap[p->GetHostname()] + "/" +
-                               p->GetBasename());
+                p->SetPathname(gCoreContext->GenMythURL(backendIpMap[p->GetHostname()],
+                                                        backendPortMap[p->GetHostname()],
+                                                        p->GetBasename()));
             }
         }
 
@@ -1324,8 +1322,7 @@ void MainServer::HandleFillProgramInfo(QStringList &slist, PlaybackSock *pbs)
         if (playbackhost == gCoreContext->GetHostName())
             pginfo.SetPathname(lpath);
         else
-            pginfo.SetPathname(QString("myth://") + ip + ":" + port + "/" +
-                               pginfo.GetBasename());
+            pginfo.SetPathname(gCoreContext->GenMythURL(ip,port,pginfo.GetBasename()));
 
         const QFileInfo info(lpath);
         pginfo.SetFilesize(info.size());
@@ -1341,17 +1338,15 @@ void MainServer::HandleFillProgramInfo(QStringList &slist, PlaybackSock *pbs)
 /*
 void DeleteThread::run(void)
 {
-    if (!m_parent)
+    if (!m_ms)
         return;
 
-    MainServer *ms = m_parent->ms;
-    ms->DoDeleteThread(m_parent);
-
-    delete m_parent;
-    this->deleteLater();
+    threadRegister("Delete");
+    m_ms->DoDeleteThread(this);
+    threadDeregister();
 }
 
-void MainServer::DoDeleteThread(const DeleteStruct *ds)
+void MainServer::DoDeleteThread(DeleteStruct *ds)
 {
     // sleep a little to let frontends reload the recordings list
     // after deleting a recording, then we can hammer the DB and filesystem
@@ -1361,40 +1356,35 @@ void MainServer::DoDeleteThread(const DeleteStruct *ds)
     deletelock.lock();
 
     QString logInfo = QString("chanid %1 at %2")
-                              .arg(ds->chanid).arg(ds->recstartts.toString());
+                              .arg(ds->m_chanid)
+                              .arg(ds->m_recstartts.toString());
 
     QString name = QString("deleteThread%1%2").arg(getpid()).arg(rand());
-    QFile checkFile(ds->filename);
+    QFile checkFile(ds->m_filename);
 
     if (!MSqlQuery::testDBConnection())
     {
         QString msg = QString("ERROR opening database connection for Delete "
                               "Thread for chanid %1 recorded at %2.  Program "
                               "will NOT be deleted.")
-                              .arg(ds->chanid).arg(ds->recstartts.toString());
+                              .arg(ds->m_chanid)
+                              .arg(ds->m_recstartts.toString());
         VERBOSE(VB_GENERAL, msg);
-        gCoreContext->LogEntry("mythbackend", LP_ERROR, "Delete Recording",
-                           QString("Unable to open database connection for %1. "
-                                   "Program will NOT be deleted.")
-                                   .arg(logInfo));
 
         deletelock.unlock();
         return;
     }
 
-    ProgramInfo pginfo(ds->chanid, ds->recstartts);
+    ProgramInfo pginfo(ds->m_chanid, ds->m_recstartts);
 
     if (!pginfo.GetChanID())
     {
         QString msg = QString("ERROR retrieving program info when trying to "
                               "delete program for chanid %1 recorded at %2. "
                               "Recording will NOT be deleted.")
-                              .arg(ds->chanid).arg(ds->recstartts.toString());
+                              .arg(ds->m_chanid)
+                              .arg(ds->m_recstartts.toString());
         VERBOSE(VB_GENERAL, msg);
-        gCoreContext->LogEntry("mythbackend", LP_ERROR, "Delete Recording",
-                           QString("Unable to retrieve program info for %1. "
-                                   "Program will NOT be deleted.")
-                                   .arg(logInfo));
 
         deletelock.unlock();
         return;
@@ -1405,24 +1395,20 @@ void MainServer::DoDeleteThread(const DeleteStruct *ds)
     // deleting failed recordings without fuss, but blocks accidental
     // deletion of metadata for files where the filesystem has gone missing.
     if ((!checkFile.exists()) && pginfo.GetFilesize() &&
-        (!ds->forceMetadataDelete))
+        (!ds->m_forceMetadataDelete))
     {
         VERBOSE(VB_IMPORTANT, QString(
                     "ERROR when trying to delete file: %1. File "
                     "doesn't exist.  Database metadata"
                     "will not be removed.")
-                .arg(ds->filename));
-        gCoreContext->LogEntry("mythbackend", LP_WARNING, "Delete Recording",
-                           QString("File %1 does not exist for %2 when trying "
-                                   "to delete recording.")
-                           .arg(ds->filename).arg(logInfo));
+                .arg(ds->m_filename));
 
         pginfo.SaveDeletePendingFlag(false);
         deletelock.unlock();
         return;
     }
 
-    JobQueue::DeleteAllJobs(ds->chanid, ds->recstartts);
+    JobQueue::DeleteAllJobs(ds->m_chanid, ds->m_recstartts);
 
     LiveTVChain *tvchain = GetChainWithRecording(pginfo);
     if (tvchain)
@@ -1439,16 +1425,16 @@ void MainServer::DoDeleteThread(const DeleteStruct *ds)
     {
         // Since stat fails after unlinking on some filesystems,
         // get the filesize first
-        const QFileInfo info(ds->filename);
+        const QFileInfo info(ds->m_filename);
         size = info.size();
-        fd = DeleteFile(ds->filename, followLinks, ds->forceMetadataDelete);
+        fd = DeleteFile(ds->m_filename, followLinks, ds->m_forceMetadataDelete);
 
         if ((fd < 0) && checkFile.exists())
             errmsg = true;
     }
     else
     {
-        delete_file_immediately(ds->filename, followLinks, false);
+        delete_file_immediately(ds->m_filename, followLinks, false);
         sleep(2);
         if (checkFile.exists())
             errmsg = true;
@@ -1458,10 +1444,7 @@ void MainServer::DoDeleteThread(const DeleteStruct *ds)
     {
         VERBOSE(VB_IMPORTANT,
             QString("Error deleting file: %1. Keeping metadata in database.")
-                    .arg(ds->filename));
-        gCoreContext->LogEntry("mythbackend", LP_WARNING, "Delete Recording",
-                           QString("File %1 for %2 could not be deleted.")
-                                   .arg(ds->filename).arg(logInfo));
+                    .arg(ds->m_filename));
 
         pginfo.SaveDeletePendingFlag(false);
         deletelock.unlock();
@@ -1470,7 +1453,7 @@ void MainServer::DoDeleteThread(const DeleteStruct *ds)
 
     // Delete all preview thumbnails. /
 
-    QFileInfo fInfo( ds->filename );
+    QFileInfo fInfo( ds->m_filename );
     QString nameFilter = fInfo.fileName() + "*.png";
     // QDir's nameFilter uses spaces or semicolons to separate globs,
     // so replace them with the "match any character" wildcard
@@ -1497,27 +1480,26 @@ void MainServer::DoDeleteThread(const DeleteStruct *ds)
     deletelock.unlock();
 
     if (slowDeletes && fd >= 0)
-        TruncateAndClose(&pginfo, fd, ds->filename, size);
+        TruncateAndClose(&pginfo, fd, ds->m_filename, size);
 }
 
-void MainServer::DeleteRecordedFiles(const DeleteStruct *ds)
+void MainServer::DeleteRecordedFiles(DeleteStruct *ds)
 {
     QString logInfo = QString("chanid %1 at %2")
-        .arg(ds->chanid).arg(ds->recstartts.toString());
+        .arg(ds->m_chanid).arg(ds->m_recstartts.toString());
 
     MSqlQuery update(MSqlQuery::InitCon());
     MSqlQuery query(MSqlQuery::InitCon());
     query.prepare("SELECT basename, hostname, storagegroup FROM recordedfile "
                   "WHERE chanid = :CHANID AND starttime = :STARTTIME;");
-    query.bindValue(":CHANID", ds->chanid);
-    query.bindValue(":STARTTIME", ds->recstartts);
+    query.bindValue(":CHANID", ds->m_chanid);
+    query.bindValue(":STARTTIME", ds->m_recstartts);
 
     if (!query.exec() || !query.isActive())
     {
         MythDB::DBError("RecordedFiles deletion", query);
-        gCoreContext->LogEntry("mythbackend", LP_ERROR, "Delete Recording Files",
-                           QString("Error querying recordedfiles for %1.")
-                                   .arg(logInfo));
+        VERBOSE(VB_IMPORTANT, QString("Error querying recordedfiles for %1.")
+                                      .arg(logInfo));
     }
 
     QString basename;
@@ -1530,7 +1512,7 @@ void MainServer::DeleteRecordedFiles(const DeleteStruct *ds)
         storagegroup = query.value(2).toString();
         deleteInDB = false;
 
-        if (basename == ds->filename)
+        if (basename == ds->m_filename)
             deleteInDB = true;
         else
         {
@@ -1539,10 +1521,12 @@ void MainServer::DeleteRecordedFiles(const DeleteStruct *ds)
 
             StorageGroup sgroup(storagegroup);
             QString localFile = sgroup.FindFile(basename);
-            QString url = QString("myth://%1@%2:%3/%4").arg(storagegroup)
-                .arg(gCoreContext->GetSettingOnHost("BackendServerIP", hostname))
-                .arg(gCoreContext->GetSettingOnHost("BackendServerPort", hostname))
-                .arg(basename);
+
+            QString url = gCoreContext->GenMythURL(
+                                  gCoreContext->GetSettingOnHost("BackendServerIP", hostname),
+                                  gCoreContext->GetSettingOnHost("BackendServerPort", hostname),
+                                  basename,
+                                  storagegroup);
 
             if ((((hostname == gCoreContext->GetHostName()) ||
                   (!localFile.isEmpty())) &&
@@ -1561,47 +1545,45 @@ void MainServer::DeleteRecordedFiles(const DeleteStruct *ds)
                            "WHERE chanid = :CHANID "
                                "AND starttime = :STARTTIME "
                                "AND basename = :BASENAME ;");
-            update.bindValue(":CHANID", ds->chanid);
-            update.bindValue(":STARTTIME", ds->recstartts);
+            update.bindValue(":CHANID", ds->m_chanid);
+            update.bindValue(":STARTTIME", ds->m_recstartts);
             update.bindValue(":BASENAME", basename);
             if (!update.exec())
             {
                 MythDB::DBError("RecordedFiles deletion", update);
-                gCoreContext->LogEntry("mythbackend", LP_ERROR,
-                       "Delete Recording Files",
-                       QString("Error querying recordedfile (%1) for %2.")
-                               .arg(query.value(1).toString())
-                               .arg(logInfo));
+                VERBOSE(VB_IMPORTANT,
+                        QString("Error querying recordedfile (%1) for %2.")
+                                .arg(query.value(1).toString())
+                                .arg(logInfo));
             }
         }
     }
 }
 
-void MainServer::DoDeleteInDB(const DeleteStruct *ds)
+void MainServer::DoDeleteInDB(DeleteStruct *ds)
 {
     QString logInfo = QString("chanid %1 at %2")
-        .arg(ds->chanid).arg(ds->recstartts.toString());
+        .arg(ds->m_chanid).arg(ds->m_recstartts.toString());
 
     MSqlQuery query(MSqlQuery::InitCon());
     query.prepare("DELETE FROM recorded WHERE chanid = :CHANID AND "
                   "title = :TITLE AND starttime = :STARTTIME;");
-    query.bindValue(":CHANID", ds->chanid);
-    query.bindValue(":TITLE", ds->title);
-    query.bindValue(":STARTTIME", ds->recstartts);
+    query.bindValue(":CHANID", ds->m_chanid);
+    query.bindValue(":TITLE", ds->m_title);
+    query.bindValue(":STARTTIME", ds->m_recstartts);
 
     if (!query.exec() || !query.isActive())
     {
         MythDB::DBError("Recorded program deletion", query);
-        gCoreContext->LogEntry("mythbackend", LP_ERROR, "Delete Recording",
-                           QString("Error deleting recorded table for %1.")
-                                   .arg(logInfo));
+        VERBOSE(VB_IMPORTANT, QString("Error deleting recorded entry for %1.")
+                                      .arg(logInfo));
     }
 
     sleep(1);
 
     // Notify the frontend so it can requery for Free Space
     QString msg = QString("RECORDING_LIST_CHANGE DELETE %1 %2")
-        .arg(ds->chanid).arg(ds->recstartts.toString(Qt::ISODate));
+        .arg(ds->m_chanid).arg(ds->m_recstartts.toString(Qt::ISODate));
     RemoteSendEvent(MythEvent(msg));
 
     // sleep a little to let frontends reload the recordings list
@@ -1609,28 +1591,26 @@ void MainServer::DoDeleteInDB(const DeleteStruct *ds)
 
     query.prepare("DELETE FROM recordedmarkup "
                   "WHERE chanid = :CHANID AND starttime = :STARTTIME;");
-    query.bindValue(":CHANID", ds->chanid);
-    query.bindValue(":STARTTIME", ds->recstartts);
+    query.bindValue(":CHANID", ds->m_chanid);
+    query.bindValue(":STARTTIME", ds->m_recstartts);
 
     if (!query.exec())
     {
         MythDB::DBError("Recorded program delete recordedmarkup", query);
-        gCoreContext->LogEntry("mythbackend", LP_ERROR, "Delete Recording",
-                           QString("Error deleting recordedmarkup for %1.")
-                                   .arg(logInfo));
+        VERBOSE(VB_IMPORTANT, QString("Error deleting recordedmarkup for %1.")
+                                      .arg(logInfo));
     }
 
     query.prepare("DELETE FROM recordedseek "
                   "WHERE chanid = :CHANID AND starttime = :STARTTIME;");
-    query.bindValue(":CHANID", ds->chanid);
-    query.bindValue(":STARTTIME", ds->recstartts);
+    query.bindValue(":CHANID", ds->m_chanid);
+    query.bindValue(":STARTTIME", ds->m_recstartts);
 
     if (!query.exec())
     {
         MythDB::DBError("Recorded program delete recordedseek", query);
-        gCoreContext->LogEntry("mythbackend", LP_ERROR, "Delete Recording",
-                           QString("Error deleting recordedseek for %1.")
-                                   .arg(logInfo));
+        VERBOSE(VB_IMPORTANT, QString("Error deleting recordedseek for %1.")
+                                      .arg(logInfo));
     }
 }*/
 
@@ -1975,10 +1955,6 @@ void MainServer::DoHandleDeleteRecording(
                 QString("ERROR when trying to delete file: %1. File doesn't "
                         "exist.  Database metadata will not be removed.")
                         .arg(filename));
-        gCoreContext->LogEntry("mythbackend", LP_WARNING, "Delete Recording",
-                           QString("File %1 does not exist for %2 when trying "
-                                   "to delete recording.")
-                                   .arg(filename).arg(logInfo));
         resultCode = -2;
     }
 
@@ -2767,18 +2743,15 @@ void MainServer::HandleRecorderQuery(QStringList &slist, QStringList &commands,
     }
     else if (command == "GET_FRAMES_WRITTEN")
     {
-        long long value = enc->GetFramesWritten();
-        encodeLongLong(retlist, value);
+        retlist << QString::number(enc->GetFramesWritten());
     }
     else if (command == "GET_FILE_POSITION")
     {
-        long long value = enc->GetFilePosition();
-        encodeLongLong(retlist, value);
+        retlist << QString::number(enc->GetFilePosition());
     }
     else if (command == "GET_MAX_BITRATE")
     {
-        long long value = enc->GetMaxBitrate();
-        encodeLongLong(retlist, value);
+        retlist << QString::number(enc->GetMaxBitrate());
     }
     else if (command == "GET_CURRENT_RECORDING")
     {
@@ -2796,10 +2769,8 @@ void MainServer::HandleRecorderQuery(QStringList &slist, QStringList &commands,
     }
     else if (command == "GET_KEYFRAME_POS")
     {
-        long long desired = decodeLongLong(slist, 2);
-
-        long long value = enc->GetKeyframePosition(desired);
-        encodeLongLong(retlist, value);
+        long long desired = slist[2].toLongLong();
+        retlist << QString::number(enc->GetKeyframePosition(desired));
     }
     else if (command == "FILL_POSITION_MAP")
     {
@@ -2845,7 +2816,7 @@ void MainServer::HandleRecorderQuery(QStringList &slist, QStringList &commands,
     else if (command == "CANCEL_NEXT_RECORDING")
     {
         QString cancel = slist[2];
-        VERBOSE(VB_IMPORTANT, "Received: CANCEL_NEXT_RECORDING "<<cancel);
+        VERBOSE(VB_IMPORTANT, QString("Received: CANCEL_NEXT_RECORDING %1").arg(cancel));
         enc->CancelNextRecording(cancel == "1");
         retlist << "ok";
     }
@@ -3231,8 +3202,7 @@ void MainServer::HandleRemoteEncoder(QStringList &slist, QStringList &commands,
     }
     else if (command == "GET_MAX_BITRATE")
     {
-        long long value = enc->GetMaxBitrate();
-        encodeLongLong(retlist, value);
+        retlist << QString::number(enc->GetMaxBitrate());
     }
     else if (command == "GET_CURRENT_RECORDING")
     {
@@ -3348,7 +3318,7 @@ void MainServer::HandleCutMapQuery(const QString &chanid,
             rowcnt++;
             QString intstr = QString("%1").arg(*it);
             retlist << intstr;
-            encodeLongLong(retlist,it.key());
+            retlist << QString::number(it.key());
         }
     }
 
@@ -3415,7 +3385,7 @@ void MainServer::HandleBookmarkQuery(const QString &chanid,
         chanid.toUInt(), recstartts);
 
     QStringList retlist;
-    encodeLongLong(retlist,bookmark);
+    retlist << QString::number(bookmark);
 
     if (pbssock)
         SendResponse(pbssock, retlist);
@@ -3440,14 +3410,11 @@ void MainServer::HandleSetBookmark(QStringList &tokens,
 
     QString chanid = tokens[1];
     QString starttime = tokens[2];
-    QStringList bookmarklist;
-    bookmarklist << tokens[3];
-    bookmarklist << tokens[4];
+    long long bookmark = tokens[3].toLongLong();
 
     QDateTime recstartts;
     recstartts.setTime_t(starttime.toULongLong());
     QStringList retlist;
-    long long bookmark = decodeLongLong(bookmarklist, 0);
 
     ProgramInfo pginfo(chanid.toUInt(), recstartts);
 
@@ -3656,12 +3623,13 @@ void MainServer::HandleSetVerbose(QStringList &slist, PlaybackSock *pbs)
     QStringList retlist;
 
     QString newverbose = slist[1];
-    int len=newverbose.length();
+    int len = newverbose.length();
     if (len > 12)
     {
-        parse_verbose_arg(newverbose.right(len-12));
+        verboseArgParse(newverbose.right(len-12));
+        logPropagateCalc();
 
-        VERBOSE(VB_IMPORTANT, QString("Verbose level changed, new level is: %1")
+        VERBOSE(VB_IMPORTANT, QString("Verbose mask changed, new mask is: %1")
                                       .arg(verboseString));
 
         retlist << "OK";
@@ -3758,7 +3726,7 @@ void MainServer::HandleGenPreviewPixmap(QStringList &slist, PlaybackSock *pbs)
     if (it != slist.end())
         (time_fmt_sec = ((*it).toLower() == "s")), it++;
     if (it != slist.end())
-        time = decodeLongLong(slist, it);
+        (time = (*it).toLongLong()), it++;
     if (it != slist.end())
         (outputfile = *it), it++;
     outputfile = (outputfile == "<EMPTY>") ? QString::null : outputfile;
@@ -3777,8 +3745,8 @@ void MainServer::HandleGenPreviewPixmap(QStringList &slist, PlaybackSock *pbs)
 
     if (has_extra_data)
     {
-        VERBOSE(VB_PLAYBACK, "HandleGenPreviewPixmap got extra data\n\t\t\t"
-                << QString("%1%2 %3x%4 '%5'")
+        VERBOSE(VB_PLAYBACK, QString("HandleGenPreviewPixmap got extra data\n\t\t\t"
+                "%1%2 %3x%4 '%5'")
                 .arg(time).arg(time_fmt_sec?"s":"f")
                 .arg(width).arg(height).arg(outputfile));
     }
@@ -4037,8 +4005,6 @@ void MainServer::HandlePixmapGetIfModified(
 
 void MainServer::HandleBackendRefresh(MythSocket *socket)
 {
-    gCoreContext->RefreshBackendConfig();
-
     QStringList retlist( "OK" );
     SendResponse(socket, retlist);
 }
@@ -4356,6 +4322,9 @@ QString MainServer::LocalFilePath(const QUrl &url, const QString &wantgroup)
 {
     QString lpath = url.path();
 
+    if (url.hasFragment())
+        lpath += "#" + url.fragment();
+
     if (lpath.section('/', -2, -2) == "channels")
     {
         // This must be an icon request. Check channel.icon to be safe.
@@ -4425,15 +4394,15 @@ QString MainServer::LocalFilePath(const QUrl &url, const QString &wantgroup)
             {
                 lpath = tmpFile;
                 VERBOSE(VB_FILE,
-                        QString("LocalFilePath(%1 '%2')")
-                        .arg(url.toString()).arg(opath)
-                        <<", found file through exhaustive search "
-                        <<QString("at '%1'").arg(lpath));
+                        QString("LocalFilePath(%1 '%2')"
+                        ", found file through exhaustive search "
+                        "at '%3'")
+                        .arg(url.toString()).arg(opath).arg(lpath));
             }
             else
             {
-                VERBOSE(VB_IMPORTANT, "ERROR: LocalFilePath "
-                        <<QString("unable to find local path for '%1'.")
+                VERBOSE(VB_IMPORTANT, QString("ERROR: LocalFilePath "
+                        "unable to find local path for '%1'.")
                         .arg(opath));
                 lpath = "";
             }

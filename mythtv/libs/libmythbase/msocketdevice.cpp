@@ -173,21 +173,27 @@ MSocketDevice::MSocketDevice( int socket, Type type )
     The \a type argument must be either MSocketDevice::Stream for a
     reliable, connection-oriented TCP socket, or \c
     MSocketDevice::Datagram for an unreliable UDP socket.
-
-    The socket is created as an IPv4 socket.
+    The socket protocol type is defaulting to unknown leaving it to 
+    connect() to determine if an IPv6 or IPv4 type is required.
 
     \sa blocking() protocol()
 */
 MSocketDevice::MSocketDevice( Type type )
     : fd( -1 ), t( type ), p( 0 ), pp( 0 ), e( NoError ),
-      d(new MSocketDevicePrivate(IPv4))
+      d(new MSocketDevicePrivate(Unknown))
+
+    //  d(new MSocketDevicePrivate(IPv4))
 {
 #if defined(MSOCKETDEVICE_DEBUG)
     qDebug( "MSocketDevice: Created MSocketDevice object %p, type %d",
 	    this, type );
 #endif
     init();
-    setSocket( createNewSocket(), type );
+
+    // For the time being, if it's of type Datagram create the socket now
+    // rather than later during connect (since there wont be one with udp)
+    if (type == Datagram)
+        setSocket( createNewSocket(), type );
 }
 
 /*!
@@ -274,6 +280,11 @@ MSocketDevice::Protocol MSocketDevice::protocol() const
     if ( d->protocol == Unknown )
 	d->protocol = getProtocol();
     return d->protocol;
+}
+
+void MSocketDevice::setProtocol( Protocol protocol )
+{
+    d->protocol = protocol;
 }
 
 /*!
@@ -542,7 +553,19 @@ quint16 MSocketDevice::port() const
 */
 QHostAddress MSocketDevice::address() const
 {
-    return a;
+
+    QString ipaddress;
+    if (a.toString().startsWith("0:0:0:0:0:FFFF:"))
+    {
+        Q_IPV6ADDR addr = a.toIPv6Address();
+         // addr contains 16 unsigned characters
+
+        ipaddress = QString("%1.%2.%3.%4").arg(addr[12]).arg(addr[13]).arg(addr[14]).arg(addr[15]);
+    }
+    else
+        ipaddress = a.toString();
+
+    return QHostAddress(ipaddress);
 }
 
 

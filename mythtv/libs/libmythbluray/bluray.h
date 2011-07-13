@@ -174,9 +174,10 @@ typedef struct bd_title_info {
  *
  * @param bd  BLURAY object
  * @param flags  title flags
+ * @param min_title_length  filter out titles shorter than min_title_length seconds
  * @return number of titles found
  */
-uint32_t bd_get_titles(BLURAY *bd, uint8_t flags);
+uint32_t bd_get_titles(BLURAY *bd, uint8_t flags, uint32_t min_title_length);
 
 /**
  *
@@ -184,9 +185,10 @@ uint32_t bd_get_titles(BLURAY *bd, uint8_t flags);
  *
  * @param bd  BLURAY object
  * @param title_idx title index number
+ * @param angle angle number (chapter offsets and clip size depend on selected angle)
  * @return allocated BLURAY_TITLE_INFO object, NULL on error
  */
-BLURAY_TITLE_INFO* bd_get_title_info(BLURAY *bd, uint32_t title_idx);
+BLURAY_TITLE_INFO* bd_get_title_info(BLURAY *bd, uint32_t title_idx, unsigned angle);
 
 /**
  *
@@ -194,9 +196,10 @@ BLURAY_TITLE_INFO* bd_get_title_info(BLURAY *bd, uint32_t title_idx);
  *
  * @param bd  BLURAY object
  * @param playlist playlist number
+ * @param angle angle number (chapter offsets and clip size depend on selected angle)
  * @return allocated BLURAY_TITLE_INFO object, NULL on error
  */
-BLURAY_TITLE_INFO* bd_get_playlist_info(BLURAY *bd, uint32_t playlist);
+BLURAY_TITLE_INFO* bd_get_playlist_info(BLURAY *bd, uint32_t playlist, unsigned angle);
 
 /**
  *
@@ -251,6 +254,15 @@ int64_t bd_seek_time(BLURAY *bd, uint64_t tick);
  * @return size of data read, -1 if error
  */
 int bd_read(BLURAY *bd, unsigned char *buf, int len);
+
+/**
+ *
+ *  Continue reading after still mode clip
+ *
+ * @param bd  BLURAY object
+ * @return 0 on error
+ */
+int bd_read_skip_still(BLURAY *bd);
 
 /**
  *
@@ -511,7 +523,7 @@ int  bd_get_event(BLURAY *bd, BD_EVENT *event);
 
 /**
  *
- *  Start playing disc in navigation mode.
+ *  Start playing disc in navigation mode (using on-disc menus).
  *
  *  Playback is started from "First Play" title.
  *
@@ -587,9 +599,9 @@ void bd_register_overlay_proc(BLURAY *bd, void *handle, bd_overlay_proc_f func);
  * @param bd  BLURAY object
  * @param pts current playback position (1/90000s) or -1
  * @param key input key
- * @return 1 on success, 0 if error
+ * @return <0 on error, 0 on success, >0 if selection/activation changed
  */
-void bd_user_input(BLURAY *bd, int64_t pts, uint32_t key);
+int bd_user_input(BLURAY *bd, int64_t pts, uint32_t key);
 
 /**
  *
@@ -599,9 +611,13 @@ void bd_user_input(BLURAY *bd, int64_t pts, uint32_t key);
  * @param pts current playback position (1/90000s) or -1
  * @param x mouse pointer x-position
  * @param y mouse pointer y-position
- * @return none
+ * @return <0 on error, 0 when mouse is outside of buttons, 1 when mouse is inside button
  */
-void bd_mouse_select(BLURAY *bd, int64_t pts, uint16_t x, uint16_t y);
+int bd_mouse_select(BLURAY *bd, int64_t pts, uint16_t x, uint16_t y);
+
+/*
+ *
+ */
 
 struct meta_dl;
 /**

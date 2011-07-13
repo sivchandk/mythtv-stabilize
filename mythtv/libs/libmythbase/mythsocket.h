@@ -42,9 +42,6 @@ class MBASE_PUBLIC MythSocket : public MSocketDevice
     QString errorToString(void) const { return errorToString(error()); }
     QString errorToString(const Error error) const;
 
-    void setReconnect(bool reconnect=true)      { m_reconnect = reconnect; }
-    bool  isReconnect(void)                     { return m_reconnect; }
-
     bool    Validate(uint timeout_ms = kMythSocketLongTimeout,
                      bool error_dialog_desired = false);
     void setValidated(bool isValidated=true)    { m_isValidated = isValidated; }
@@ -102,10 +99,9 @@ class MBASE_PUBLIC MythSocket : public MSocketDevice
     QMutex          m_ref_lock;
     mutable QMutex  m_lock; // externally accessible lock
 
-    bool            m_reconnect;
+    bool            m_expectingreply;
     bool            m_isValidated;
     bool            m_isAnnounced;
-    bool            m_expectingreply;
     QStringList     m_announce;
 
     static const uint kSocketBufferSize;

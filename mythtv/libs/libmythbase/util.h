@@ -52,6 +52,9 @@ class QFile;
  MBASE_PUBLIC  void sendPlaybackStart();
  MBASE_PUBLIC  void sendPlaybackEnd();
 
+ MBASE_PUBLIC  void wrapList(QStringList &list, int width);
+
+
 inline float clamp(float val, float minimum, float maximum)
 {
     return min(max(val, minimum), maximum);
@@ -82,11 +85,10 @@ inline int   sq(int   a) { return a*a; }
  MBASE_PUBLIC  void myth_yield(void);
  MBASE_PUBLIC  bool myth_ioprio(int val); // range -1..8, smaller is higher priority
 
- MBASE_PUBLIC  bool myth_FileIsDVD(const QString &filename);
- MBASE_PUBLIC  bool myth_FileIsBD(const QString &filename);
-
  MBASE_PUBLIC  bool MythRemoveDirectory(QDir &aDir);
  MBASE_PUBLIC  QString &ShellEscape(QString &string);
+
+ MBASE_PUBLIC  void setHttpProxy(void);
 
 // CPU Tick timing function
 #ifdef MMX

@@ -3,7 +3,6 @@
 
 // C headers
 #include <cmath>
-#include <pthread.h>
 
 // C++ headers
 #include <algorithm>
@@ -38,7 +37,7 @@ using namespace std;
 
 // libmythbase headers
 #include "mythdb.h"
-#include "mythverbose.h"
+#include "mythlogging.h"
 #include "mythevent.h"
 #include "mythdirs.h"
 #include "compat.h"
@@ -465,6 +464,10 @@ MythMainWindow::MythMainWindow(const bool useDB)
     d->repaintRegion = QRegion(QRect(0,0,0,0));
 
     d->m_drawEnabled = true;
+
+    connect(this, SIGNAL(signalRemoteScreenShot(QString,int,int)),
+            this, SLOT(doRemoteScreenShot(QString,int,int)),
+            Qt::BlockingQueuedConnection);
 }
 
 MythMainWindow::~MythMainWindow()
@@ -546,6 +549,14 @@ void MythMainWindow::HidePainterWindow(void)
         if (!(d->render && d->render->IsShared()))
             d->paintwin->hide();
     }
+}
+
+void MythMainWindow::ResizePainterWindow(const QSize &size)
+{
+    if (!d->paintwin)
+        return;
+    d->paintwin->setFixedSize(size);
+    d->paintwin->resize(size);
 }
 
 MythRender *MythMainWindow::GetRenderDevice()
@@ -770,26 +781,58 @@ void MythMainWindow::GrabWindow(QImage &image)
     image = p.toImage();
 }
 
-bool MythMainWindow::SaveScreenShot(const QImage &image)
+/* This is required to allow a screenshot to be requested by another thread
+ * other than the UI thread, and to wait for the screenshot before returning.
+ * It is used by mythweb for the remote access screenshots
+ */
+void MythMainWindow::doRemoteScreenShot(QString filename, int x, int y)
 {
-    QString fpath = GetMythDB()->GetSetting("ScreenShotPath", "/tmp");
-    QString fname = QString("%1/myth-screenshot-%2.png").arg(fpath)
-        .arg(QDateTime::currentDateTime().toString("yyyy-MM-ddThh-mm-ss.zzz"));
+    // This will be running in the UI thread, as is required by QPixmap
+    QStringList args;
+    args << QString::number(x);
+    args << QString::number(y);
+    args << filename;
 
-    VERBOSE(VB_GENERAL,QString("Saving screenshot to %1 (%2x%3)")
-                       .arg(fname).arg(image.width()).arg(image.height()));
+    MythEvent me(MythEvent::MythEventMessage, ACTION_SCREENSHOT, args);
+    qApp->sendEvent(this, &me);
+}
 
-    if (image.save(fname))
+void MythMainWindow::RemoteScreenShot(QString filename, int x, int y)
+{
+    // This will be running in a non-UI thread and is used to trigger a
+    // function in the UI thread, and waits for completion of that handler
+    emit signalRemoteScreenShot(filename, x, y);
+}
+
+bool MythMainWindow::SaveScreenShot(const QImage &image, QString filename)
+{
+    if (filename.isEmpty())
     {
-        VERBOSE(VB_GENERAL, "MythMainWindow::screenShot succeeded");
+        QString fpath = GetMythDB()->GetSetting("ScreenShotPath", "/tmp");
+        filename = QString("%1/myth-screenshot-%2.png").arg(fpath)
+         .arg(QDateTime::currentDateTime().toString("yyyy-MM-ddThh-mm-ss.zzz"));
+    }
+
+    QString extension = filename.section('.', -1, -1);
+    if (extension == "jpg")
+        extension = "JPEG";
+    else
+        extension = "PNG";
+
+    LOG(VB_GENERAL, LOG_INFO, QString("Saving screenshot to %1 (%2x%3)")
+                       .arg(filename).arg(image.width()).arg(image.height()));
+
+    if (image.save(filename, extension.toAscii(), 100))
+    {
+        LOG(VB_GENERAL, LOG_INFO, "MythMainWindow::screenShot succeeded");
         return true;
     }
 
-    VERBOSE(VB_GENERAL, "MythMainWindow::screenShot Failed!");
+    LOG(VB_GENERAL, LOG_INFO, "MythMainWindow::screenShot Failed!");
     return false;
 }
 
-bool MythMainWindow::ScreenShot(int w, int h)
+bool MythMainWindow::ScreenShot(int w, int h, QString filename)
 {
     QImage img;
     GrabWindow(img);
@@ -799,7 +842,7 @@ bool MythMainWindow::ScreenShot(int w, int h)
         h = img.height();
 
     img = img.scaled(w, h, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-    return SaveScreenShot(img);
+    return SaveScreenShot(img, filename);
 }
 
 bool MythMainWindow::event(QEvent *e)
@@ -852,7 +895,7 @@ void MythMainWindow::Init(void)
 
     if (!GetMythDB()->GetNumSetting("RunFrontendInWindow", 0))
     {
-        VERBOSE(VB_GENERAL, "Using Frameless Window");
+        LOG(VB_GENERAL, LOG_INFO, "Using Frameless Window");
         flags |= Qt::FramelessWindowHint;
     }
 
@@ -865,7 +908,7 @@ void MythMainWindow::Init(void)
 
     if (d->does_fill_screen && !GetMythUI()->IsGeometryOverridden())
     {
-        VERBOSE(VB_GENERAL, "Using Full Screen Window");
+        LOG(VB_GENERAL, LOG_INFO, "Using Full Screen Window");
         setWindowState(Qt::WindowFullScreen);
     }
 
@@ -908,7 +951,7 @@ void MythMainWindow::Init(void)
 #ifdef USING_MINGW
     if (painter == "auto" || painter == "d3d9")
     {
-        VERBOSE(VB_GENERAL, "Using the D3D9 painter");
+        LOG(VB_GENERAL, LOG_INFO, "Using the D3D9 painter");
         d->painter = new MythD3D9Painter();
         d->paintwin = new MythPainterWindowD3D9(this, d);
     }
@@ -917,7 +960,7 @@ void MythMainWindow::Init(void)
     if ((painter == "auto" && (!d->painter && !d->paintwin)) ||
         painter == "opengl")
     {
-        VERBOSE(VB_GENERAL, "Trying the OpenGL painter");
+        LOG(VB_GENERAL, LOG_INFO, "Trying the OpenGL painter");
         d->painter = new MythOpenGLPainter();
         QGLFormat fmt;
         fmt.setDepth(false);
@@ -930,14 +973,15 @@ void MythMainWindow::Init(void)
             bool teardown = false;
             if (!qgl->isValid())
             {
-                VERBOSE(VB_IMPORTANT, "Failed to create OpenGL painter. "
-                                      "Check your OpenGL installation.");
+                LOG(VB_GENERAL, LOG_ERR, "Failed to create OpenGL painter. "
+                                         "Check your OpenGL installation.");
                 teardown = true;
             }
             else if (painter == "auto" && !qgl->format().directRendering())
             {
-                VERBOSE(VB_IMPORTANT, "OpenGL is using software rendering. "
-                                      "Falling back to Qt painter.");
+                LOG(VB_GENERAL, LOG_WARNING,
+                    "OpenGL is using software rendering. "
+                    "Falling back to Qt painter.");
                 teardown = true;
             }
             if (teardown)
@@ -956,15 +1000,15 @@ void MythMainWindow::Init(void)
 
     if (!d->painter && !d->paintwin)
     {
-        VERBOSE(VB_GENERAL, "Using the Qt painter");
+        LOG(VB_GENERAL, LOG_INFO, "Using the Qt painter");
         d->painter = new MythQtPainter();
         d->paintwin = new MythPainterWindowQt(this, d);
     }
 
     if (!d->paintwin)
     {
-        VERBOSE(VB_IMPORTANT, "MythMainWindow failed to create a "
-                              "painter window.");
+        LOG(VB_GENERAL, LOG_ERR, "MythMainWindow failed to create a "
+                                 "painter window.");
         return;
     }
 
@@ -975,7 +1019,7 @@ void MythMainWindow::Init(void)
     }
 
     d->paintwin->move(0, 0);
-    d->paintwin->setFixedSize(size());
+    ResizePainterWindow(size());
     d->paintwin->raise();
     ShowPainterWindow();
     if (!GetMythDB()->GetNumSetting("HideMouseCursor", 0))
@@ -1018,6 +1062,8 @@ void MythMainWindow::InitKeys()
         "Edit"),                    "E");
     RegisterKey("Global", ACTION_SCREENSHOT, QT_TRANSLATE_NOOP("MythControls",
          "Save screenshot"), "");
+    RegisterKey("Global", ACTION_HANDLEMEDIA, QT_TRANSLATE_NOOP("MythControls",
+         "Play a media resource"), "");
 
     RegisterKey("Global", "PAGEUP", QT_TRANSLATE_NOOP("MythControls",
         "Page Up"),              "PgUp");
@@ -1180,7 +1226,7 @@ void MythMainWindow::attach(QWidget *child)
     // if windows are created on different threads,
     // or if setFocus() is called from a thread other than the main UI thread,
     // setFocus() hangs the thread that called it
-    VERBOSE(VB_IMPORTANT,
+    LOG(VB_GENERAL, LOG_ERR,
             QString("MythMainWindow::attach old: %1, new: %2, thread: %3")
             .arg(currentWidget() ? currentWidget()->objectName() : "none")
             .arg(child->objectName())
@@ -1203,7 +1249,7 @@ void MythMainWindow::detach(QWidget *child)
 
     if (it == d->widgetList.end())
     {
-        VERBOSE(VB_IMPORTANT, "Could not find widget to detach");
+        LOG(VB_GENERAL, LOG_ERR, "Could not find widget to detach");
         return;
     }
 
@@ -1505,15 +1551,16 @@ void MythMainWindow::BindKey(const QString &context, const QString &action,
         QStringList dummyaction("");
         if (d->keyContexts.value(context)->GetMapping(keynum, dummyaction))
         {
-            VERBOSE(VB_GENERAL, QString("Key %1 is bound to multiple actions "
-                                        "in context %2.")
+            LOG(VB_GENERAL, LOG_WARNING,
+                QString("Key %1 is bound to multiple actions in context %2.")
                     .arg(key).arg(context));
         }
 
         d->keyContexts.value(context)->AddMapping(keynum, action);
-        //VERBOSE(VB_GENERAL, QString("Binding: %1 to action: %2 (%3)")
-        //                           .arg(key).arg(action)
-        //                           .arg(context));
+#if 0
+        LOG(VB_GENERAL, LOG_DEBUG, QString("Binding: %1 to action: %2 (%3)")
+                                   .arg(key).arg(action).arg(context));
+#endif
 
         if (action == "ESCAPE" && context == "Global" && i == 0)
             d->escapekey = keynum;
@@ -1544,7 +1591,8 @@ void MythMainWindow::RegisterKey(const QString &context, const QString &action,
             // Update keybinding description if changed
             if (db_description != description)
             {
-                VERBOSE(VB_IMPORTANT, "Updating keybinding description...");
+                LOG(VB_GENERAL, LOG_NOTICE,
+                    "Updating keybinding description...");
                 query.prepare(
                     "UPDATE keybindings "
                     "SET description = :DESCRIPTION "
@@ -1614,7 +1662,8 @@ void MythMainWindow::ClearJump(const QString &destination)
     /* make sure that the jump point exists (using [] would add it)*/
     if (d->destinationMap.find(destination) == d->destinationMap.end())
     {
-       VERBOSE(VB_GENERAL, "Cannot clear ficticious jump point"+destination);
+       LOG(VB_GENERAL, LOG_ERR,
+           "Cannot clear ficticious jump point" + destination);
        return;
     }
 
@@ -1634,7 +1683,8 @@ void MythMainWindow::BindJump(const QString &destination, const QString &key)
     /* make sure the jump point exists */
     if (d->destinationMap.find(destination) == d->destinationMap.end())
     {
-       VERBOSE(VB_GENERAL,"Cannot bind to ficticious jump point"+destination);
+       LOG(VB_GENERAL, LOG_ERR, 
+           "Cannot bind to ficticious jump point" + destination);
        return;
     }
 
@@ -1647,21 +1697,24 @@ void MythMainWindow::BindJump(const QString &destination, const QString &key)
 
         if (d->jumpMap.count(keynum) == 0)
         {
-            //VERBOSE(VB_GENERAL, QString("Binding: %1 to JumpPoint: %2")
-            //                           .arg(keybind).arg(destination));
+#if 0
+            LOG(VB_GENERAL, LOG_DEBUG, QString("Binding: %1 to JumpPoint: %2")
+                                       .arg(keybind).arg(destination));
+#endif
 
             d->jumpMap[keynum] = &d->destinationMap[destination];
         }
         else
         {
-            VERBOSE(VB_GENERAL, QString("Key %1 is already bound to a jump "
-                                        "point.").arg(key));
+            LOG(VB_GENERAL, LOG_WARNING,
+                QString("Key %1 is already bound to a jump point.").arg(key));
         }
     }
-    //else
-    //    VERBOSE(VB_GENERAL, QString("JumpPoint: %2 exists, no keybinding")
-    //                               .arg(destination));
-
+#if 0
+    else
+        LOG(VB_GENERAL, LOG_DEBUG,
+            QString("JumpPoint: %2 exists, no keybinding") .arg(destination));
+#endif
 }
 
 void MythMainWindow::RegisterJump(const QString &destination,
@@ -1733,15 +1786,16 @@ void MythMainWindow::RegisterMediaPlugin(const QString &name,
 {
     if (d->mediaPluginMap.count(name) == 0)
     {
-        VERBOSE(VB_GENERAL, QString("Registering %1 as a media playback "
-                                    "plugin.").arg(name));
+        LOG(VB_GENERAL, LOG_NOTICE,
+            QString("Registering %1 as a media playback plugin.").arg(name));
         MPData mpd = {desc, fn};
         d->mediaPluginMap[name] = mpd;
     }
     else
     {
-        VERBOSE(VB_GENERAL, QString("%1 is already registered as a media "
-                                    "playback plugin.").arg(name));
+        LOG(VB_GENERAL, LOG_NOTICE,
+            QString("%1 is already registered as a media playback plugin.")
+                .arg(name));
     }
 }
 
@@ -1993,8 +2047,7 @@ void MythMainWindow::customEvent(QEvent *ce)
             if (screen)
                 screen->gestureEvent(ge);
         }
-        VERBOSE(VB_GUI, QString("Gesture: %1")
-                .arg(QString(*ge).toLocal8Bit().constData()));
+        LOG(VB_GUI, LOG_DEBUG, QString("Gesture: %1") .arg(QString(*ge)));
     }
     else if (ce->type() == MythEvent::kExitToMainMenuEventType &&
              d->exitingtomain)
@@ -2022,7 +2075,7 @@ void MythMainWindow::customEvent(QEvent *ce)
 
         if (LircKeycodeEvent::kLIRCInvalidKeyCombo == lke->modifiers())
         {
-            VERBOSE(VB_IMPORTANT, QString("MythMainWindow, Warning: ") +
+            LOG(VB_GENERAL, LOG_WARNING,
                     QString("Attempt to convert LIRC key sequence '%1' "
                             "to a Qt key sequence failed.")
                     .arg(lke->lirctext()));
@@ -2078,11 +2131,10 @@ void MythMainWindow::customEvent(QEvent *ce)
         }
         else
         {
-            VERBOSE(VB_IMPORTANT,
-                    QString("JoystickMenuClient warning: attempt to convert "
-                            "'%1' to a key sequence failed. Fix your key "
-                            "mappings.")
-                    .arg(jke->getJoystickMenuText().toLocal8Bit().constData()));
+            LOG(VB_GENERAL, LOG_WARNING,
+                    QString("attempt to convert '%1' to a key sequence failed. "
+                            "Fix your key mappings.")
+                    .arg(jke->getJoystickMenuText()));
         }
     }
 #endif
@@ -2121,7 +2173,7 @@ void MythMainWindow::customEvent(QEvent *ce)
         MythMediaDevice *device = me->getDevice();
         if (device)
         {
-            VERBOSE(VB_GENERAL, QString("Media Event: %1 - %2")
+            LOG(VB_GENERAL, LOG_DEBUG, QString("Media Event: %1 - %2")
                     .arg(device->getDevicePath()).arg(device->getStatus()));
         }
     }
@@ -2147,7 +2199,7 @@ void MythMainWindow::customEvent(QEvent *ce)
             }
             default:
             {
-                VERBOSE(VB_IMPORTANT,
+                LOG(VB_GENERAL, LOG_ERR,
                         QString("Unknown ScreenSaverEvent type: %1")
                         .arg(sse->getSSEventType()));
             }
@@ -2182,25 +2234,28 @@ void MythMainWindow::customEvent(QEvent *ce)
         MythEvent *me = (MythEvent *)ce;
         QString message = me->Message();
 
-        if (message.left(12) == "HANDLE_MEDIA")
+        if (message.startsWith(ACTION_HANDLEMEDIA))
         {
-            QStringList tokens = message.split(' ', QString::SkipEmptyParts);
-            HandleMedia(tokens[1],
-                        message.mid(tokens[0].length() +
-                                    tokens[1].length() + 2));
+            if (me->ExtraDataCount() == 1)
+                HandleMedia("Internal", me->ExtraData(0));
+            else
+                LOG(VB_GENERAL, LOG_ERR, "Failed to handle media");
         }
         else if (message.startsWith(ACTION_SCREENSHOT))
         {
-            if (me->ExtraDataCount() == 2)
+            int width = 0;
+            int height = 0;
+            QString filename;
+
+            if (me->ExtraDataCount() >= 2)
             {
-                int width  = me->ExtraData(0).toInt();
-                int height = me->ExtraData(1).toInt();
-                ScreenShot(width, height);
+                width  = me->ExtraData(0).toInt();
+                height = me->ExtraData(1).toInt();
+
+                if (me->ExtraDataCount() == 3)
+                    filename = me->ExtraData(2);
             }
-            else
-            {
-                ScreenShot();
-            }
+	    ScreenShot(width, height, filename);
         }
     }
     else if ((MythEvent::Type)(ce->type()) == MythEvent::MythUserMessage)
@@ -2364,9 +2419,9 @@ void MythMainWindow::StartLIRC(void)
 void MythMainWindow::LockInputDevices( bool locked )
 {
     if( locked )
-        VERBOSE(VB_IMPORTANT, "Locking input devices");
+        LOG(VB_GENERAL, LOG_INFO, "Locking input devices");
     else
-        VERBOSE(VB_IMPORTANT, "Unlocking input devices");
+        LOG(VB_GENERAL, LOG_INFO, "Unlocking input devices");
 
 #ifdef USE_LIRC
     d->ignore_lirc_keys = locked;
