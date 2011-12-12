@@ -2483,22 +2483,6 @@ void Scheduler::HandleTuning(RecordingInfo &ri, bool &statuschanged)
             .arg(ri.GetCardID()).arg(ri.GetTitle());
         LOG(VB_GENERAL, LOG_ERR, LOC + msg);
     }
-    else
-    {
-        recStatus = (*tvit)->GetRecordingStatus();
-        if (rsTuning == recStatus)
-        {
-            // If tuning is still taking place this long after we
-            // started give up on it so the scheduler can try to
-            // find another broadcast of the same material.
-            QDateTime curtime = QDateTime::currentDateTime();
-            if ((ri.GetRecordingStartTime().secsTo(curtime) > 180) &&
-                (ri.GetScheduledStartTime().secsTo(curtime) > 180))
-            {
-                recStatus = rsFailed;
-            }
-        }
-    }
 
     // If the status has changed, handle it
     if (rsTuning != recStatus)
