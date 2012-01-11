@@ -15,6 +15,8 @@ void MythCCExtractorCommandLineParser::LoadArguments(void)
     addLogging("none", LOG_ERR);
     add(QStringList( QStringList() << "-i" << "--infile" ), "inputfile", "",
             "input file", "");
+    add(QStringList() << "--endtime", "endtime", QDateTime(),
+        "Expected end time", "");
 }
 
 QString MythCCExtractorCommandLineParser::GetHelpHeader(void) const
