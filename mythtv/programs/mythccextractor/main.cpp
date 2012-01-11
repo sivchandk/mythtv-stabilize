@@ -73,6 +73,8 @@ static int RunCCExtract(const ProgramInfo &program_info)
                            .arg(filename)) << endl;
         return GENERIC_EXIT_PERMISSIONS_ERROR;
     }
+    if (program_info.GetRecordingEndTime() > QDateTime::currentDateTime())
+        tmprbuf->SetRetardEOFTime(program_info.GetRecordingEndTime());
 
 
     PlayerFlags flags = (PlayerFlags)(kVideoIsNull | kAudioMuted  |
@@ -163,6 +165,26 @@ int main(int argc, char *argv[])
     }
 
     ProgramInfo pginfo(infile);
+
+    if (cmdline.toDateTime("endtime").isValid())
+        pginfo.SetRecordingEndTime(cmdline.toDateTime("endtime"));
+    else
+    {
+        uint chanid = 0;
+        QDateTime starttime;
+        if (ProgramInfo::ExtractKeyFromPathname(
+                pginfo.GetPathname(), chanid, starttime))
+        {
+            QDateTime endtime = starttime.addSecs(3600);
+            pginfo.SetRecordingStartTime(starttime);
+            pginfo.SetRecordingEndTime(endtime);
+        }
+    }
+
+    cout << "End time set as "
+         << qPrintable(pginfo.GetRecordingEndTime(ISODate))
+         << endl;
+
     return RunCCExtract(pginfo);
 }
 
