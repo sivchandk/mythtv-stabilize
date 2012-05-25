@@ -329,7 +329,14 @@ void MythCCExtractorPlayer::Ingest608Captions(void)
                 QString str = (*bit)->text;
                 if (str.length() && str[0] > 0xff)
                     str = str.mid(1);
-                content += str;
+                QString nstr;
+                for (int i = 0; i < str.length(); i++)
+                {
+                    // only add non-control characters to string
+                    if (str[i].unicode() < 0x7000)
+                        nstr += str[i];
+                }
+                content += nstr;
             }
             textlist->lock.unlock();
 
