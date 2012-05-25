@@ -23,7 +23,7 @@ class OneSubtitle;
  * Class to write SubRip files.
  */
 
-//#define SRT_TO_ASCII
+#define SRT_TO_ASCII
 //#define SRT_TO_LATIN1
 
 class MTV_PUBLIC SRTWriter
