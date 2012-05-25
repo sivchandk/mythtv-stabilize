@@ -325,8 +325,12 @@ void MythCCExtractorPlayer::Ingest608Captions(void)
             QStringList content;
             vector<CC608Text*>::iterator bit = textlist->buffers.begin();
             for (; bit != textlist->buffers.end(); ++bit)
-                content += CC608Decoder::ToASCII((*bit)->text, true);
-
+            {
+                QString str = (*bit)->text;
+                if (str.length() && str[0] > 0xff)
+                    str = str.mid(1);
+                content += str;
+            }
             textlist->lock.unlock();
 
             IngestSubtitle((*it).subs[ccIdx], content);
