@@ -528,10 +528,12 @@ bool DTVRecorder::FindOtherKeyframes(const TSPacket *tspacket)
 }
 
 // documented in recorderbase.h
-void DTVRecorder::SetNextRecording(const ProgramInfo *progInf, RingBuffer *rb)
+void DTVRecorder::SetNextRecording(const ProgramInfo *pi, RingBuffer *rb)
 {
-    LOG(VB_RECORD, LOG_INFO, LOC + QString("SetNextRecord(0x%1, 0x%2)")
-            .arg((uint64_t)progInf,0,16).arg((uint64_t)rb,0,16));
+    LOG(VB_RECORD, LOG_INFO, LOC + QString("SetNextRecording(0x%1, 0x%2)")
+        .arg(reinterpret_cast<intptr_t>(pi),0,16)
+        .arg(reinterpret_cast<intptr_t>(rb),0,16));
+
     // First we do some of the time consuming stuff we can do now
     SavePositionMap(true);
     if (ringBuffer)
@@ -542,14 +544,18 @@ void DTVRecorder::SetNextRecording(const ProgramInfo *progInf, RingBuffer *rb)
     }
 
     // Then we set the next info
-    nextRingBufferLock.lock();
+    QMutexLocker locker(&nextRingBufferLock);
+    if (nextRecording)
+    {
+        delete nextRecording;
+        nextRecording = NULL;
+    }
+    if (pi)
+        nextRecording = new ProgramInfo(*pi);
 
-    nextRecording = NULL;
-    if (progInf)
-        nextRecording = new ProgramInfo(*progInf);
-
+    if (nextRingBuffer)
+        delete nextRingBuffer;
     nextRingBuffer = rb;
-    nextRingBufferLock.unlock();
 }
 
 /** \fn DTVRecorder::HandleKeyframe(uint64_t)

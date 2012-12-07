@@ -61,6 +61,16 @@ RecorderBase::~RecorderBase(void)
         ringBuffer = NULL;
     }
     SetRecording(NULL);
+    if (nextRingBuffer)
+    {
+        delete nextRingBuffer;
+        nextRingBuffer = NULL;
+    }
+    if (nextRecording)
+    {
+        delete nextRecording;
+        nextRecording = NULL;
+    }
 }
 
 void RecorderBase::SetRingBuffer(RingBuffer *rbuf)

@@ -2818,7 +2818,7 @@ void NuppelVideoRecorder::doWriteThread(void)
     }
 }
 
-void NuppelVideoRecorder::SetNextRecording(const ProgramInfo *progInf,
+void NuppelVideoRecorder::SetNextRecording(const ProgramInfo *pi,
                                            RingBuffer *rb)
 {
     // First we do some of the time consuming stuff we can do now
@@ -2829,9 +2829,16 @@ void NuppelVideoRecorder::SetNextRecording(const ProgramInfo *progInf,
 
     // Then we set the next info
     QMutexLocker locker(&nextRingBufferLock);
-    nextRecording = NULL;
-    if (progInf)
-        nextRecording = new ProgramInfo(*progInf);
+    if (nextRecording)
+    {
+        delete nextRecording;
+        nextRecording = NULL;
+    }
+    if (pi)
+        nextRecording = new ProgramInfo(*pi);
+
+    if (nextRingBuffer)
+        delete nextRingBuffer;
     nextRingBuffer = rb;
 }
 
