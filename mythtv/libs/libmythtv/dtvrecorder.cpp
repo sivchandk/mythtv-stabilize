@@ -275,8 +275,8 @@ void DTVRecorder::BufferedWrite(const TSPacket &tspacket)
 }
 
 static const uint frameRateMap[16] = {
-    0, 23796, 24000, 25000, 29970, 30000, 50000, 59940, 60000,
-    0, 0, 0, 0, 0, 0, 0
+    0, 23796, 24000, 25000, 29970, 30000, 50000, 59940, 60000, 
+    0, 0, 0, 0, 0, 0, 0 
 };
 
 /** \fn DTVRecorder::FindMPEG2Keyframes(const TSPacket* tspacket)
@@ -376,7 +376,7 @@ bool DTVRecorder::FindMPEG2Keyframes(const TSPacket* tspacket)
             }
             else if (PESStreamID::MPEG2ExtensionStartCode == stream_id)
             {
-                if (bytes_left >= 1)
+                if (bytes_left >= 1) 
                 {
                     ext_type = (bufptr[0] >> 4);
                     switch(ext_type)
@@ -397,7 +397,7 @@ bool DTVRecorder::FindMPEG2Keyframes(const TSPacket* tspacket)
 
                             /* check if we must repeat the frame */
                             repeat_pict = 1;
-                            if (repeat_first_field)
+                            if (repeat_first_field) 
                             {
                                 if (progressive_sequence)
                                 {
@@ -406,7 +406,7 @@ bool DTVRecorder::FindMPEG2Keyframes(const TSPacket* tspacket)
                                     else
                                         repeat_pict = 3;
                                 }
-                                else if (progressive_frame)
+                                else if (progressive_frame) 
                                 {
                                     repeat_pict = 2;
                                 }
@@ -422,7 +422,7 @@ bool DTVRecorder::FindMPEG2Keyframes(const TSPacket* tspacket)
     if (hasFrame && !hasKeyFrame)
     {
         // If we have seen kMaxKeyFrameDistance frames since the
-        // last GOP or SEQ stream_id, then pretend this picture
+        // last GOP or SEQ stream_id, then pretend every 16th picture
         // is a keyframe. We may get artifacts but at least
         // we will be able to skip frames.
         hasKeyFrame = !(_frames_seen_count & 0xf);
@@ -528,6 +528,7 @@ bool DTVRecorder::FindOtherKeyframes(const TSPacket *tspacket)
 }
 
 // documented in recorderbase.h
+void DTVRecorder::SetNextRecording(const ProgramInfo *progInf, RingBuffer *rb)
 void DTVRecorder::SetNextRecording(const ProgramInfo *pi, RingBuffer *rb)
 {
     LOG(VB_RECORD, LOG_INFO, LOC + QString("SetNextRecording(0x%1, 0x%2)")
@@ -544,6 +545,7 @@ void DTVRecorder::SetNextRecording(const ProgramInfo *pi, RingBuffer *rb)
     }
 
     // Then we set the next info
+    nextRingBufferLock.lock();
     QMutexLocker locker(&nextRingBufferLock);
     if (nextRecording)
     {
@@ -553,9 +555,14 @@ void DTVRecorder::SetNextRecording(const ProgramInfo *pi, RingBuffer *rb)
     if (pi)
         nextRecording = new ProgramInfo(*pi);
 
+    nextRecording = NULL;
+    if (progInf)
+        nextRecording = new ProgramInfo(*progInf);
+
     if (nextRingBuffer)
         delete nextRingBuffer;
     nextRingBuffer = rb;
+    nextRingBufferLock.unlock();
 }
 
 /** \fn DTVRecorder::HandleKeyframe(uint64_t)
@@ -626,6 +633,8 @@ bool DTVRecorder::FindH264Keyframes(const TSPacket *tspacket)
     uint width = 0;
     uint frameRate = 0;
 
+    // Just make these local for efficiency reasons (gcc not so smart..)
+    const uint maxKFD = kMaxKeyFrameDistance;
     bool hasFrame = false;
     bool hasKeyFrame = false;
 
@@ -682,7 +691,7 @@ bool DTVRecorder::FindH264Keyframes(const TSPacket *tspacket)
             }
 
             // we now know where the PES payload is
-            // normally, we should have used 6, but use 5 because the for
+            // normally, we should have used 6, but use 5 because the for 
             // loop will bump i
             i += 5 + pes_header_length;
             _pes_synced = true;
@@ -722,6 +731,21 @@ bool DTVRecorder::FindH264Keyframes(const TSPacket *tspacket)
         }
     } // for (; i < TSPacket::kSize; i++)
 
+    if (hasFrame && !hasKeyFrame)
+    {
+        // If we have seen kMaxKeyFrameDistance frames since the
+        // last GOP or SEQ stream_id, then pretend every 16th picture
+        // is a keyframe. We may get artifacts but at least we will
+        // be able to skip frames.
+        hasKeyFrame = (_frames_seen_count & 0xf) == 0;
+        hasKeyFrame &= (_last_keyframe_seen + maxKFD) < _frames_seen_count;
+        if (hasKeyFrame && (_frames_seen_count < 1000))
+        {
+            LOG(VB_GENERAL, LOG_INFO, LOC + QString("Synthetic Keyframe @ %1")
+                .arg(_frames_seen_count));
+        }
+    }
+
     if (hasKeyFrame)
     {
         _last_keyframe_seen = _frames_seen_count;
@@ -753,7 +777,7 @@ bool DTVRecorder::FindH264Keyframes(const TSPacket *tspacket)
 
         LOG(VB_RECORD, LOG_INFO, LOC +
             QString("FindH264Keyframes: timescale: %1, tick: %2, framerate: %3")
-                      .arg( m_h264_parser.GetTimeScale() )
+                      .arg( m_h264_parser.GetTimeScale() ) 
                       .arg( m_h264_parser.GetUnitsInTick() )
                       .arg( frameRate ) );
         m_frameRate = frameRate;
@@ -912,7 +936,7 @@ void DTVRecorder::FindPSKeyFrames(const uint8_t *buffer, uint len)
             AspectChange((AspectRatio)aspectRatio, _frames_written_count);
         }
 
-        if (height && width &&
+        if (height && width && 
             (height != m_videoHeight || m_videoWidth != width))
         {
             m_videoHeight = height;

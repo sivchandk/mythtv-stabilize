@@ -1328,6 +1328,7 @@ void AvFormatDecoder::InitVideoCodec(AVStream *stream, AVCodecContext *enc,
         }
         else if (CODEC_ID_H264 == codec->id)
         {
+            enc->skip_frame = AVDISCARD_ALL;
             if (special_decode & kAVSpecialDecode_NoLoopFilter)
             {
                 enc->flags &= ~CODEC_FLAG_LOOP_FILTER;
@@ -1338,6 +1339,8 @@ void AvFormatDecoder::InitVideoCodec(AVStream *stream, AVCodecContext *enc,
         if (special_decode & kAVSpecialDecode_NoDecode)
         {
             enc->skip_idct = AVDISCARD_ALL;
+            if(CODEC_ID_H264 == codec->id)
+            	enc->skip_frame = AVDISCARD_ALL;
         }
     }
 

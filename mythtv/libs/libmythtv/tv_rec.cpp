@@ -560,6 +560,7 @@ RecStatusType TVRec::StartRecording(const ProgramInfo *rcinfo)
     bool did_switch = false;
     if (!cancelNext && (GetState() == kState_RecordingOnly))
     {
+/*
         RecordingInfo *ri = SwitchRecordingRingBuffer(*rcinfo);
         did_switch = (NULL != ri);
         if (did_switch)
@@ -572,6 +573,7 @@ RecStatusType TVRec::StartRecording(const ProgramInfo *rcinfo)
             pendingRecLock.unlock();
         }
         else
+*/
         {
             // If in post-roll, end recording
             stateChangeLock.unlock();
