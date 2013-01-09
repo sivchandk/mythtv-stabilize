@@ -1,0 +1,16 @@
+#	if test -d /var/lib/mythtv; then
+#	  rmdir --ignore-fail-on-non-empty /var/lib/mythtv
+#	fi
+
+/etc/mythtv
+	mysql.txt
+
+/usr/share/mythtv
+	mythweb [dir]
+	  data [dir]
+	   music --> /var/lib/music
+	   recording --> /var/lib/mythtv
+	   video --> /var/lib/mythvideo
+	   video_covers --> /var/lib/mythvideo
+
+
