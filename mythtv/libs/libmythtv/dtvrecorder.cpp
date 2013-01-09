@@ -79,6 +79,7 @@ DTVRecorder::DTVRecorder(TVRec *rec) :
 {
     SetPositionMapType(MARK_GOP_BYFRAME);
     _payload_buffer.reserve(TSPacket::kSize * (50 + 1));
+
     memset(_stream_id, 0, sizeof(_stream_id));
     memset(_pid_status, 0, sizeof(_pid_status));
     memset(_continuity_counter, 0, sizeof(_continuity_counter));
@@ -187,10 +188,6 @@ void DTVRecorder::ResetForNewFile(void)
     //_recording
     _error                      = QString();
 
-    memset(_stream_id,  0, sizeof(_stream_id));
-    memset(_pid_status, 0, sizeof(_pid_status));
-    memset(_continuity_counter, 0xff, sizeof(_continuity_counter));
-
     _packet_count               = 0;
     _continuity_error_count     = 0;
     _frames_seen_count          = 0;
@@ -199,7 +196,6 @@ void DTVRecorder::ResetForNewFile(void)
     //_seen_sps
     positionMap.clear();
     positionMapDelta.clear();
-    _payload_buffer.clear();
 }
 
 // documented in recorderbase.h
