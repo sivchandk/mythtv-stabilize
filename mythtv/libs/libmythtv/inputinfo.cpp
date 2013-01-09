@@ -82,7 +82,7 @@ TunedInputInfo::TunedInputInfo(
     const QString &_name,
     uint _sourceid, uint _inputid, uint _cardid, uint _mplexid,
     uint _livetvorder, uint _chanid) :
-    InputInfo(_name, _sourceid, _inputid, _cardid, _mplexid, _livetvorder), 
+    InputInfo(_name, _sourceid, _inputid, _cardid, _mplexid, _livetvorder),
     chanid(_chanid)
 {
 }

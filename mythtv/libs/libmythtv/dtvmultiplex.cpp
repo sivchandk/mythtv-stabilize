@@ -268,10 +268,10 @@ bool DTVMultiplex::ParseDVB_S2(
     if (DTVModulationSystem::kModulationSystem_UNDEFINED == mod_sys)
     {
         mod_sys = (DTVModulation::kModulationQPSK == modulation) ?
-            DTVModulationSystem::kModulationSystem_DVBS : 
+            DTVModulationSystem::kModulationSystem_DVBS :
             DTVModulationSystem::kModulationSystem_DVBS2;
     }
-    
+
     if ((DTVModulationSystem::kModulationSystem_DVBS  != mod_sys) &&
         (DTVModulationSystem::kModulationSystem_DVBS2 != mod_sys))
     {

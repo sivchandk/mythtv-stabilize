@@ -623,7 +623,7 @@ void ChannelOptionsRawTS::Load(void)
                           .arg(it->GetPID(),2,16,QLatin1Char('0')));
         sids[i]->setValue(QString::number(it->GetComposite()&0x1ff));
         pcrs[i]->setValue(it->IsPCRPID());
-        
+
         ++it;
         ++i;
     }

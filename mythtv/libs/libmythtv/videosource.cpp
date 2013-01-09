@@ -566,7 +566,7 @@ void XMLTVConfig::Load(void)
     QStringList args;
     args += "baseline";
 
-    MythSystem find_grabber_proc("tv_find_grabbers", args, 
+    MythSystem find_grabber_proc("tv_find_grabbers", args,
                                  kMSStdOut | kMSBuffered | kMSRunShell);
     find_grabber_proc.Run(25);
     LOG(VB_GENERAL, LOG_INFO,
@@ -2261,7 +2261,7 @@ CaptureCardGroup::CaptureCardGroup(CaptureCard &parent) :
 
     setTrigger(cardtype);
     setSaveAll(false);
-    
+
 #ifdef USING_DVB
     addTarget("DVB",       new DVBConfigurationGroup(parent));
 #endif // USING_DVB
@@ -2287,14 +2287,14 @@ CaptureCardGroup::CaptureCardGroup(CaptureCard &parent) :
 #ifdef USING_IPTV
     addTarget("FREEBOX",   new IPTVConfigurationGroup(parent));
 #endif // USING_IPTV
-    
+
 #ifdef USING_V4L2
     addTarget("V4L",       new V4LConfigurationGroup(parent));
 # ifdef USING_IVTV
     addTarget("MPEG",      new MPEGConfigurationGroup(parent));
 # endif // USING_IVTV
 #endif // USING_V4L2
-    
+
 #ifdef USING_ASI
     addTarget("ASI",       new ASIConfigurationGroup(parent));
 #endif // USING_ASI
@@ -2479,7 +2479,7 @@ void CardType::fillSelections(SelectSetting* setting)
     setting->addSelection(
         QObject::tr("HDHomeRun networked tuner"), "HDHOMERUN");
 #endif // USING_HDHOMERUN
-    
+
 #ifdef USING_FIREWIRE
     setting->addSelection(
         QObject::tr("FireWire cable box"), "FIREWIRE");
@@ -3074,7 +3074,7 @@ void CardInput::channelScanner(void)
     QString cardtype = CardUtil::GetRawCardType(crdid);
     if (CardUtil::IsUnscanable(cardtype))
     {
-        LOG(VB_GENERAL, LOG_ERR, 
+        LOG(VB_GENERAL, LOG_ERR,
             QString("Sorry, %1 cards do not yet support scanning.")
                 .arg(cardtype));
         return;

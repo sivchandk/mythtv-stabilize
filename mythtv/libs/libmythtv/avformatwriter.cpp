@@ -287,7 +287,7 @@ int AVFormatWriter::WriteVideoFrame(VideoFrame *frame)
     {
         QMutexLocker locker(avcodeclock);
         ret = avcodec_encode_video2(m_videoStream->codec, m_pkt,
-                                      m_picture, &got_pkt); 
+                                      m_picture, &got_pkt);
     }
 
     if (ret < 0)

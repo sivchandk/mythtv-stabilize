@@ -414,7 +414,7 @@ ProgramInfo *LiveTVChain::GetSwitchProgram(bool &discont, bool &newtype,
     {
         GetEntryAt(m_switchid, entry);
 
-        bool at_last_entry = 
+        bool at_last_entry =
             ((m_switchid > m_curpos) &&
              (m_switchid == (int)(m_chain.count()-1))) ||
             ((m_switchid <= m_curpos) && (m_switchid == 0));

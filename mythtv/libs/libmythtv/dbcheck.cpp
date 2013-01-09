@@ -1781,7 +1781,7 @@ NULL
 
         if (gCoreContext->GetNumSetting("LastFreeCard", 0))
         {
-            updates[2] = 
+            updates[2] =
                 "UPDATE cardinput SET livetvorder = "
                 "  (SELECT MAX(cardid) FROM capturecard) - cardid + 1;";
         }
@@ -2087,7 +2087,7 @@ NULL
                                  "SET airdate = "
                                  "    CONVERT_TZ(airdate, 'SYSTEM', 'UTC') "
                                  "ORDER BY %3")
-                         .arg((utc_offset > 0) ? "-airdate" : 
+                         .arg((utc_offset > 0) ? "-airdate" :
                               "airdate").toLocal8Bit());
 
             updates_ba.push_back(
@@ -2142,7 +2142,7 @@ NULL
             };
             const char *without_endtime[] = {
                 "recordedseek", "recordedmarkup", "recordedrating",
-                "recordedcredits", 
+                "recordedcredits",
             };
             QString order = (utc_offset > 0) ? "-starttime" : "starttime";
 

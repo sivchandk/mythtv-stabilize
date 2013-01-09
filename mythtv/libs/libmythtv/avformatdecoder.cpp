@@ -1859,7 +1859,7 @@ int AvFormatDecoder::ScanStreams(bool novideo)
                     break;
 
                 codec_is_mpeg = CODEC_IS_FFMPEG_MPEG(enc->codec_id);
-                
+
                 delete private_dec;
                 private_dec = NULL;
                 m_h264_parser->Reset();

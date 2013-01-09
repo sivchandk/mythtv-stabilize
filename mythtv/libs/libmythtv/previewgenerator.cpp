@@ -250,7 +250,7 @@ bool PreviewGenerator::Run(void)
                                         kMSProcessEvents, 30);
         if (ret != GENERIC_EXIT_OK)
         {
-            LOG(VB_GENERAL, LOG_ERR, LOC + 
+            LOG(VB_GENERAL, LOG_ERR, LOC +
                 QString("Encountered problems running '%1' (%2)")
                     .arg(command) .arg(ret));
         }
@@ -401,7 +401,7 @@ bool PreviewGenerator::event(QEvent *e)
     MythEvent *me = (MythEvent*)e;
     if (me->Message() != "GENERATED_PIXMAP" || me->ExtraDataCount() < 3)
         return QObject::event(e);
-            
+
     bool ok = me->ExtraData(0) == "OK";
     bool ours = false;
     uint i = ok ? 4 : 3;

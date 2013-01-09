@@ -754,10 +754,10 @@ QString ChannelUtil::GetChannelStringField(int chan_id, const QString &field)
         MythDB::DBError("Selecting channel/dtv_multiplex 1", query);
         return QString::null;
     }
-    
+
     if (!query.next())
         return QString::null;
-    
+
     return query.value(0).toString();
 }
 
@@ -797,7 +797,7 @@ int ChannelUtil::GetSourceID(int db_mplexid)
 
     if (query.next())
         return query.value(0).toInt();
-        
+
     return -1;
 }
 

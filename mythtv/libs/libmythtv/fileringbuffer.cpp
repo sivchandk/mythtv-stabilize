@@ -207,7 +207,7 @@ bool FileRingBuffer::OpenFile(const QString &lfilename, uint retry_ms)
         fd2 = -1;
     }
 
-    bool is_local = 
+    bool is_local =
         (filename.left(4) != "/dev") &&
         ((filename.left(1) == "/") || QFile::exists(filename));
 
@@ -300,7 +300,7 @@ bool FileRingBuffer::OpenFile(const QString &lfilename, uint retry_ms)
             default:
                 break;
         }
-        LOG(VB_FILE, LOG_INFO, 
+        LOG(VB_FILE, LOG_INFO,
             LOC + QString("OpenFile() made %1 attempts in %2 ms")
                 .arg(openAttempts).arg(openTimer.elapsed()));
 
@@ -494,7 +494,7 @@ int FileRingBuffer::safe_read(RemoteFile *rf, void *data, uint sz)
     {
         LOG(VB_GENERAL, LOG_ERR, LOC +
             "safe_read(RemoteFile* ...): read failed");
-            
+
         poslock.lockForRead();
         rf->Seek(internalreadpos - readAdjust, SEEK_SET);
         poslock.unlock();
@@ -660,7 +660,7 @@ long long FileRingBuffer::Seek(long long pos, int whence, bool has_lock)
 #endif
 
 #if 1
-    // This optimizes the seek end-250000, read, seek 0, read portion 
+    // This optimizes the seek end-250000, read, seek 0, read portion
     // of the pattern ffmpeg performs at the start of playback to
     // determine the pts.
     // If the seek is a SEEK_END or is a seek where the position
@@ -790,7 +790,7 @@ long long FileRingBuffer::Seek(long long pos, int whence, bool has_lock)
     if (ret >= 0)
     {
         readpos = ret;
-        
+
         ignorereadpos = -1;
 
         if (readaheadrunning)

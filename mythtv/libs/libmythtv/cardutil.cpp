@@ -1104,7 +1104,7 @@ QString CardUtil::GetStartInput(uint nCardID)
     MSqlQuery query(MSqlQuery::InitCon());
     query.prepare("SELECT inputname "
                   "FROM cardinput "
-                  "WHERE cardinput.cardid = :CARDID " 
+                  "WHERE cardinput.cardid = :CARDID "
                   "ORDER BY livetvorder = 0, livetvorder, cardinputid "
                   "LIMIT 1");
     query.bindValue(":CARDID", nCardID);

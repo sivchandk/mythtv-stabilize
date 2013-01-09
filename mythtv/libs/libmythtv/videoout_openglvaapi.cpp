@@ -51,7 +51,7 @@ bool VideoOutputOpenGLVAAPI::InputChanged(const QSize &input_size, float aspect,
     if (!codec_is_vaapi(av_codec_id))
         return VideoOutputOpenGL::InputChanged(input_size, aspect, av_codec_id,
                                                codec_private, aspect_only);
-                                                   
+
     QMutexLocker locker(&gl_context_lock);
 
     bool wasembedding = window.IsEmbedding();
@@ -65,7 +65,7 @@ bool VideoOutputOpenGLVAAPI::InputChanged(const QSize &input_size, float aspect,
     bool cid_changed = (video_codec_id != av_codec_id);
     bool res_changed = input_size  != window.GetActualVideoDim();
     bool asp_changed = aspect      != window.GetVideoAspect();
-    
+
     if (!res_changed && !cid_changed)
     {
         if (asp_changed)
