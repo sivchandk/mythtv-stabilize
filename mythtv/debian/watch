@@ -1,0 +1,4 @@
+version=3
+
+opts=uversionmangle=s/rc1|rc2// \
+http://ftp.osuosl.org/pub/mythtv/mythtv-(.*)\.tar\.bz2

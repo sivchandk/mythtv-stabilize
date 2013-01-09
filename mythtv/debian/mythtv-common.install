@@ -1,0 +1,13 @@
+usr/share/mythtv/themes
+debian/mysql.txt.dist usr/share/mythtv
+debian/mythsql usr/share/mythtv
+usr/share/mythtv/locales
+usr/share/mythtv/internetcontent
+usr/share/mythtv/i18n
+usr/share/mythtv/html
+usr/share/mythtv/hardwareprofile
+usr/share/mythtv/backend-config
+usr/bin/mythmetadatalookup
+usr/bin/mythccextractor
+usr/bin/mythutil
+usr/bin/mythmessage

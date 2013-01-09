@@ -1,0 +1,17 @@
+mythtv (0.24~rc1-0.0) experimental; urgency=low
+
+  Upgrading from a previous version of MythTV to 0.24 are required to rescan
+  for audio devices on their frontends (in the audio settings menu) after
+  upgrading due to the rewritten audio framework which can conflict with
+  legacy settings.
+
+ -- Christian Marillat <marillat@debian.org>  Sun, 24 Oct 2010 17:19:28 +0200
+
+mythtv (0.20-svn20070223-0.0) unstable; urgency=low
+
+  The cron.daily file has been removed because we are killing zap2it's
+  servers.
+
+  http://mythtv.org/pipermail/mythtv-users/2004-June/thread.html#45708
+
+ -- Christian Marillat <marillat@debian.org>  Fri, 23 Feb 2007 17:24:13 +0100
