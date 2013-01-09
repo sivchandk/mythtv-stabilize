@@ -1,0 +1,9 @@
+/var/log/mythtv/mythbackend.log {
+        daily
+        rotate 7
+        notifempty
+        delaycompress
+	postrotate
+	  invoke-rc.d mythtv-backend reload > /dev/null
+	endscript
+}

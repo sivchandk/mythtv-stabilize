@@ -1,0 +1,38 @@
+MythTV for Debian
+-----------------
+
+This package is set up so that mythtv should be run as the mythtv
+user.  For a dedicated mythtv system, you may wish to set up your
+display manager (e.g., gdm) to automatically login as the mythtv user
+and start mythfrontend.
+
+ -- Matt Zimmerman <mdz@debian.org>, Mon May 23 14:13:46 2005
+
+How to use myth-setup
+---------------------
+
+A working sudo configuration is need. Otherwise use the root acount.
+
+First you need to stop the backend :
+
+sudo invoke-rc.d mythtv-backend stop
+
+sudo -u mythtv mythtv-setup
+
+If this doesn't work, change the X server permission :
+
+xhost +local
+
+sudo -u mythtv mythtv-setup
+
+and then when I was done:
+
+Remove X server permission.
+
+xhost -local
+
+Start the backend.
+
+sudo invoke-rc.d mythtv-backend start
+
+ -- Christian Marillat <marillat@debian.org>  Wed, 02 Jun 2010 16:10:36 +0200

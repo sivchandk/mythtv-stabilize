@@ -1,0 +1,11 @@
+#!/bin/sh -e
+
+if [ $1 = purge ]; then  
+	if getent passwd mythtv >/dev/null; then
+	    userdel mythtv
+	fi
+fi 
+
+#DEBHELPER#
+
+exit 0
