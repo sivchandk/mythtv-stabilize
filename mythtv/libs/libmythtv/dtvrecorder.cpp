@@ -541,15 +541,7 @@ void DTVRecorder::SetNextRecording(const ProgramInfo *pi, RingBuffer *rb)
 
     // Then we set the next info
     nextRingBufferLock.lock();
-    QMutexLocker locker(&nextRingBufferLock);
-    if (nextRecording)
-    {
-        delete nextRecording;
-        nextRecording = NULL;
-    }
-    if (pi)
-        nextRecording = new ProgramInfo(*pi);
-
+        
     nextRecording = NULL;
     if (pi)
         nextRecording = new ProgramInfo(*pi);
