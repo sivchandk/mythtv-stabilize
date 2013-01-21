@@ -945,7 +945,7 @@ void TVRec::HandleStateChange(void)
 
     if (desiredNextState == internalState)
     {
-        LOG(VB_GENERAL, LOG_ERR, LOC + 
+        LOG(VB_GENERAL, LOG_ERR, LOC +
             "HandleStateChange(): Null transition" + transMsg);
         changeState = false;
         return;
@@ -1180,7 +1180,7 @@ void TVRec::run(void)
     eitScanStartTime = QDateTime::currentDateTime();
     // check whether we should use the EITScanner in this TVRec instance
     if (CardUtil::IsEITCapable(genOpt.cardtype) &&
-        (!GetDTVChannel() || GetDTVChannel()->IsMaster()) && 
+        (!GetDTVChannel() || GetDTVChannel()->IsMaster()) &&
         (dvbOpt.dvb_eitscan || get_use_eit(cardid)))
     {
         scanner = new EITScanner(cardid);
@@ -1901,7 +1901,7 @@ bool TVRec::SetupDTVSignalMonitor(bool EITscan)
  *  \brief This creates a SignalMonitor instance and
  *         begins signal monitoring.
  *
- *   If the channel exists and there is something to monitor a 
+ *   If the channel exists and there is something to monitor a
  *   SignalMonitor instance is created and SignalMonitor::Start()
  *   is called to start the signal monitoring thread.
  *

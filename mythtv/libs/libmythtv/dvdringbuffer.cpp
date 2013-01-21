@@ -203,7 +203,7 @@ long long DVDRingBuffer::Seek(long long pos, int whence, bool has_lock)
     if (ret >= 0)
     {
         readpos = ret;
-        
+
         ignorereadpos = -1;
 
         if (readaheadrunning)

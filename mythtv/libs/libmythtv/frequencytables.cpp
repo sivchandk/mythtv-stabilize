@@ -385,7 +385,7 @@ static void init_freq_tables(freq_table_map_t &fmap)
         DTVCodeRate::kFECAuto, DTVModulation::kModulationQAMAuto,
         DTVTransmitMode::kTransmissionModeAuto,
         DTVGuardInterval::kGuardIntervalAuto, DTVHierarchy::kHierarchyNone,
-        DTVModulation::kModulationQAMAuto, 0, 0); // UHF 21-65    
+        DTVModulation::kModulationQAMAuto, 0, 0); // UHF 21-65
 
     // Czech Republic
     fmap["dvbt_ofdm_cz0"] = new FrequencyTable(

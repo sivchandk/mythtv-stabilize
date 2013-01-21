@@ -1022,7 +1022,7 @@ int AvFormatDecoder::OpenFile(RingBuffer *rbuffer, bool novideo,
         dur = m_playbackinfo->QueryTotalDuration();
         dur /= 1000000;
     }
-   
+
     if (dur == 0)
     {
         dur = ic->duration / (int64_t)AV_TIME_BASE;
@@ -1340,7 +1340,7 @@ void AvFormatDecoder::InitVideoCodec(AVStream *stream, AVCodecContext *enc,
         {
             enc->skip_idct = AVDISCARD_ALL;
             if(CODEC_ID_H264 == codec->id)
-            	enc->skip_frame = AVDISCARD_ALL;
+                enc->skip_frame = AVDISCARD_ALL;
         }
     }
 

@@ -395,7 +395,7 @@ bool PlayerContext::CreatePlayer(TV *tv, QWidget *widget,
     if (nohardwaredecoders)
         player->DisableHardwareDecoders();
 
-    QString passthru_device = 
+    QString passthru_device =
         gCoreContext->GetNumSetting("PassThruDeviceOverride", false) ?
         gCoreContext->GetSetting("PassThruOutputDevice") : QString::null;
 

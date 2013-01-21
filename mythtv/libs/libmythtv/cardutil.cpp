@@ -347,7 +347,7 @@ QStringList CardUtil::ProbeVideoDevices(const QString &rawtype)
 
         if (result >= max_count)
         {
-            LOG(VB_GENERAL, LOG_WARNING, 
+            LOG(VB_GENERAL, LOG_WARNING,
                 "Warning: may be > 50 HDHomerun devices");
         }
 
@@ -1822,7 +1822,7 @@ InputNames CardUtil::ProbeV4LVideoInputs(int videofd, bool &ok)
 
         if (ioctl(videofd, VIDIOCGCHAN, &test) != 0)
         {
-            LOG(VB_GENERAL, LOG_ERR, "ProbeV4LVideoInputs(): Error, " + 
+            LOG(VB_GENERAL, LOG_ERR, "ProbeV4LVideoInputs(): Error, " +
                     QString("Could determine name of input #%1"
                             "\n\t\t\tNot adding it to the list.")
                     .arg(test.channel) + ENO);

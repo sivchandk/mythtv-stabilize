@@ -163,7 +163,7 @@ bool MythCommFlagPlayer::RebuildSeekTable(
                         .arg(percentage,3).arg(flagFPS,5));
                 }
             }
-            else 
+            else
             {
                 if (showPercentage)
                 {

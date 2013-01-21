@@ -118,7 +118,7 @@ PrivateDecoderVDA::PrivateDecoderVDA()
   : PrivateDecoder(), m_lib(NULL), m_decoder(NULL), m_size(QSize()),
     m_frame_lock(QMutex::Recursive), m_frames_decoded(0), m_num_ref_frames(0),
     m_annexb(false), m_slice_count(0)
-{        
+{
 }
 
 PrivateDecoderVDA::~PrivateDecoderVDA()
@@ -167,7 +167,7 @@ bool PrivateDecoderVDA::Init(const QString &decoder,
     else
     {
         avc_cdata = CFDataCreate(kCFAllocatorDefault, (const uint8_t*)extradata,
-                                 extradata_size);   
+                                 extradata_size);
     }
 
     if (!valid_extradata)
@@ -274,7 +274,7 @@ void PrivateDecoderVDA::PopDecodedFrame(void)
     QMutexLocker lock(&m_frame_lock);
     if (m_decoded_frames.isEmpty())
         return;
-    CVPixelBufferRelease(m_decoded_frames.last().buffer);    
+    CVPixelBufferRelease(m_decoded_frames.last().buffer);
     m_decoded_frames.removeLast();
 }
 
@@ -292,7 +292,7 @@ int  PrivateDecoderVDA::GetFrame(AVStream *stream,
                                  AVPacket *pkt)
 {
     if (!pkt)
-        
+
     CocoaAutoReleasePool pool;
     int result = -1;
     if (!m_lib || !stream)
@@ -403,7 +403,7 @@ void PrivateDecoderVDA::VDADecoderCallback(void *decompressionOutputRefCon,
         LOG(VB_GENERAL, LOG_ERR, LOC + "Callback: Decoder dropped frame");
         return;
     }
-    
+
     if (!imageBuffer)
     {
         LOG(VB_GENERAL, LOG_ERR, LOC +

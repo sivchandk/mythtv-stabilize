@@ -91,7 +91,7 @@ QStringList RingBuffer::subExtNoCheck;
  *                      a pre-buffering thread, otherwise Start(void)
  *                      will start a pre-buffering thread.
  *  \param timeout_ms   if < 0, then we will not open the file.
- *                      Otherwise it's how long to try opening 
+ *                      Otherwise it's how long to try opening
  *                      the file after the first failure in
  *                      milliseconds before giving up.
  */
@@ -815,7 +815,7 @@ void RingBuffer::run(void)
                     (now.tv_usec - lastread.tv_usec) / 1000;
                 readtimeavg = (readtimeavg * 9 + readinterval) / 10;
 
-                if (readtimeavg < 150 && 
+                if (readtimeavg < 150 &&
                     (uint)readblocksize < (BUFFER_SIZE_MINIMUM >>2) &&
                     readblocksize >= CHUNK /* low_buffers */)
                 {
@@ -971,7 +971,7 @@ void RingBuffer::run(void)
             generalWait.wakeAll();
             rwlock.unlock();
             usleep(5 * 1000);
-            rwlock.lockForRead();            
+            rwlock.lockForRead();
         }
         else
         {
@@ -987,7 +987,7 @@ void RingBuffer::run(void)
                 generalWait.wakeAll();
                 rwlock.unlock();
                 usleep(5 * 1000);
-                rwlock.lockForRead();            
+                rwlock.lockForRead();
             }
         }
     }

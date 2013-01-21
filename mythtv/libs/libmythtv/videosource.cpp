@@ -566,7 +566,7 @@ void XMLTVConfig::Load(void)
     QStringList args;
     args += "baseline";
 
-    MythSystem find_grabber_proc("tv_find_grabbers", args, 
+    MythSystem find_grabber_proc("tv_find_grabbers", args,
                                  kMSStdOut | kMSBuffered | kMSRunShell);
     find_grabber_proc.Run(25);
     LOG(VB_GENERAL, LOG_INFO,
@@ -3076,7 +3076,7 @@ void CardInput::channelScanner(void)
     QString cardtype = CardUtil::GetRawCardType(crdid);
     if (CardUtil::IsUnscanable(cardtype))
     {
-        LOG(VB_GENERAL, LOG_ERR, 
+        LOG(VB_GENERAL, LOG_ERR,
             QString("Sorry, %1 cards do not yet support scanning.")
                 .arg(cardtype));
         return;
