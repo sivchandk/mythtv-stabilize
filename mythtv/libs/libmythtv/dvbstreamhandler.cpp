@@ -200,8 +200,7 @@ void DVBStreamHandler::RunTS(void)
 
         if (drb)
         {
-            len = drb->Read(
-                &(buffer[remainder]), buffer_size - remainder);
+            len = drb->Read(&(buffer[remainder]), buffer_size - remainder);
 
             // Check for DRB errors
             if (drb->IsErrored())
@@ -230,12 +229,12 @@ void DVBStreamHandler::RunTS(void)
                 len = read(dvr_fd, &(buffer[remainder]),
                            buffer_size - remainder);
             }
-        }
 
-        if ((0 == len) || (-1 == len))
-        {
-            usleep(100);
-            continue;
+            if ((0 == len) || (-1 == len))
+            {
+                usleep(100);
+                continue;
+            }
         }
 
         len += remainder;
