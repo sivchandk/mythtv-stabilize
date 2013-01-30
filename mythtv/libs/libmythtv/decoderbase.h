@@ -59,6 +59,14 @@ typedef enum AudioTrackType
 } AudioTrackType;
 QString toString(AudioTrackType type);
 
+// Eof States
+typedef enum
+{
+    kEofStateNone,     // no eof
+    kEofStateDelayed,  // decoder eof, but let player drain buffered frames
+    kEofStateImmediate // true eof
+} EofState;
+
 class StreamInfo
 {
   public:
@@ -115,8 +123,11 @@ class DecoderBase
                          char testbuf[kDecoderProbeBufferSize],
                          int testbufsize = kDecoderProbeBufferSize) = 0;
 
-    virtual void SetEof(bool eof)  { ateof = eof;  }
-    bool         GetEof(void) const { return ateof; }
+    virtual void SetEofState(EofState eof)  { ateof = eof;  }
+    virtual void SetEof(bool eof)  {
+        ateof = eof ? kEofStateDelayed : kEofStateNone;
+    }
+    EofState     GetEof(void)      { return ateof; }
 
     void SetSeekSnap(uint64_t snap)  { seeksnap = snap; }
     uint64_t GetSeekSnap(void) const { return seeksnap;  }
@@ -140,6 +151,27 @@ class DecoderBase
     virtual long long GetChapter(int chapter)             { return framesPlayed; }
     virtual bool DoRewind(long long desiredFrame, bool doflush = true);
     virtual bool DoFastForward(long long desiredFrame, bool doflush = true);
+    virtual void SetIdrOnlyKeyframes(bool value) { }
+
+    static uint64_t
+        TranslatePositionAbsToRel(const frm_dir_map_t &deleteMap,
+                                  uint64_t absPosition,
+                                  const frm_pos_map_t &map = frm_pos_map_t(),
+                                  float fallback_ratio = 1.0);
+    static uint64_t
+        TranslatePositionRelToAbs(const frm_dir_map_t &deleteMap,
+                                  uint64_t relPosition,
+                                  const frm_pos_map_t &map = frm_pos_map_t(),
+                                  float fallback_ratio = 1.0);
+    static uint64_t TranslatePosition(const frm_pos_map_t &map,
+                                      uint64_t key,
+                                      float fallback_ratio);
+    uint64_t TranslatePositionFrameToMs(uint64_t position,
+                                        float fallback_framerate,
+                                        const frm_dir_map_t &cutlist);
+    uint64_t TranslatePositionMsToFrame(uint64_t dur_ms,
+                                        float fallback_framerate,
+                                        const frm_dir_map_t &cutlist);
 
     float GetVideoAspect(void) const { return current_aspect; }
 
@@ -186,6 +218,8 @@ class DecoderBase
 
     bool IsErrored() const { return errored; }
 
+    bool HasPositionMap(void) const { return GetPositionMapSize(); }
+
     void SetWaitForChange(void);
     bool GetWaitForChange(void) const;
     void SetReadAdjust(long long adjust);
@@ -222,6 +256,7 @@ class DecoderBase
     void ResetTotalDuration(void) { totalDuration = 0; }
     void SaveTotalFrames(void);
     bool GetVideoInverted(void) const { return video_inverted; }
+    void TrackTotalDuration(bool track) { trackTotalDuration = track; }
 
   protected:
     virtual int  AutoSelectTrack(uint type);
@@ -263,7 +298,12 @@ class DecoderBase
     int keyframedist;
     long long indexOffset;
 
-    bool ateof;
+    // The totalDuration field is only valid when the video is played
+    // from start to finish without any jumping.  trackTotalDuration
+    // indicates whether this is the case.
+    bool trackTotalDuration;
+
+    EofState ateof;
     bool exitafterdecoded;
     bool transcoding;
 
@@ -274,7 +314,10 @@ class DecoderBase
 
     mutable QMutex m_positionMapLock;
     vector<PosMapEntry> m_positionMap;
+    frm_pos_map_t m_frameToDurMap; // guarded by m_positionMapLock
+    frm_pos_map_t m_durToFrameMap; // guarded by m_positionMapLock
     bool dontSyncPositionMap;
+    mutable QDateTime m_lastPositionMapUpdate; // guarded by m_positionMapLock
 
     uint64_t seeksnap;
     bool livetv;

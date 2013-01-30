@@ -53,7 +53,7 @@ void StreamHandler::AddListener(MPEGStreamData *data,
                 .arg((uint64_t)data,0,16));
     if (!data)
     {
-        LOG(VB_GENERAL, LOG_ERR, LOC + 
+        LOG(VB_GENERAL, LOG_ERR, LOC +
             QString("AddListener(0x%1) -- null data")
                 .arg((uint64_t)data,0,16));
         return;
@@ -356,7 +356,7 @@ bool StreamHandler::UpdateFiltersFromStreamData(void)
         ok &= AddPIDFilter(*ait);
 
     // Cycle filters if it's been a while
-    if (_cycle_timer.elapsed() > 1000)
+    if (_cycle_timer.isRunning() && (_cycle_timer.elapsed() > 1000))
         CycleFiltersByPriority();
 
     return ok;

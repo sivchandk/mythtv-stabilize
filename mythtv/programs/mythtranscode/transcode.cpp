@@ -21,6 +21,7 @@
 #include "exitcodes.h"
 #include "mthreadpool.h"
 #include "deletemap.h"
+#include "tvremoteutil.h"
 
 #include "NuppelVideoRecorder.h"
 #include "mythplayer.h"
@@ -255,6 +256,11 @@ int Transcode::TranscodeFile(const QString &inputname,
     player_ctx->SetPlayer(new MythPlayer(kVideoIsNull));
     SetPlayerContext(player_ctx);
     GetPlayer()->SetPlayerInfo(NULL, NULL, GetPlayerContext());
+    if (m_proginfo->GetRecordingEndTime() > curtime)
+    {
+        player_ctx->SetRecorder(RemoteGetExistingRecorder(m_proginfo));
+        GetPlayer()->SetWatchingRecording(true);
+    }
 
     if (showprogress)
     {
@@ -799,8 +805,7 @@ int Transcode::TranscodeFile(const QString &inputname,
             // through a cut, and then use the cutter to
             // discard the rest
             cutter = new Cutter();
-            cutter->SetCutList(deleteMap);
-
+            cutter->SetCutList(deleteMap, ctx);
             GetPlayer()->SetCutList(cutter->AdjustedCutList());
         }
         else
@@ -842,23 +847,29 @@ int Transcode::TranscodeFile(const QString &inputname,
 
         switch(aplayer->GetCodec())
         {
-            case CODEC_ID_AC3:
+            case AV_CODEC_ID_AC3:
                 audio_codec_name = "ac3";
                 break;
-            case CODEC_ID_EAC3:
+            case AV_CODEC_ID_EAC3:
                 audio_codec_name = "eac3";
                 break;
-            case CODEC_ID_DTS:
+            case AV_CODEC_ID_DTS:
                 audio_codec_name = "dts";
                 break;
-            case CODEC_ID_TRUEHD:
+            case AV_CODEC_ID_TRUEHD:
                 audio_codec_name = "truehd";
                 break;
-            case CODEC_ID_MP3:
+            case AV_CODEC_ID_MP3:
                 audio_codec_name = "mp3";
                 break;
-            case CODEC_ID_MP2:
+            case AV_CODEC_ID_MP2:
                 audio_codec_name = "mp2";
+                break;
+            case AV_CODEC_ID_AAC:
+                audio_codec_name = "aac";
+                break;
+            case AV_CODEC_ID_AAC_LATM:
+                audio_codec_name = "aac_latm";
                 break;
             default:
                 audio_codec_name = "unknown";
@@ -1434,6 +1445,7 @@ int Transcode::TranscodeFile(const QString &inputname,
                 if (elapsed)
                     flagFPS = curFrameNum / elapsed;
 
+                total_frame_count = GetPlayer()->GetCurrentFrameCount();
                 int percentage = curFrameNum * 100 / total_frame_count;
 
                 if (hls)
@@ -1473,6 +1485,7 @@ int Transcode::TranscodeFile(const QString &inputname,
             m_proginfo->ClearPositionMap(MARK_KEYFRAME);
             m_proginfo->ClearPositionMap(MARK_GOP_START);
             m_proginfo->ClearPositionMap(MARK_GOP_BYFRAME);
+            m_proginfo->ClearPositionMap(MARK_DURATION_MS);
         }
 
         if (nvr)

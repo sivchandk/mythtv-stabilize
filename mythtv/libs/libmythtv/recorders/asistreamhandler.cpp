@@ -101,7 +101,7 @@ void ASIStreamHandler::Return(ASIStreamHandler * & ref)
 }
 
 ASIStreamHandler::ASIStreamHandler(const QString &device) :
-    StreamHandler(device), 
+    StreamHandler(device),
     _device_num(-1), _buf_size(-1), _fd(-1),
     _packet_size(TSPacket::kSize), _clock_source(kASIInternalClock),
     _rx_mode(kASIRXSyncOnActualConvertTo188), _drb(NULL), _mpts(NULL)
@@ -145,7 +145,8 @@ void ASIStreamHandler::run(void)
     }
 
     DeviceReadBuffer *drb = new DeviceReadBuffer(this, true, false);
-    bool ok = drb->Setup(_device, _fd, _packet_size, _buf_size);
+    bool ok = drb->Setup(_device, _fd, _packet_size, _buf_size,
+                         _num_buffers / 4);
     if (!ok)
     {
         LOG(VB_GENERAL, LOG_ERR, LOC + "Failed to allocate DRB buffer");
@@ -204,12 +205,6 @@ void ASIStreamHandler::run(void)
         {
             LOG(VB_GENERAL, LOG_ERR, LOC + "Device EOF detected");
             _error = true;
-        }
-
-        if ((0 == len) || (-1 == len))
-        {
-            usleep(100);
-            continue;
         }
 
         len += remainder;
@@ -281,6 +276,13 @@ bool ASIStreamHandler::Open(void)
 
     _buf_size = CardUtil::GetASIBufferSize(_device_num, &error);
     if (_buf_size <= 0)
+    {
+        LOG(VB_GENERAL, LOG_ERR, LOC + error);
+        return false;
+    }
+
+    _num_buffers = CardUtil::GetASINumBuffers(_device_num, &error);
+    if (_num_buffers <= 0)
     {
         LOG(VB_GENERAL, LOG_ERR, LOC + error);
         return false;

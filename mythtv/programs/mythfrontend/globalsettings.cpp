@@ -130,17 +130,6 @@ static HostCheckBox *RememberRecGroup()
     return gc;
 }
 
-static HostCheckBox *UseGroupNameAsAllPrograms()
-{
-    HostCheckBox *gc = new HostCheckBox("DispRecGroupAsAllProg");
-    gc->setLabel(QObject::tr("Show filter name instead of \"All Programs\""));
-    gc->setValue(false);
-    gc->setHelpText(QObject::tr("If enabled, use the name of the display "
-                    "filter currently applied in place of the term \"All "
-                    "Programs\" in the playback screen."));
-    return gc;
-}
-
 static HostCheckBox *PBBStartInTitle()
 {
     HostCheckBox *gc = new HostCheckBox("PlaybackBoxStartInTitle");
@@ -1238,7 +1227,7 @@ static HostComboBox *PlayBoxEpisodeSort()
     gc->addSelection(QObject::tr("Season/Episode"), "Season");
     gc->addSelection(QObject::tr("Original air date"), "OrigAirDate");
     gc->addSelection(QObject::tr("Program ID"), "Id");
-    gc->setHelpText(QObject::tr("Selects how to sort a shows episodes"));
+    gc->setHelpText(QObject::tr("Selects how to sort a show's episodes"));
     return gc;
 }
 
@@ -1411,7 +1400,7 @@ static HostCheckBox *BrowseAllTuners()
     gc->setValue(false);
     gc->setHelpText(
         QObject::tr(
-            "If enabled, browse mode will shows channels on all "
+            "If enabled, browse mode will show channels on all "
             "available recording devices, instead of showing "
             "channels on just the current recorder."));
     return gc;
@@ -2068,12 +2057,12 @@ static HostComboBox *MythDateFormatCB()
     gc->addSelection(locale.toString(sampdate, "ddd MMM d yyyy"), "ddd MMM d yyyy");
     gc->addSelection(locale.toString(sampdate, "ddd d MMM yyyy"), "ddd d MMM yyyy");
     gc->addSelection(locale.toString(sampdate, "ddd yyyy-MM-dd"), "ddd yyyy-MM-dd");
-    gc->addSelection(locale.toString(sampdate,
-        QString::fromUtf8("dddd yyyy\u5E74M\u6708d\u65E5")),
-        QString::fromUtf8("dddd yyyy\u5E74M\u6708d\u65E5"));
-    gc->addSelection(locale.toString(sampdate,
-        QString::fromUtf8("dddd M\u6708d\u65E5")),
-        QString::fromUtf8("dddd M\u6708d\u65E5"));
+    QString jp_long = QString("dddd yyyy") + QChar(0x5E74) +
+        "M" + QChar(0x6708) + "d"+ QChar(0x65E5); // dddd yyyy年M月d日
+    gc->addSelection(locale.toString(sampdate, jp_long), jp_long);
+    QString jp_med = QString("dddd ") +
+        "M" + QChar(0x6708) + "d"+ QChar(0x65E5); // dddd M月d日
+    gc->addSelection(locale.toString(sampdate, jp_med), jp_med);
     gc->setHelpText(QObject::tr("Your preferred date format.") + ' ' +
                     sampleStr);
     return gc;
@@ -2114,9 +2103,8 @@ static HostComboBox *MythShortDateFormat()
     gc->addSelection(locale.toString(sampdate, "ddd d/M"), "ddd d/M");
     gc->addSelection(locale.toString(sampdate, "M/d ddd"), "M/d ddd");
     gc->addSelection(locale.toString(sampdate, "d/M ddd"), "d/M ddd");
-    gc->addSelection(locale.toString(sampdate,
-        QString::fromUtf8("M\u6708d\u65E5")),
-        QString::fromUtf8("M\u6708d\u65E5"));
+    QString jp = QString("M") + QChar(0x6708) + "d" + QChar(0x65E5); // M月d日
+    gc->addSelection(locale.toString(sampdate, jp), jp);
     gc->setHelpText(QObject::tr("Your preferred short date format.") + ' ' +
                     sampleStr);
     return gc;
@@ -2190,17 +2178,6 @@ static HostComboBox *LongChannelFormat()
     gc->setHelpText(QObject::tr("Your preferred long channel format."));
     gc->setValue(2);
     return gc;
-}
-
-static GlobalCheckBox *LiveTVPriority()
-{
-    GlobalCheckBox *bc = new GlobalCheckBox("LiveTVPriority");
-    bc->setLabel(QObject::tr("Allow Live TV to move scheduled shows"));
-    bc->setValue(false);
-    bc->setHelpText(QObject::tr("If enabled, scheduled recordings will "
-                    "be moved to other cards (where possible), so that "
-                    "Live TV will not be interrupted."));
-    return bc;
 }
 
 static HostCheckBox *ChannelGroupRememberLast()
@@ -3286,7 +3263,6 @@ PlaybackSettings::PlaybackSettings()
     pbox2->addChild(DisplayRecGroup());
     pbox2->addChild(QueryInitialFilter());
     pbox2->addChild(RememberRecGroup());
-    pbox2->addChild(UseGroupNameAsAllPrograms());
     addChild(pbox2);
 
     VerticalConfigurationGroup* pbox3 = new VerticalConfigurationGroup(false);
@@ -3356,9 +3332,8 @@ OSDSettings::OSDSettings()
     //cc->addChild(DecodeVBIFormat());
     //addChild(cc);
 
-#if CONFIG_DARWIN
+#if defined(Q_OS_MACX)
     // Any Mac OS-specific OSD stuff would go here.
-    // Note that this define should be Q_WS_MACX
 #endif
 }
 
@@ -3369,7 +3344,6 @@ GeneralSettings::GeneralSettings()
     general->addChild(ChannelOrdering());
     general->addChild(ChannelFormat());
     general->addChild(LongChannelFormat());
-    general->addChild(LiveTVPriority());
     addChild(general);
 
     VerticalConfigurationGroup* autoexp = new VerticalConfigurationGroup(false);

@@ -39,7 +39,7 @@
 
 #define DEBUG_CHANNEL_PREFIX 0 /**< set to 1 to channel prefixing */
 
-#define LOC QString("TVRec(%1): ").arg(cardid)
+#define LOC QString("TVRec[%1]: ").arg(cardid)
 
 /// How many milliseconds the signal monitor should wait between checks
 const uint TVRec::kSignalMonitoringRate = 50; /* msec */
@@ -1827,7 +1827,7 @@ bool TVRec::SetupDTVSignalMonitor(bool EITscan)
         ATSCStreamData *asd = dynamic_cast<ATSCStreamData*>(sd);
         if (!asd)
         {
-            sd = asd = new ATSCStreamData(major, minor);
+            sd = asd = new ATSCStreamData(major, minor, cardid);
             sd->SetCaching(true);
             if (GetDTVRecorder())
                 GetDTVRecorder()->SetStreamData(asd);
@@ -1858,7 +1858,7 @@ bool TVRec::SetupDTVSignalMonitor(bool EITscan)
         DVBStreamData *dsd = dynamic_cast<DVBStreamData*>(sd);
         if (!dsd)
         {
-            sd = dsd = new DVBStreamData(netid, tsid, progNum);
+            sd = dsd = new DVBStreamData(netid, tsid, progNum, cardid);
             sd->SetCaching(true);
             if (GetDTVRecorder())
                 GetDTVRecorder()->SetStreamData(dsd);
@@ -1896,7 +1896,7 @@ bool TVRec::SetupDTVSignalMonitor(bool EITscan)
     {
         if (!sd)
         {
-            sd = new MPEGStreamData(progNum, true);
+            sd = new MPEGStreamData(progNum, cardid, true);
             sd->SetCaching(true);
             if (GetDTVRecorder())
                 GetDTVRecorder()->SetStreamData(sd);
@@ -2557,6 +2557,17 @@ bool TVRec::GetKeyframePositions(
     return false;
 }
 
+bool TVRec::GetKeyframeDurations(
+    int64_t start, int64_t end, frm_pos_map_t &map) const
+{
+    QMutexLocker lock(&stateChangeLock);
+
+    if (recorder)
+        return recorder->GetKeyframeDurations(start, end, map);
+
+    return false;
+}
+
 /** \fn TVRec::GetMaxBitrate(void) const
  *  \brief Returns the maximum bits per second this recorder can produce.
  *
@@ -2989,6 +3000,16 @@ QString TVRec::GetInput(void) const
     if (channel)
         return channel->GetCurrentInput();
     return QString::null;
+}
+
+/** \fn TVRec::GetSourceID(void) const
+ *  \brief Returns current source id.
+ */
+uint TVRec::GetSourceID(void) const
+{
+    if (channel)
+        return channel->GetCurrentSourceID();
+    return 0;
 }
 
 /** \fn TVRec::SetInput(QString, uint)
@@ -4209,7 +4230,7 @@ void TVRec::TuningRestartRecorder(void)
     // Some recorders unpause on Reset, others do not...
     recorder->Unpause();
 
-    if (pseudoLiveTVRecording)
+    if (pseudoLiveTVRecording && curRecording)
     {
         ProgramInfo *rcinfo1 = pseudoLiveTVRecording;
         QString msg1 = QString("Recording: %1 %2 %3 %4")
@@ -4466,7 +4487,8 @@ bool TVRec::CreateLiveTVRingBuffer(const QString & channum)
     QString        inputName;
     int            inputID = -1;
 
-    if (!channel->CheckChannel(channum, inputName))
+    if (!channel ||
+        !channel->CheckChannel(channum, inputName))
     {
         ChangeState(kState_None);
         return false;
@@ -4525,7 +4547,8 @@ bool TVRec::SwitchLiveTVRingBuffer(const QString & channum,
     QString        inputName;
     int            inputID = -1;
 
-    if (!channel->CheckChannel(channum, inputName))
+    if (!channel ||
+        !channel->CheckChannel(channum, inputName))
     {
         ChangeState(kState_None);
         return false;

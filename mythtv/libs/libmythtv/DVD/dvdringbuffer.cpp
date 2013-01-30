@@ -130,6 +130,8 @@ DVDRingBuffer::DVDRingBuffer(const QString &lfilename) :
 
 DVDRingBuffer::~DVDRingBuffer()
 {
+    KillReadAheadThread();
+
     CloseDVD();
     m_menuBtnLock.lock();
     ClearMenuSPUParameters();
@@ -340,55 +342,6 @@ bool DVDRingBuffer::OpenFile(const QString &lfilename, uint retry_ms)
     dvdnav_set_readahead_flag(m_dvdnav, 0);
     dvdnav_set_PGC_positioning_flag(m_dvdnav, 1);
 
-    int32_t num_titles = 0;
-    res = dvdnav_get_number_of_titles(m_dvdnav, &num_titles);
-    if (num_titles == 0 || res == DVDNAV_STATUS_ERR)
-    {
-        char buf[DVD_BLOCK_SIZE * 5];
-        LOG(VB_GENERAL, LOG_INFO,
-            LOC + QString("Reading %1 bytes from the drive")
-                .arg(DVD_BLOCK_SIZE * 5));
-        safe_read(buf, DVD_BLOCK_SIZE * 5);
-        res = dvdnav_get_number_of_titles(m_dvdnav, &num_titles);
-    }
-
-    if (res == DVDNAV_STATUS_ERR)
-    {
-        LOG(VB_GENERAL, LOG_ERR,
-            LOC + QString("Failed to get the number of titles on the DVD" ));
-    }
-    else
-    {
-        LOG(VB_GENERAL, LOG_INFO,
-            LOC + QString("There are %1 titles on the disk")
-                .arg(num_titles));
-    }
-
-    int startTitle = 1;
-    dvdnav_status_t result = DVDNAV_STATUS_ERR;
-    while (startTitle <= num_titles)
-    {
-        result = dvdnav_title_play(m_dvdnav, startTitle);
-        if (result == DVDNAV_STATUS_OK)
-            break;
-        else if (startTitle < num_titles)
-            LOG(VB_GENERAL, LOG_WARNING, QString("Unable to play DVD title %1, "
-                                                 "trying next title")
-                                                    .arg(startTitle));
-        startTitle++;
-    }
-
-    if (result == DVDNAV_STATUS_ERR)
-    {
-        LOG(VB_GENERAL, LOG_ERR, QString("Unable to play any title on this "
-                                         "DVD. Disc may be damaged or "
-                                         "corrupted as a means of copy "
-                                         "protection."));
-
-        rwlock.unlock();
-        return false;
-    }
-
     // Check we aren't starting in a still frame (which will probably fail as
     // ffmpeg will be unable to create a decoder)
     if (dvdnav_get_next_still_flag(m_dvdnav))
@@ -444,6 +397,7 @@ bool DVDRingBuffer::StartFromBeginning(void)
     if (m_dvdnav)
     {
         QMutexLocker lock(&m_seekLock);
+        dvdnav_reset(m_dvdnav);
         dvdnav_first_play(m_dvdnav);
         m_audioStreamsChanged = true;
     }
@@ -657,13 +611,11 @@ int DVDRingBuffer::safe_read(void *data, uint sz)
                     WaitForPlayer();
                 }
 
-                // if the new cell is a still frame, reset the timer
+                // Make sure the still frame timer is updated (if this isn't
+                // a still frame, this will ensure the timer knows about it).
                 if (m_parent)
                 {
-                    if (m_still && (m_still < 0xff))
-                        m_parent->ResetStillFrameTimer();
-                    else
-                        m_parent->SetStillFrameTimeout(0);
+                    m_parent->SetStillFrameTimeout(m_still);
                 }
 
                 // clear menus/still frame selections
@@ -1036,7 +988,7 @@ void DVDRingBuffer::prevTrack(void)
  */
 uint DVDRingBuffer::GetTotalTimeOfTitle(void)
 {
-    return m_pgcLength / 90000;
+    return m_pgcLength / 90000.0 + 0.5;
 }
 
 /** \brief get the start of the cell in seconds
@@ -1069,6 +1021,12 @@ void DVDRingBuffer::SkipStillFrame(void)
     QMutexLocker locker(&m_seekLock);
     LOG(VB_PLAYBACK, LOG_INFO, LOC + "Skipping still frame.");
     dvdnav_still_skip(m_dvdnav);
+
+    // Make sure the still frame timer is disabled.
+    if (m_parent)
+    {
+        m_parent->SetStillFrameTimeout(0);
+    }
 }
 
 void DVDRingBuffer::WaitSkip(void)
@@ -1472,7 +1430,7 @@ bool DVDRingBuffer::DVDButtonUpdate(bool b_mode)
     dvdnav_highlight_area_t hl;
     dvdnav_get_current_highlight(m_dvdnav, &button);
     pci = dvdnav_get_current_nav_pci(m_dvdnav);
-    dvdRet = dvdnav_get_highlight_area(pci, button, b_mode, &hl);
+    dvdRet = dvdnav_get_highlight_area_from_group(pci, DVD_BTN_GRP_Wide, button, b_mode, &hl);
 
     if (dvdRet == DVDNAV_STATUS_ERR)
         return false;
@@ -1567,7 +1525,7 @@ int DVDRingBuffer::GetAudioTrackNum(uint stream_id)
 
 int DVDRingBuffer::GetAudioTrackType(uint stream_id)
 {
-    AudioTrackType ret = kAudioTypeNormal;
+    int ret = -1;
     audio_attr_t attributes;
     int logicalStreamId = dvdnav_get_audio_logical_stream(m_dvdnav, stream_id);
     if (dvdnav_get_audio_attr(m_dvdnav, logicalStreamId, &attributes) >= 1)
@@ -1576,23 +1534,10 @@ int DVDRingBuffer::GetAudioTrackType(uint stream_id)
                                         "Extension Code - %2")
                                         .arg(stream_id)
                                         .arg(attributes.code_extension));
-        switch (attributes.code_extension)
-        {
-            case 1:
-                ret = kAudioTypeNormal;
-                break;
-            case 2:
-                ret = kAudioTypeAudioDescription;
-                break;
-            case 3: case 4:
-                ret = kAudioTypeCommentary;
-                break;
-            case 0: default:
-                break;
-        }
+        ret = attributes.code_extension;
     }
 
-    return (int)ret;
+    return ret;
 }
 
 /** \brief get the subtitle language from the dvd

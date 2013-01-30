@@ -2,7 +2,7 @@
 
 #include "cutter.h"
 
-void Cutter::SetCutList(frm_dir_map_t &deleteMap)
+void Cutter::SetCutList(frm_dir_map_t &deleteMap, PlayerContext *ctx)
 {
     // Break each cut into two parts, the first for
     // the player and the second for the transcode loop.
@@ -11,6 +11,7 @@ void Cutter::SetCutList(frm_dir_map_t &deleteMap)
     int64_t                 start = 0;
     int64_t                 leadinLength;
 
+    tracker.SetPlayerContext(ctx);
     foreshortenedCutList.clear();
 
     for (it = deleteMap.begin(); it != deleteMap.end(); ++it)
@@ -39,6 +40,31 @@ void Cutter::SetCutList(frm_dir_map_t &deleteMap)
                     foreshortenedCutList[it.key()] = MARK_CUT_END;
                 }
                 break;
+            case MARK_ALL:
+            case MARK_UNSET:
+            case MARK_TMP_CUT_END:
+            case MARK_TMP_CUT_START:
+            case MARK_UPDATED_CUT:
+            case MARK_PLACEHOLDER:
+            case MARK_BOOKMARK:
+            case MARK_BLANK_FRAME:
+            case MARK_COMM_START:
+            case MARK_COMM_END:
+            case MARK_GOP_START:
+            case MARK_KEYFRAME:
+            case MARK_SCENE_CHANGE:
+            case MARK_GOP_BYFRAME:
+            case MARK_ASPECT_1_1:
+            case MARK_ASPECT_4_3:
+            case MARK_ASPECT_16_9:
+            case MARK_ASPECT_2_21_1:
+            case MARK_ASPECT_CUSTOM:
+            case MARK_VIDEO_WIDTH:
+            case MARK_VIDEO_HEIGHT:
+            case MARK_VIDEO_RATE:
+            case MARK_DURATION_MS:
+            case MARK_TOTAL_FRAMES:
+                break;
         }
     }
 
@@ -57,7 +83,7 @@ void Cutter::Activate(float v2a, int64_t total)
     totalFrames = total;
     videoFramesToCut = 0;
     audioFramesToCut = 0;
-    tracker.TrackerReset(0, totalFrames);
+    tracker.TrackerReset(0);
 }
 
 void Cutter::NewFrame(int64_t currentFrame)
@@ -68,12 +94,11 @@ void Cutter::NewFrame(int64_t currentFrame)
         {
             uint64_t jumpTo = 0;
 
-            if (tracker.TrackerWantsToJump(currentFrame, totalFrames,
-                                           jumpTo))
+            if (tracker.TrackerWantsToJump(currentFrame, jumpTo))
             {
                 // Reset the tracker and work out how much video and audio
                 // to drop
-                tracker.TrackerReset(jumpTo, totalFrames);
+                tracker.TrackerReset(jumpTo);
                 videoFramesToCut = jumpTo - currentFrame;
                 audioFramesToCut += (int64_t)(videoFramesToCut *
                                     audioFramesPerVideoFrame + 0.5);

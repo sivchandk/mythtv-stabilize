@@ -13,6 +13,7 @@
 #include "decoderbase.h"
 #include "privatedecoder.h"
 #include "audiooutputsettings.h"
+#include "audiooutpututil.h"
 #include "spdifencoder.h"
 #include "vbilut.h"
 #include "H264Parser.h"
@@ -46,7 +47,7 @@ class AudioInfo
 {
   public:
     AudioInfo() :
-        codec_id(CODEC_ID_NONE), format(FORMAT_NONE), sample_size(-2),
+        codec_id(AV_CODEC_ID_NONE), format(FORMAT_NONE), sample_size(-2),
         sample_rate(-1), channels(-1), codec_profile(0),
         do_passthru(false), original_channels(-1)
     {;}
@@ -160,6 +161,9 @@ class AvFormatDecoder : public DecoderBase
     virtual long long GetChapter(int chapter);
     virtual bool DoRewind(long long desiredFrame, bool doflush = true);
     virtual bool DoFastForward(long long desiredFrame, bool doflush = true);
+    virtual void SetIdrOnlyKeyframes(bool value) {
+        m_h264_parser->use_I_forKeyframes(!value);
+    }
 
     virtual int64_t NormalizeVideoTimecode(int64_t timecode);
     virtual int64_t NormalizeVideoTimecode(AVStream *st, int64_t timecode);
@@ -197,7 +201,7 @@ class AvFormatDecoder : public DecoderBase
     int  filter_max_ch(const AVFormatContext *ic,
                        const sinfo_vec_t     &tracks,
                        const vector<int>     &fs,
-                       enum CodecID           codecId = CODEC_ID_NONE,
+                       enum CodecID           codecId = AV_CODEC_ID_NONE,
                        int                    profile = -1);
 
     friend int get_avf_buffer(struct AVCodecContext *c, AVFrame *pic);
@@ -250,6 +254,7 @@ class AvFormatDecoder : public DecoderBase
     bool HasVideo(const AVFormatContext *ic);
     float normalized_fps(AVStream *stream, AVCodecContext *enc);
     void av_update_stream_timings_video(AVFormatContext *ic);
+    bool OpenAVCodec(AVCodecContext *avctx, const AVCodec *codec);
 
     virtual void UpdateFramesPlayed(void);
     virtual bool DoRewindSeek(long long desiredFrame);
@@ -358,6 +363,7 @@ class AvFormatDecoder : public DecoderBase
 
     float m_fps;
     bool  codec_is_mpeg;
+    bool  m_processFrames;
 };
 
 #endif

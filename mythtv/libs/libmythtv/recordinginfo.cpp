@@ -103,7 +103,8 @@ RecordingInfo::RecordingInfo(
     uint _subtitleType,
     uint _videoproperties,
     uint _audioproperties,
-    bool _future) :
+    bool _future,
+    int _schedorder) :
     ProgramInfo(
         _title, _subtitle, _description, _season, _episode,
         _category, _chanid, _chanstr, _chansign, _channame,
@@ -113,6 +114,7 @@ RecordingInfo::RecordingInfo(
     oldrecstatus(_oldrecstatus),
     savedrecstatus(rsUnknown),
     future(_future),
+    schedorder(_schedorder),
     desiredrecstartts(_startts),
     desiredrecendts(_endts),
     record(NULL)
@@ -211,6 +213,7 @@ RecordingInfo::RecordingInfo(
     oldrecstatus(rsUnknown),
     savedrecstatus(rsUnknown),
     future(false),
+    schedorder(0),
     desiredrecstartts(_startts),
     desiredrecendts(_endts),
     record(NULL)
@@ -244,6 +247,7 @@ RecordingInfo::RecordingInfo(
     oldrecstatus(rsUnknown),
     savedrecstatus(rsUnknown),
     future(false),
+    schedorder(0),
     desiredrecstartts(),
     desiredrecendts(),
     record(NULL)
@@ -394,6 +398,7 @@ void RecordingInfo::clone(const RecordingInfo &other,
         oldrecstatus   = other.oldrecstatus;
         savedrecstatus = other.savedrecstatus;
         future         = other.future;
+        schedorder     = other.schedorder;
         desiredrecstartts = other.desiredrecstartts;
         desiredrecendts = other.desiredrecendts;
     }
@@ -420,6 +425,7 @@ void RecordingInfo::clone(const ProgramInfo &other,
     oldrecstatus   = rsUnknown;
     savedrecstatus = rsUnknown;
     future         = false;
+    schedorder     = 0;
     desiredrecstartts = QDateTime();
     desiredrecendts = QDateTime();
 }
@@ -434,6 +440,7 @@ void RecordingInfo::clear(void)
     oldrecstatus = rsUnknown;
     savedrecstatus = rsUnknown;
     future = false;
+    schedorder = 0;
     desiredrecstartts = QDateTime();
     desiredrecendts = QDateTime();
 }
@@ -766,53 +773,14 @@ void RecordingInfo::ApplyTranscoderProfileChange(const QString &profile) const
     }
 }
 
-/** \fn RecordingInfo::ToggleRecord(void)
- *  \brief Cycles through recording types.
- *
- *   If the program recording status is kNotRecording,
- *   ApplyRecordStateChange(kSingleRecord) is called.
- *   If the program recording status is kSingleRecording,
- *   ApplyRecordStateChange(kOneRecord) is called.
- *   <br>etc...
- *
- *   The states in order are: kNotRecording, kSingleRecord, kOneRecord,
- *     kWeeklyRecord, kDailyRecord, kChannelRecord, kAllRecord.<br>
- *   And: kOverrideRecord, kDontRecord.
- *
- *   That is if you the recording is in any of the first set of states,
- *   we cycle through those, if not we toggle between kOverrideRecord and
- *   kDontRecord.
+/** \fn RecordingInfo::QuickRecord(void)
+ *  \brief Create a kSingleRecord if not already scheduled.
  */
-void RecordingInfo::ToggleRecord(void)
+void RecordingInfo::QuickRecord(void)
 {
     RecordingType curType = GetProgramRecordingStatus();
-
-    switch (curType)
-    {
-        case kNotRecording:
-            ApplyRecordStateChange(kSingleRecord);
-            break;
-        case kSingleRecord:
-            ApplyRecordStateChange(kOneRecord);
-            break;
-        case kOneRecord:
-            ApplyRecordStateChange(kAllRecord);
-            break;
-        case kAllRecord:
-            ApplyRecordStateChange(kSingleRecord);
-            break;
-
-        case kOverrideRecord:
-            ApplyRecordStateChange(kDontRecord);
-            break;
-        case kDontRecord:
-            ApplyRecordStateChange(kOverrideRecord);
-            break;
-
-        default:
-            ApplyRecordStateChange(kAllRecord);
-            break;
-    }
+    if (curType == kNotRecording)
+        ApplyRecordStateChange(kSingleRecord);
 }
 
 /**

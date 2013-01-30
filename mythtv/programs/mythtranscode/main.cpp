@@ -28,6 +28,7 @@ using namespace std;
 #include "commandlineparser.h"
 #include "recordinginfo.h"
 #include "signalhandling.h"
+#include "HLS/httplivestream.h"
 
 static void CompleteJob(int jobID, ProgramInfo *pginfo, bool useCutlist,
                         frm_dir_map_t *deleteMap, int &resultCode);
@@ -43,9 +44,11 @@ static void UpdatePositionMap(frm_pos_map_t &posMap, QString mapfile,
         pginfo->ClearPositionMap(MARK_KEYFRAME);
         pginfo->ClearPositionMap(MARK_GOP_START);
         pginfo->SavePositionMap(posMap, MARK_GOP_BYFRAME);
+        pginfo->SavePositionMap(posMap, MARK_DURATION_MS);
     }
     else if (!mapfile.isEmpty())
     {
+        MarkTypes keyType = MARK_GOP_BYFRAME;
         FILE *mapfh = fopen(mapfile.toLocal8Bit().constData(), "w");
         if (!mapfh)
         {
@@ -54,10 +57,11 @@ static void UpdatePositionMap(frm_pos_map_t &posMap, QString mapfile,
             return;
         }
         frm_pos_map_t::const_iterator it;
-        fprintf (mapfh, "Type: %d\n", MARK_GOP_BYFRAME);
+        fprintf (mapfh, "Type: %d\n", keyType);
         for (it = posMap.begin(); it != posMap.end(); ++it)
-            fprintf(mapfh, "%lld %lld\n",
-                    (unsigned long long)it.key(), (unsigned long long)*it);
+            if (it.key() == keyType)
+                fprintf(mapfh, "%lld %lld\n",
+                        it.key(), *it);
         fclose(mapfh);
     }
 }
@@ -477,7 +481,13 @@ int main(int argc, char *argv[])
     ProgramInfo *pginfo = NULL;
     if (cmdline.toBool("hls"))
     {
-        pginfo = new ProgramInfo();
+        if (cmdline.toBool("hlsstreamid"))
+        {
+            HTTPLiveStream hls(cmdline.toInt("hlsstreamid"));
+            pginfo = new ProgramInfo(hls.GetSourceFile());
+        }
+        if (pginfo == NULL)
+            pginfo = new ProgramInfo();
     }
     else if (isVideo)
     {
@@ -833,13 +843,13 @@ static void CompleteJob(int jobID, ProgramInfo *pginfo, bool useCutlist,
         return;
     }
 
-    WaitToDelete(pginfo);
-
     const QString filename = pginfo->GetPlaybackURL(false, true);
     const QByteArray fname = filename.toLocal8Bit();
 
     if (status == JOB_STOPPING)
     {
+        WaitToDelete(pginfo);
+
         // Transcoding may take several minutes.  Reload the bookmark
         // in case it changed, then save its translated value back.
         uint64_t previousBookmark =

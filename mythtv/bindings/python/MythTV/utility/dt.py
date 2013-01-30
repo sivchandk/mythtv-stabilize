@@ -5,10 +5,13 @@
 #              timestamp formats
 #------------------------------
 
+from MythTV.exceptions import MythError, MythTZError
+
 from datetime import datetime as _pydatetime, \
                      tzinfo as _pytzinfo, \
                      timedelta
 from collections import namedtuple
+import os
 import re
 import time
 import singleton
@@ -60,8 +63,8 @@ class basetzinfo( _pytzinfo ):
                 break
             elif index < 0:
                 # out of bounds past, undefined time frame
-                raise RuntimeError(("Timezone does not have sufficiently "
-                                    "old data for search: {0}").format(dt))
+                raise MythTZError(MythTZError.TZ_CONVERSION_ERROR, 
+                                  self.tzname(), dt)
 
         self.__last = index
         return self._transitions[index]
@@ -103,8 +106,7 @@ class posixtzinfo( basetzinfo ):
     def _get_version(fd):
         """Confirm zoneinfo file magic string, and return version number."""
         if fd.read(4) != 'TZif':
-            raise RuntimeError(("ZoneInfo file does not have proper "
-                                "magic string."))
+            raise MythTZError(MythTZError.TZ_INVALID_FILE)
         version = fd.read(1) # read version number
         fd.seek(15, 1) # skip reserved bytes
         if version == '\0':
@@ -143,9 +145,8 @@ class posixtzinfo( basetzinfo ):
         for i in range(counts.transitions):
             types[i] = t = unpack('!b', fd.read(1))[0]
             if t >= counts.types:
-                raise RuntimeError(("Transition has out-of-bounds definition "
-                            "index (given: {0}, max: {0}")\
-                                .format(t,counts.types-1))
+                raise MythTZError(MythTZError.TZ_INVALID_TRANSITION,
+                                  t, counts.types-1)
 
         # read in type definitions
         typedefs = []
@@ -177,10 +178,12 @@ class posixtzinfo( basetzinfo ):
 
 
     def __init__(self, name=None):
-        if name is None:
-            fd = open('/etc/localtime')
-        else:
+        if name:
             fd = open('/usr/share/zoneinfo/' + name)
+        elif os.getenv('TZ'):
+            fd = open('/usr/share/zoneinfo/' + os.getenv('TZ'))
+        else:
+            fd = open('/etc/localtime')
 
         version = self._get_version(fd)
         if version == 2:
@@ -192,8 +195,7 @@ class offsettzinfo( _pytzinfo ):
     """Customized timezone class that provides a simple static offset."""
     @classmethod
     def local(cls):
-        offset = -(time.timezone, time.altzone)[time.daylight]
-        return cls(sec=offset)
+        return cls(sec=-time.timezone)
     def __init__(self, direc='+', hr=0, min=0, sec=0):
         sec = int(sec) + 60 * (int(min) + 60 * int(hr))
         if direc == '-':

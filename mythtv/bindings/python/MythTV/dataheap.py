@@ -17,6 +17,8 @@ import locale
 import xml.etree.cElementTree as etree
 from datetime import date, time
 
+_default_datetime = datetime(1900,1,1, tzinfo=datetime.UTCTZ())
+
 from UserString import MutableString
 class Artwork( MutableString ):
     _types = {'coverart':   'Coverart',
@@ -102,19 +104,48 @@ class Artwork( MutableString ):
         be.downloadTo(url, self.imagetype, self)
 
     def open(self, mode='r'):
-        return ftopen('myth://{0.imagetype}@{0.hostname}/{0}'.format(self), mode)
+        return ftopen((self.hostname, self.imagetype, str(self)), mode)
 
 class Record( CMPRecord, DBDataWrite, RECTYPE ):
     """
     Record(id=None, db=None) -> Record object
     """
-    _defaults = {'type':RECTYPE.kAllRecord,
-                 'title':u'Unknown', 'subtitle':'',      'description':'',
-                 'category':'',      'station':'',       'seriesid':'',
-                 'search':0,         'last_record':datetime(1900,1,1),
-                 'inetref':'',       'next_record':datetime(1900,1,1),
-                 'season':0,         'last_delete':datetime(1900,1,1),
-                 'episode':0}
+
+    @classmethod
+    def _setClassDefs(cls, db=None):
+        db = DBCache(db)
+        super(Record, cls)._setClassDefs(db)
+        defaults = cls._template('Default', db=db)
+        for k,v in defaults.iteritems():
+            cls._defaults[k] = v
+
+    _stored_templates = {}
+    @classmethod
+    def _template(cls, name, db=None):
+        if name not in cls._stored_templates:
+            db = DBCache(db)
+            cls._setClassDefs(db)
+            tmp = cls._fromQuery("WHERE title=?", (name + " (Template)",))\
+                                    .next().iteritems()
+            data = {}
+            for k,v in tmp:
+                if k in ['type', 'category', 'profile', 'recpriority',
+                         'autoexpire', 'maxepisodes', 'startoffset',
+                         'endoffset', 'recgroup', 'dupmethod', 'dupin',
+                         'search', 'autotranscode', 'autocommflag',
+                         'autouserjob1', 'autouserjob2', 'autouserjob3',
+                         'autouserjob4', 'autometadata', 'findday',
+                         'findtime', 'inactive', 'transcoder', 'playgroup',
+                         'prefinput', 'storagegroup', 'avg_delay', 'filter']:
+                    data[k] = v
+            cls._stored_templates[name] = data
+        return cls._stored_templates[name]
+
+    _defaults = {'title':u'Unknown', 'subtitle':u'', 'description':u'',
+                 'category':u'', 'station':u'', 'seriesid':u'', 'inetref':u'',
+                 'season':0, 'episode':0, 'last_record':_default_datetime,
+                 'next_record':_default_datetime,
+                 'last_delete':_default_datetime}
     _artwork = None
 
     def __str__(self):
@@ -125,6 +156,11 @@ class Record( CMPRecord, DBDataWrite, RECTYPE ):
 
     def __repr__(self):
         return str(self).encode('utf-8')
+
+    def __init__(self, data=None, db=None, template=None):
+        DBDataWrite.__init__(self, data, db)
+        if (data is None) and template:
+            dict.update(self, self._template(template, db=self._db))
 
     def create(self, data=None, wait=False):
         """Record.create(data=None) -> Record object"""
@@ -330,11 +366,9 @@ class Recorded( CMPRecord, DBDataWrite ):
 
     def open(self, type='r'):
         """Recorded.open(type='r') -> file or FileTransfer object"""
-        return ftopen("myth://%s@%s/%s" % ( self.storagegroup,
-                                            self.hostname,
-                                            self.basename),
-                      type, db=self._db,
-                      chanid=self.chanid, starttime=self.starttime)
+        return ftopen((self.hostname, self.storagegroup, self.basename),
+                      type, db=self._db, chanid=self.chanid,
+                      starttime=self.starttime)
 
     def getProgram(self):
         """Recorded.getProgram() -> Program object"""
@@ -693,7 +727,7 @@ class Channel( DBDataWrite ):
                  'useonairguide':0,      'atsc_major_chan':0,
                  'tmoffset':0,           'default_authority':'',
                  'commmethod':-1,        'atsc_minor_chan':0,
-                 'last_record':datetime(1900,1,1)}
+                 'last_record':_default_datetime}
 
     def __str__(self):
         if self._wheredat is None:
@@ -928,7 +962,7 @@ class Video( CMPVideo, VideoSchema, DBDataWrite ):
     trailer              = Artwork('trailer')
 
     def open(self, mode='r', nooverwrite=False):
-        return ftopen('myth://Videos@{0.host}/{0.filename}'.format(self),
+        return ftopen((self.host, 'Videos', self.filename),
                     mode, False, nooverwrite, self._db)
 
     def getHash(self):
