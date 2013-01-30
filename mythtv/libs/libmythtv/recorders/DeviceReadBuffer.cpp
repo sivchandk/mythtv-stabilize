@@ -33,15 +33,16 @@ DeviceReadBuffer::DeviceReadBuffer(
       max_poll_wait(2500 /*ms*/),
 
       size(0),                      used(0),
-      read_quanta(0),
-      dev_read_size(0),             min_read(0),
+      read_quanta(0),               dev_buffer_count(1),
+      dev_read_size(0),             readThreshold(0),
 
       buffer(NULL),                 readPtr(NULL),
       writePtr(NULL),               endPtr(NULL),
 
       // statistics
       max_used(0),                  avg_used(0),
-      avg_cnt(0)
+      avg_buf_write_cnt(0),         avg_buf_read_cnt(0),
+      avg_buf_sleep_cnt(0)
 {
     for (int i = 0; i < 2; i++)
     {
@@ -71,7 +72,8 @@ DeviceReadBuffer::~DeviceReadBuffer()
 }
 
 bool DeviceReadBuffer::Setup(const QString &streamName, int streamfd,
-                             uint readQuanta, uint deviceBufferSize)
+                             uint readQuanta, uint deviceBufferSize,
+                             uint deviceBufferCount)
 {
     QMutexLocker locker(&lock);
 
@@ -89,15 +91,16 @@ bool DeviceReadBuffer::Setup(const QString &streamName, int streamfd,
     paused        = false;
 
     read_quanta   = (readQuanta) ? readQuanta : read_quanta;
+    dev_buffer_count = deviceBufferCount;
     size          = gCoreContext->GetNumSetting(
         "HDRingbufferSize", 50 * read_quanta) * 1024;
     used          = 0;
     dev_read_size = read_quanta * (using_poll ? 256 : 48);
     dev_read_size = (deviceBufferSize) ?
         min(dev_read_size, (size_t)deviceBufferSize) : dev_read_size;
-    min_read      = read_quanta * 4;
+    readThreshold = read_quanta * 128;
 
-    buffer        = new unsigned char[size + dev_read_size];
+    buffer        = new (nothrow) unsigned char[size + dev_read_size];
     readPtr       = buffer;
     writePtr      = buffer;
     endPtr        = buffer + size;
@@ -115,7 +118,9 @@ bool DeviceReadBuffer::Setup(const QString &streamName, int streamfd,
     // Initialize statistics
     max_used      = 0;
     avg_used      = 0;
-    avg_cnt       = 0;
+    avg_buf_write_cnt = 0;
+    avg_buf_read_cnt  = 0;
+    avg_buf_sleep_cnt = 0;
     lastReport.start();
 
     LOG(VB_RECORD, LOG_INFO, LOC + QString("buffer size %1 KB").arg(size/1024));
@@ -304,7 +309,8 @@ void DeviceReadBuffer::IncrWritePointer(uint len)
     writePtr  = (writePtr >= endPtr) ? buffer + (writePtr - endPtr) : writePtr;
 #if REPORT_RING_STATS
     max_used = max(used, max_used);
-    avg_used = ((avg_used * avg_cnt) + used) / ++avg_cnt;
+    avg_used = ((avg_used * avg_buf_write_cnt) + used) / (avg_buf_write_cnt+1);
+    ++avg_buf_write_cnt;
 #endif
     dataWait.wakeAll();
 }
@@ -315,6 +321,9 @@ void DeviceReadBuffer::IncrReadPointer(uint len)
     used    -= len;
     readPtr += len;
     readPtr  = (readPtr == endPtr) ? buffer : readPtr;
+#if REPORT_RING_STATS
+    ++avg_buf_read_cnt;
+#endif
 }
 
 void DeviceReadBuffer::run(void)
@@ -322,6 +331,12 @@ void DeviceReadBuffer::run(void)
     RunProlog();
 
     uint      errcnt = 0;
+    uint      cnt;
+    ssize_t   len;
+    size_t    read_size;
+    size_t    unused;
+    size_t    total;
+    size_t    throttle = dev_read_size * dev_buffer_count / 2;
 
     lock.lock();
     runWait.wakeAll();
@@ -353,27 +368,37 @@ void DeviceReadBuffer::run(void)
             }
         }
 
-        // Limit read size for faster return from read
-        size_t unused = (size_t) WaitForUnused(read_quanta);
-        size_t read_size = min(dev_read_size, unused);
-
-        // if read_size > 0 do the read...
-        if (read_size)
+        /* Some device drivers segment their buffer into small pieces,
+         * So allow for the reading of multiple buffers */
+        for (cnt = 0, len = 0, total = 0;
+             dorun && len >= 0 && cnt < dev_buffer_count; ++cnt)
         {
-            ssize_t len = read(_stream_fd, writePtr, read_size);
-            if (!CheckForErrors(len, read_size, errcnt))
+            // Limit read size for faster return from read
+            unused = static_cast<size_t>(WaitForUnused(read_quanta));
+            read_size = min(dev_read_size, unused);
+
+            // if read_size > 0 do the read...
+            if (read_size)
             {
-                if (errcnt > 5)
+                len = read(_stream_fd, writePtr, read_size);
+                if (!CheckForErrors(len, read_size, errcnt))
                     break;
-                else
-                    continue;
+                errcnt = 0;
+
+                // if we wrote past the official end of the buffer,
+                // copy to start
+                if (writePtr + len > endPtr)
+                    memcpy(buffer, endPtr, writePtr + len - endPtr);
+                IncrWritePointer(len);
+                total += len;
             }
-            errcnt = 0;
-            // if we wrote past the official end of the buffer, copy to start
-            if (writePtr + len > endPtr)
-                memcpy(buffer, endPtr, writePtr + len - endPtr);
-            IncrWritePointer(len);
         }
+        if (errcnt > 5)
+            break;
+
+        // Slow down reading if not under load
+        if (errcnt == 0 && total < throttle)
+            usleep(1000);
     }
 
     ClosePipes();
@@ -617,7 +642,7 @@ bool DeviceReadBuffer::CheckForErrors(
  */
 uint DeviceReadBuffer::Read(unsigned char *buf, const uint count)
 {
-    uint avail = WaitForUsed(min(count, (uint)min_read), 500);
+    uint avail = WaitForUsed(min(count, (uint)readThreshold), 20);
     size_t cnt = min(count, avail);
 
     if (!cnt)
@@ -703,20 +728,26 @@ uint DeviceReadBuffer::WaitForUsed(uint needed, uint max_wait) const
 void DeviceReadBuffer::ReportStats(void)
 {
 #if REPORT_RING_STATS
-    if (lastReport.elapsed() > 20*1000 /* msg every 20 seconds */)
+    static const int secs = 20;
+    static const double d1_s = 1.0 / secs;
+    if (lastReport.elapsed() > secs * 1000 /* msg every 20 seconds */)
     {
         QMutexLocker locker(&lock);
         double rsize = 100.0 / size;
-        QString msg  = QString("fill avg(%1%) ").arg(avg_used*rsize,3,'f',0);
-        msg         += QString("fill max(%2%) ").arg(max_used*rsize,3,'f',0);
-        msg         += QString("samples(%3)").arg(avg_cnt);
+        QString msg  = QString("fill avg(%1%) ").arg(avg_used*rsize,5,'f',2);
+        msg         += QString("fill max(%1%) ").arg(max_used*rsize,5,'f',2);
+        msg         += QString("writes/sec(%1) ").arg(avg_buf_write_cnt*d1_s);
+        msg         += QString("reads/sec(%1) ").arg(avg_buf_read_cnt*d1_s);
+        msg         += QString("sleeps/sec(%1)").arg(avg_buf_sleep_cnt*d1_s);
 
         avg_used    = 0;
-        avg_cnt     = 0;
+        avg_buf_write_cnt = 0;
+        avg_buf_read_cnt = 0;
+        avg_buf_sleep_cnt = 0;
         max_used    = 0;
         lastReport.start();
 
-        LOG(VB_GENERAL, LOG_DEBUG, LOC + msg);
+        LOG(VB_GENERAL, LOG_INFO, LOC + msg);
     }
 #endif
 }

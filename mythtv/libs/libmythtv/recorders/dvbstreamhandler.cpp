@@ -208,8 +208,7 @@ void DVBStreamHandler::RunTS(void)
 
         if (drb)
         {
-            len = drb->Read(
-                &(buffer[remainder]), buffer_size - remainder);
+            len = drb->Read(&(buffer[remainder]), buffer_size - remainder);
 
             // Check for DRB errors
             if (drb->IsErrored())
@@ -238,12 +237,12 @@ void DVBStreamHandler::RunTS(void)
                 len = read(dvr_fd, &(buffer[remainder]),
                            buffer_size - remainder);
             }
-        }
 
-        if ((0 == len) || (-1 == len))
-        {
-            usleep(100);
-            continue;
+            if ((0 == len) || (-1 == len))
+            {
+                usleep(100);
+                continue;
+            }
         }
 
         len += remainder;
@@ -712,7 +711,7 @@ bool DVBPIDInfo::Close(const QString &dvb_dev)
     int err = close(tmp);
     if (err < 0)
     {
-        LOG(VB_GENERAL, LOG_ERR, 
+        LOG(VB_GENERAL, LOG_ERR,
             LOC + QString("Failed to close mux (pid 0x%1)")
                 .arg(_pid, 0, 16) + ENO);
 
