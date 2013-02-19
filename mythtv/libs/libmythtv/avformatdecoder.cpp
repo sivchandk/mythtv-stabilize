@@ -909,9 +909,13 @@ extern "C" void HandleBDStreamChange(void *data)
 int AvFormatDecoder::FindStreamInfo(void)
 {
     QMutexLocker lock(avcodeclock);
-    silence_ffmpeg_logging = true;
+    // Suppress ffmpeg logging unless "-v libav --loglevel debug"
+    if (!VERBOSE_LEVEL_CHECK(VB_LIBAV, LOG_DEBUG))
+        silence_ffmpeg_logging = true;
+    avfRingBuffer->SetInInit(ringBuffer->IsStreamed());
     int retval = avformat_find_stream_info(ic, NULL);
     silence_ffmpeg_logging = false;
+    avfRingBuffer->SetInInit(false);
     return retval;
 }
 
@@ -3123,6 +3127,8 @@ bool AvFormatDecoder::H264PreProcessPkt(AVStream *stream, AVPacket *pkt)
         current_aspect = get_aspect(*m_h264_parser);
         uint  width  = m_h264_parser->pictureWidth();
         uint  height = m_h264_parser->pictureHeight();
+        if (height == 1088 && current_height == 1080)
+            height = 1080;
         float seqFPS = m_h264_parser->frameRate() * 0.001f;
 
         bool res_changed = ((width  != (uint)current_width) ||
