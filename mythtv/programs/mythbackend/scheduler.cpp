@@ -2679,6 +2679,7 @@ void Scheduler::HandleTuning(
             .arg(ri.GetCardID()).arg(ri.GetTitle());
         LOG(VB_GENERAL, LOG_ERR, LOC + msg);
     }
+#if 0 // Don't abandoning a recording when there isn't a signal for 3 minutes.
     else if (tuningTimeout > 0)
     {
         schedLock.unlock();
@@ -2704,6 +2705,7 @@ void Scheduler::HandleTuning(
             }
         }
     }
+#endif
 
     // If the status has changed, handle it
     if (rsTuning != recStatus)
