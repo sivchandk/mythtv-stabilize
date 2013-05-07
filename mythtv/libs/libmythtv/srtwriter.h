@@ -23,20 +23,12 @@ class OneSubtitle;
  * Class to write SubRip files.
  */
 
-//#define SRT_TO_ASCII
-//#define SRT_TO_LATIN1
-
 class MTV_PUBLIC SRTWriter
 {
   public:
     SRTWriter(const QString &fileName) :
         m_outFile(fileName), m_outStream(&m_outFile), m_srtCounter(0)
     {
-#if defined(SRT_TO_ASCII) || defined(SRT_TO_LATIN1)
-        const char *codecName = "ISO 8859-1";
-#else
-        const char *codecName = "UTF-8";
-#endif
         m_outStream.setCodec("UTF-8");
         if (!m_outFile.open(QFile::WriteOnly))
         {
@@ -46,7 +38,7 @@ class MTV_PUBLIC SRTWriter
         else
         {
             LOG(VB_GENERAL, LOG_DEBUG, QString("Created '%1'")
-                .arg(fileName));
+                .arg(fileName));                    
         }
     }
     ~SRTWriter(void)
