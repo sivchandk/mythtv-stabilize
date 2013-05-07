@@ -4304,9 +4304,15 @@ static int decode_nal_units(H264Context *h, const uint8_t *buf, int buf_size)
                 continue;
             }
 
+#if 0
             // FIXME do not discard SEI id
             if (avctx->skip_frame >= AVDISCARD_NONREF && h->nal_ref_idc == 0)
                 continue;
+#else
+	    if (avctx->skip_frame >= AVDISCARD_NONREF && h->nal_ref_idc == 0 &&
+		hx->nal_unit_type != NAL_SLICE && hx->nal_unit_type != NAL_SEI)
+		continue;
+#endif
 
 again:
             err = 0;
