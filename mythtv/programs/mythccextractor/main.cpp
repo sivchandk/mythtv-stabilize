@@ -182,7 +182,7 @@ int main(int argc, char *argv[])
     }
 
     cout << "End time set as "
-         << qPrintable(pginfo.GetRecordingEndTime(ISODate))
+         << qPrintable(pginfo.GetRecordingEndTime(MythDate::ISODate))
          << endl;
 
     return RunCCExtract(pginfo);
