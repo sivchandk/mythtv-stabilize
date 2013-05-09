@@ -1,3 +1,17 @@
+mythtv (0.24-20130311) stable; urgency=low
+
+  *  Stable branch 46fe2b5e66e8734b740ccd1addd77327d4030703
+  * Added CC Support for H264
+
+ -- Digital Nirvana <sysadmin@digital-nirvana.com>  Thu, 09 Jan 2013 06:06:44 +0530
+
+mythtv (0.24-20130109) stable; urgency=low
+
+  *  Stable branch dc4626bbcde8c83165eebfc478e907042636f1ee
+  * Added CC Support for H264
+
+ -- Digital Nirvana <sysadmin@digital-nirvana.com>  Thu, 09 Jan 2013 06:06:44 +0530
+
 mythtv (0.24-20121208) stable; urgency=low
 
   *  Stable branch bc699fbcaa8617838cb3c946c06995d827fbdf64

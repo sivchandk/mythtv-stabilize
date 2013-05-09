@@ -6,6 +6,17 @@ $1
 EOF
 }
 
+#Used to fail at some point but not abort postinst
+fail_database() {
+    echo "Failed to create or modify database (incorrect admin username/password?)" >&2
+    echo "Try:" >&2
+    echo "sudo dpkg-reconfigure mythtv-database" >&2
+
+    db_set mythtv/mysql_admin_password ""
+    exit 0
+}
+
+
 DoSQL() {
     local host="$1"
     local admin_username="$2"
@@ -109,6 +120,13 @@ case "$1" in
 	if test -n "$2" && dpkg --compare-versions "$2" lt 0.11-1; then
 	    $MYTHSQL < /usr/share/mythtv/sql/0.10-to-0.11.sql
 	fi
+
+       if dpkg --compare-versions "$2" lt 0.26 && test -x /usr/bin/mysql; then
+           if ! mysql_tzinfo_to_sql /usr/share/zoneinfo | mysql --host=$hostname --user=$admin_username -p$admin_password mysql >/dev/null 2>&
+               fail_database
+           fi
+       fi
+
 
 	;;
 

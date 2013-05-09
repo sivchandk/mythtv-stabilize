@@ -13,6 +13,8 @@ case "$1" in
 		useradd --system --shell /bin/sh --home /var/lib/mythtv mythtv -G video,audio,cdrom,dialout
 	fi
 
+	HOMEDIR=$(getent passwd mythtv | awk -F: '{ print $6 }')
+
 	db_get mythtv/mysql_host
 	hostname="$RET"
 
@@ -30,25 +32,32 @@ case "$1" in
 	    db_set mythtv/mysql_mythtv_password "$mythtv_password"
 	fi
 
-	NEW=$(mktemp -t mysql.txt-XXXXXX)
-	if [ -s /etc/mythtv/mysql.txt ]; then
-	    INPUT=/etc/mythtv/mysql.txt
+	NEW=$(mktemp -t config.xml-XXXXXX)
+	if [ -s /etc/mythtv/config.xml ]; then
+	    INPUT=/etc/mythtv/config.xml
 	    chown --reference=$INPUT $NEW
 	    chmod --reference=$INPUT $NEW
 	else
-	    INPUT=/usr/share/mythtv/mysql.txt.dist
+	    INPUT=/usr/share/mythtv/config.xml
 	    chown mythtv:mythtv $NEW
 	    chmod 660 $NEW
 	fi
 
-	cat $INPUT | grep -v 'DBPassword=' | sed -e "
-s/^\(\(str  *\)\?DBHostName\)=.*$/\1=$hostname/g;
-s/^\(\(str  *\)\?DBUserName\)=.*$/\1=$mythtv_username/g;
-s/^\(\(str  *\)\?DBName\)=.*$/\1=$database/g;" > $NEW
-	    cat <<EOF >> $NEW
-DBPassword=$mythtv_password
-EOF
-	mv $NEW /etc/mythtv/mysql.txt
+       cat $INPUT > $NEW
+
+       perl -pi -e 's/(<Host>).*?(<\/Host>)/$1$ENV{'hostname'}$2/;' $NEW
+       perl -pi -e 's/(<UserName>).*?(<\/UserName>)/$1$ENV{'mythtv_username'}$2/;' $NEW
+       perl -pi -e 's/(<Password>).*?(<\/Password>)/$1$ENV{'mythtv_password'}$2/;' $NEW
+       perl -pi -e 's/(<DatabaseName>).*?(<\/DatabaseName>)/$1$ENV{'database'}$2/;' $NEW
+
+       mv $NEW /etc/mythtv/config.xml
+
+       mkdir -p $HOMEDIR/.mythtv || true
+       chown mythtv:mythtv $HOMEDIR/.mythtv || true
+
+       if [ ! -e $HOMEDIR/.mythtv/config.xml ]; then
+           ln -s /etc/mythtv/config.xml $HOMEDIR/.mythtv/config.xml || true
+       fi
 
 	if dpkg --compare-versions "$2" lt 0.9-1 && test -f /etc/mythtv/backend_settings.txt; then
 	    mv /etc/mythtv/backend_settings.txt /etc/mythtv/backend_settings.txt.dpkg-old

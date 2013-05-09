@@ -21,7 +21,7 @@ fi
 DBNAME="mythconverg"
 BACKUP="/var/backups/$DBNAME.sql.gz"
 DEBIAN="--defaults-extra-file=/etc/mysql/debian.cnf"
-OPTIONS="--all --complete-insert --extended-insert --quick --quote-names --lock-tables"
+OPTIONS="--create-options --complete-insert --extended-insert --quick --quote-names --lock-tables"
 
 /usr/bin/mysqlcheck $DEBIAN -s $DBNAME
 

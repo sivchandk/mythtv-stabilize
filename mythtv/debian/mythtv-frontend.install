@@ -4,9 +4,6 @@ usr/bin/mythfrontend
 usr/bin/mythlcdserver
 usr/bin/mythreplex
 usr/bin/mythshutdown
-#usr/bin/mythtvosd
 usr/bin/mythmediaserver
 usr/bin/mythwelcome
 usr/lib/mythtv/filters
-usr/share/mythtv/metadata/Movie/tmdb.py
-usr/share/mythtv/metadata/Television/ttvdb.py

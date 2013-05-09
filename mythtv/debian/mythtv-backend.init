@@ -10,6 +10,11 @@
 # Short-Description: Start/Stop the MythTV server.
 ### END INIT INFO
 
+if [ -f /etc/default/locale ]; then
+  . /etc/default/locale
+  export LANG
+fi
+
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 DAEMON=/usr/bin/mythbackend
 NAME="mythbackend"
@@ -21,7 +26,7 @@ set -e
 
 USER=mythtv
 RUNDIR=/var/run/mythtv
-ARGS="--daemon --logfile /var/log/mythtv/mythbackend.log --pidfile $RUNDIR/$NAME.pid"
+ARGS="--daemon --syslog local6 --pidfile $RUNDIR/$NAME.pid"
 EXTRA_ARGS=""
 NICE=0
 
@@ -57,7 +62,7 @@ case "$1" in
 	;;
   restart|force-reload)
 	echo -n "Restarting $DESC: $NAME "
-	start-stop-daemon --stop --oknodo --pidfile $RUNDIR/$NAME.pid \
+	start-stop-daemon --stop --oknodo --retry 10 --pidfile $RUNDIR/$NAME.pid \
                 --chuid $USER --exec $DAEMON -- $ARGS
 	echo "."
 	sleep 3

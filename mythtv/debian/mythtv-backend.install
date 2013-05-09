@@ -5,7 +5,6 @@ usr/bin/mythcommflag
 usr/bin/mythfilldatabase
 usr/bin/mythjobqueue
 usr/bin/mythpreviewgen
-usr/bin/mythtranscode
 usr/bin/mythtv-setup
 usr/share/mythtv/CDS_scpd.xml
 usr/share/mythtv/CMGR_scpd.xml
@@ -17,3 +16,8 @@ usr/share/mythtv/MXML_scpd.xml
 usr/share/mythtv/mythconverg_backup.pl
 usr/share/mythtv/mythconverg_restore.pl
 usr/share/mythtv/setup.xml
+usr/share/mythtv/backend-config
+usr/share/mythtv/html
+usr/bin/mythccextractor
+usr/bin/mythmetadatalookup
+usr/bin/mythutil

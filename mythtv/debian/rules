@@ -1,7 +1,9 @@
 #!/usr/bin/make -f
 
-export DH_VERBOSE=1
-export DEB_BUILD_OPTIONS="nostrip"
+DEB_HOST_GNU_TYPE ?= $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
+DEB_BUILD_GNU_TYPE ?= $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
+DEB_BUILD_ARCH ?= $(shell dpkg-architecture -qDEB_BUILD_ARCH)
+
 NCPUS := $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)
 
 ifeq ($(NCPUS),-1)
@@ -12,11 +14,6 @@ ifeq ($(NCPUS),0)
 	NCPUS:=1
 endif
 
-NCPUS:=16
-DEB_HOST_GNU_TYPE ?= $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
-DEB_BUILD_GNU_TYPE ?= $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
-DEB_BUILD_ARCH ?= $(shell dpkg-architecture -qDEB_BUILD_ARCH)
-
 ifeq (nostrip,$(findstring nostrip,$(DEB_BUILD_OPTIONS)))
 	DEBUG_BUILD=1
 endif
@@ -24,41 +21,33 @@ ifeq (noopt,$(findstring noopt,$(DEB_BUILD_OPTIONS)))
 	DEBUG_BUILD=1
 endif
 ifdef DEBUG_BUILD
-	# this enables -g and disables stripping of binaries
 	CONFIGURE_OPTS += --compile-type=debug
 endif
 
-#ifeq "$(DEB_BUILD_ARCH)" "i386"
-#	CONFIGURE_OPTS += --enable-runtime-cpudetect --enable-xvmc --enable-xvmc-vld --enable-xvmc-pro --enable-opengl-video
-## --enable-mmx --arch=i486 --cpu=i486 --tune=i486 
-#else
-#ifeq "$(DEB_BUILD_ARCH)" "sparc"
-#	CONFIGURE_OPTS += --enable-xvmc --enable-xvmc-vld --enable-xvmc-pro --extra-cflags="-mtune=ultrasparc -mcpu=ultrasparc"
-#else
-#ifeq "$(DEB_BUILD_ARCH)" "alpha"
-#	CONFIGURE_OPTS += --extra-cflags=-std=gnu99
-#else
-#ifeq "$(DEB_BUILD_ARCH)" "amd64"
-#	CONFIGURE_OPTS += --enable-xvmc --enable-xvmc-vld --enable-xvmc-pro --enable-opengl-video
-#else 
-#ifeq "$(DEB_BUILD_ARCH)" "powerpc"
-#        CONFIGURE_OPTS += --disable-altivec
-#endif
-#endif
-#endif
-#endif
-#endif
+CPPFLAGS = $(shell dpkg-buildflags --get CPPFLAGS)
 
+CC := ccache $(CC)
+CXX := ccache $(CXX)
+
+MYTH_BINARY_VERSION = $(shell grep MYTH_BINARY_VERSION libs/libmythbase/mythversion.h | cut -d'"' -f2)
+
+
+LIB_PKGS = $(shell sed -nr 's/^Package:[[:space:]]*(lib(myth-0.26-|mythavcodec|mythavdevice|mythavfilter|mythavformat|mythavutil|mythpostproc|mythswresample|mythswscale|mythqjson)[0-9]+)[[:space:]]*$$/\1/p' debian/control)
+
+SHLIBS_VERSION = "0.26"
 configure: configure-stamp
 configure-stamp: 
 	dh_testdir
 
-	./configure --compile-type=profile --prefix=/usr --enable-libfftw3 --enable-nonfree --enable-pic $(CONFIGURE_OPTS)
-
-	echo "EXTRALIBS+=-lpthread" >> config.mak
-
-	echo "QMAKE_LFLAGS+=-Wl,--as-needed" >> libs/libmythbase/mythconfig.mak
-
+	CPPFLAGS="$(shell dpkg-buildflags --get CPPFLAGS)" \
+	./configure --prefix=/usr --enable-libmp3lame --enable-libfaac --enable-libx264 \
+	--enable-libxvid --enable-libfftw3 --enable-nonfree --enable-pic \
+	--extra-ldflags="$(shell dpkg-buildflags --get LDFLAGS) $(CPPFLAGS)" \
+	--extra-cflags="$(shell dpkg-buildflags --get CFLAGS) $(CPPFLAGS)" \
+	--extra-cxxflags="$(shell dpkg-buildflags --get CXXFLAGS) $(CPPFLAGS)" \
+	--disable-ccache --disable-distcc --cc="$(CC)" --cxx="$(CXX)" \
+	$(CONFIGURE_OPTS)
+	exit
 #ifeq "$(DEB_BUILD_ARCH)" "ia64"
 #	perl -i -pe 's,-O3,-Os,' libs/libmythdb/mythconfig.mak
 #	perl -i -pe 's,CONFIG_SMALL 0,CONFIG_SMALL 1,' config.h
@@ -87,14 +76,15 @@ clean:
 	dh_testroot
 	rm -f build-stamp configure-stamp
 
-	[ -h config.mak ] || `cp debian/config.mak libs/libmythdb/mythconfig.mak && touch external/FFmpeg/config.mak && ln -s libs/libmythdb/mythconfig.mak config.mak`
-#	[ -h config.mak ] || `cp debian/config.mak libs/libmythdb/mythconfig.mak && cp debian/config.mak external/FFmpeg/config.mak && ln -s libs/libmythdb/mythconfig.mak config.mak`
+#	[ -h config.mak ] || `cp debian/config.mak . && touch external/FFmpeg/config.mak`
 
-	[ ! -f Makefile ] || $(MAKE) distclean
+	[ ! -f config.mak ] || $(MAKE) distclean
 
 	debconf-updatepo
 
-	dh_clean version.cpp external/FFmpeg/mythffmpeg config.log external/FFmpeg/mythffplay
+	dh_clean version.cpp external/FFmpeg/mythffmpeg config.log external/FFmpeg/mythffplay \
+	external/FFmpeg/libavfilter/libmpcodecs/*.o external/FFmpeg/libavfilter/libmpcodecs/*.d \
+	config.fate external/FFmpeg/libavcodec/codec_names.h external/FFmpeg/.config
 
 # config.log version.cpp config.ep bindings/perl/Makefile.perl.old \
 #	config/Makefile
@@ -105,13 +95,17 @@ install: build
 	dh_prep
 	dh_installdirs
 	dh_installdirs -pmythtv-backend var/lib/mythtv var/cache/mythtv \
-	var/log/mythtv usr/share/doc/mythtv-backend
+	usr/share/doc/mythtv-backend var/lib/mythvideo/temp
+
 	dh_installdirs -pmythtv-common etc/mythtv
 
-	$(MAKE) install PREFIX=usr INSTALL_ROOT=$(CURDIR)/debian/tmp
+	dh_installdirs -pmythlogserver var/log/mythtv etc/rsyslog.d
+
+	$(MAKE) install PREFIX=usr INSTALL_ROOT=$(CURDIR)/debian/tmp/
 
 	rm debian/tmp/usr/local/lib/perl/*/auto/MythTV/.packlist
 	rm debian/tmp/usr/share/mythtv/themes/Terra/watermarks/README.license
+#	rm debian/tmp/usr/share/mythtv/hardwareprofile/.gitignore
 
 	find debian/tmp/usr/share -type f -exec chmod 0644 {} \;
 
@@ -122,10 +116,13 @@ install: build
 	chmod +x debian/tmp/usr/share/mythtv/internetcontent/*.py
 	chmod +x debian/tmp/usr/share/mythtv/internetcontent/*.pl
 
-	dh_install -X.a -XCOPYING -Xusr/bin/mythwikiscripts -Xusr/share/mythtv/fonts --fail-missing
+	dh_install -X.a -XCOPYING -XLICENSE -Xusr/bin/mythwikiscripts -Xusr/share/mythtv/fonts \
+	-Xusr/share/mythtv/themes/MythCenter-wide/fonts -Xusr/lib/libmythzmq.la --fail-missing
 
 	dh_install -pmythtv-frontend debian/mythtv.desktop usr/share/applications
-	dh_install -XCOPYING -pmythtv-backend debian/mythtv-setup.desktop usr/share/applications
+	dh_install -XCOPYING -XLICENSE -pmythtv-backend debian/mythtv-setup.desktop usr/share/applications
+
+	cp debian/mythlogserver.rsyslogd debian/mythlogserver/etc/rsyslog.d/mythtv.conf
 
 	dh_link -pmythtv-common usr/share/fonts/truetype/freefont/FreeSans.ttf				usr/share/mythtv/fonts/FreeSans.ttf
 	dh_link -pmythtv-common usr/share/fonts/truetype/freefont/FreeSansBold.ttf			usr/share/mythtv/fonts/FreeSansBold.ttf
@@ -133,6 +130,10 @@ install: build
 	dh_link -pmythtv-common usr/share/fonts/truetype/ttf-tiresias/tiresias_infofont_italic.ttf	"usr/share/mythtv/fonts/Tiresias Infofont Italic.ttf"
 	dh_link -pmythtv-common usr/share/fonts/truetype/ttf-tiresias/tiresias_infofont.ttf		"usr/share/mythtv/fonts/Tiresias Infofont.ttf"
 	dh_link -pmythtv-common usr/share/fonts/truetype/ttf-tiresias/tiresias_infofont_bold.ttf	"usr/share/mythtv/fonts/Tiresias Infofont Bold.ttf"
+	dh_link -pmythtv-common usr/share/fonts/truetype/droid/DroidSans-Bold.ttf			usr/share/mythtv/themes/MythCenter-wide/fonts/DroidSans-Bold.ttf
+	dh_link -pmythtv-common usr/share/fonts/truetype/droid/DroidSans.ttf				usr/share/mythtv/themes/MythCenter-wide/fonts/DroidSans.ttf
+
+	dh_link -pmythtv-backend usr/share/javascript/jquery/jquery.min.js				usr/share/mythtv/html/js/jquery.min.js
 
 	rm -f debian/mythtv/usr/share/mythtv/setup.xml
 
@@ -159,10 +160,11 @@ binary-indep: build install
 	dh_pysupport -i
 	dh_compress -i
 	dh_fixperms -i
+	dh_lintian -i
 	dh_installdeb -i
-	dh_gencontrol -i
+	dh_gencontrol -i 
 	dh_md5sums -i
-	dh_builddeb -i -- -Zbzip2
+	dh_builddeb -i -- -Zxz
 
 # Build architecture-dependent files here.
 binary-arch: build install
@@ -176,14 +178,6 @@ binary-arch: build install
 	dh_installexamples -a
 	dh_installmenu -a
 	dh_installlogrotate -a
-
-	# logroate 3.8+ requires an additional "su" command which is not
-	# backportable, see #640493
-	if dpkg --compare-versions `apt-cache show logrotate | grep ^Version | cut -f2- -d' '` ge 3.8; then \
-	echo "Fixing logrotate configuration for logrotate >= 3.8..."; \
-	sed -i '/^}/ i\	su mythtv mythtv' debian/mythtv-backend/etc/logrotate.d/*; \
-	fi
-
 	dh_installinit -a -u'defaults 40 16'
 	dh_installcron -a
 	dh_installinfo -a
@@ -194,12 +188,15 @@ endif
 	dh_link -a
 	dh_compress -a -X.py -X.pl
 	dh_fixperms -a -X.pl -X.py
-	dh_makeshlibs -a -V
+	dh_lintian -a
+	for pkg in $(LIB_PKGS); do \
+	    dh_makeshlibs -p$$pkg -V "$$pkg (>= $(SHLIBS_VERSION))"; \
+	done
 	dh_installdeb -a
 	dh_shlibdeps -a
-	dh_gencontrol -a
+	dh_gencontrol -a 
 	dh_md5sums -a
-	dh_builddeb -a -- -Zbzip2
+	dh_builddeb -a -- -Zxz
 
 binary: binary-indep binary-arch
 .PHONY: build clean binary-indep binary-arch binary install configure
