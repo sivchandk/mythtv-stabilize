@@ -1,0 +1,8 @@
+#!/bin/sh -e
+
+if test -e /etc/logrotate.d/mythtv-backend ; then
+    rm -f /etc/logrotate.d/mythtv-backend
+fi
+#DEBHELPER#
+
+exit 0

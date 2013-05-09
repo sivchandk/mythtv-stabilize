@@ -1,0 +1,12 @@
+/var/log/mythtv/*.log {
+	daily
+	rotate 31
+	notifempty
+	delaycompress
+	sharedscripts
+	compress
+	postrotate
+		pkill -HUP mythlogserver
+	endscript
+	su mythtv mythtv
+}

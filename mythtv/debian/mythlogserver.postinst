@@ -1,0 +1,26 @@
+#!/bin/sh -e
+
+case "$1" in
+    configure)
+    if ! dpkg-statoverride --list /var/log/mythtv >/dev/null; then
+        chown -R mythtv:mythtv /var/log/mythtv
+    fi
+
+    [ -x /etc/init.d/rsyslog ] && invoke-rc.d rsyslog restart || true
+
+    ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+
+    ;;
+
+    *)
+    echo "postinst called with unknown argument \`$1'" >&2
+    exit 1
+    ;;
+esac
+
+#DEBHELPER#
+
+exit 0
+
