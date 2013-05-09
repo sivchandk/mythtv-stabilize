@@ -6,18 +6,21 @@ Bugs: mailto:marillat@debian.org
 Homepage: http://www.mythtv.org/
 XS-Python-Version: >= 2.6
 Standards-Version: 3.9.2
-Build-Conflicts: libmyth-dev, qt3-dev-tools
-Build-Depends: debhelper (>> 7),libmp3lame-dev, libxext-dev, libvorbis-dev,
+Build-Conflicts: libmyth-dev, qt3-dev-tools, liboss4-salsa-dev
+Build-Depends: debhelper (>= 7),libmp3lame-dev, libxext-dev, libvorbis-dev,
  libdvb-dev [linux-any], libmysqlclient-dev | libmysqlclient15-dev,
  libfreetype6-dev, libjack-dev, libavc1394-dev [linux-any], libfaad-dev,
- liblircclient-dev, libasound2-dev, libxinerama-dev, libdts-dev, quilt,
- libiec61883-dev (>= 1.0.0) [linux-any], libxxf86vm-dev, po-debconf,
- libxvmc-dev, libdvdnav-dev, texi2html, ccache, libssl-dev, yasm,
- libxrandr-dev, libfftw3-dev, python-support, libfaac-dev, libfribidi-dev,
- libgl1-mesa-dev | libgl-dev, liba52-0.7.4-dev, libxvidcore-dev,
- xserver-xorg-video-openchrome [amd64], libpulse-dev, libvdpau-dev [i386 amd64],
- libqt4-opengl-dev (>= 4.5) [!armel], libdirectfb-dev, distcc [mipsel armel mips],
- libsdl-dev [!armel], libva-dev [i386 amd64], libqtwebkit-dev
+ liblircclient-dev, libasound2-dev [linux-any], libxinerama-dev, libdts-dev,
+ quilt, libiec61883-dev (>= 1.0.0) [linux-any], libxxf86vm-dev, po-debconf,
+ libxvmc-dev, libdvdnav-dev, texi2html, ccache, libssl-dev,
+ yasm [any-amd64 any-i386], libxrandr-dev, libfftw3-dev,
+ libfaac-dev, libfribidi-dev, libxml2-dev, libgl1-mesa-dev | libgl-dev,
+ liba52-0.7.4-dev, libxvidcore-dev, xserver-xorg-video-openchrome [any-amd64],
+ libpulse-dev, libvdpau-dev [any-amd64 any-i386], libqt4-opengl-dev (>= 4.5) [!armel],
+ libdirectfb-dev, distcc [mipsel armel mips], libsdl-dev [!armel] | libsdl1.2-dev [!armel], uuid-dev,
+ libva-dev [any-amd64 any-i386], libqt4-webkit, libx264-dev, libvpx-dev, libass-dev,
+ libavahi-compat-libdnssd-dev, libsdl1.2-dev, libcrystalhd-dev [any-amd64 i386],
+ python | python-all | python-dev | python-all-dev, libqjson-dev
 
 Package: mythtv
 Architecture: all

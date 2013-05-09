@@ -24,7 +24,14 @@ ifdef DEBUG_BUILD
 	CONFIGURE_OPTS += --compile-type=debug
 endif
 
-CPPFLAGS = $(shell dpkg-buildflags --get CPPFLAGS)
+ifeq ($(wildcard "/usr/bin/dpkg-buildflags"),)
+$(info,"/usr/bin/dpkg-buildflags does not exist")
+else
+        CPPFLAGS = $(shell dpkg-buildflags --get CPPFLAGS) ; \ 
+        LDFLAGS = $(shell dpkg-buildflags --get LDFLAGS) ; \ 
+        CFLAGS = $(shell dpkg-buildflags --get CFLAGS) ; \ 
+        CXXFLAGS = $(shell dpkg-buildflags --get CXXFLAGS) ; \ 
+endif
 
 CC := ccache $(CC)
 CXX := ccache $(CXX)
@@ -39,15 +46,14 @@ configure: configure-stamp
 configure-stamp: 
 	dh_testdir
 
-	CPPFLAGS="$(shell dpkg-buildflags --get CPPFLAGS)" \
 	./configure --prefix=/usr --enable-libmp3lame --enable-libfaac --enable-libx264 \
 	--enable-libxvid --enable-libfftw3 --enable-nonfree --enable-pic \
-	--extra-ldflags="$(shell dpkg-buildflags --get LDFLAGS) $(CPPFLAGS)" \
-	--extra-cflags="$(shell dpkg-buildflags --get CFLAGS) $(CPPFLAGS)" \
-	--extra-cxxflags="$(shell dpkg-buildflags --get CXXFLAGS) $(CPPFLAGS)" \
-	--disable-ccache --disable-distcc --cc="$(CC)" --cxx="$(CXX)" \
+	--extra-ldflags="$(LDFLAGS) $(CPPFLAGS)" \
+	--extra-cflags="$(CFLAGS) $(CPPFLAGS)" \
+	--extra-cxxflags="$(CXXFLAGS) $(CPPFLAGS)" \
+	--enable-libvpx --disable-ccache --disable-distcc --cc="$(CC)" --cxx="$(CXX)" \
 	$(CONFIGURE_OPTS)
-	exit
+
 #ifeq "$(DEB_BUILD_ARCH)" "ia64"
 #	perl -i -pe 's,-O3,-Os,' libs/libmythdb/mythconfig.mak
 #	perl -i -pe 's,CONFIG_SMALL 0,CONFIG_SMALL 1,' config.h

@@ -1,4 +1,10 @@
-mythtv (0.24-20130311) stable; urgency=low
+mythtv (0.26-20130513-5689045) stable; urgency=low
+
+  * New checkout since last package origin/stable / 46fe2b5
+
+ -- Digital Nirvana <sysadmin@digital-nirvana.com>  Mon, 13 May 2013 18:00:37 +0000
+
+mythtv (0.24-20130311-46fe2b5) stable; urgency=low
 
   *  Stable branch 46fe2b5e66e8734b740ccd1addd77327d4030703
   * Added CC Support for H264
