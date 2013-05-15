@@ -1,3 +1,18 @@
+mythtv (0.26-20130515-ace98ad) stable; urgency=low
+
+  * Upstream changes since last package 5689045
+  * [ace98ad] build debian package with compression to bzip2 instead of
+    xz
+  * [453cacc] Removed git describe --dirty in version.sh
+  * [90ca7da] Add/Modify packaging scripts for 0.26. Using mythlogserver
+    and all mythtv programs logging to syslog local6. MythTV 0.26
+    changed to using config.xml removing the usage of mysql.txt
+  * [62d3dc0] Add/Modify packaging scripts for 0.26. Using mythlogserver
+    and all mythtv programs logging to syslog local6. MythTV 0.26
+    changed to using config.xml removing the usage of mysql.txt
+
+ -- Digital Nirvana <sysadmin@digital-nirvana.com>  Wed, 15 May 2013 01:11:28 +0000
+
 mythtv (0.26-20130513-5689045) stable; urgency=low
 
   * New checkout since last package origin/stable / 46fe2b5

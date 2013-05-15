@@ -303,8 +303,8 @@ Description: Dummy package to install libmythtv-perl
 Package: mythtv-transcode
 Architecture: any
 Depends: mythtv-common, ${shlibs:Depends}, ${misc:Depends}
-Conflicts: mythtv-backend (<= 0.26.0)
-Replaces: mythtv-backend (<= 0.26.0) 
+Conflicts: mythtv-backend (<= 0.26)
+Replaces: mythtv-backend (<= 0.26) 
 Suggests: mythtv-backend, mytharchive
 Description: Utilities used for transcoding MythTV tasks
  Some utilities are applicable for both a frontend or a backend machine.
