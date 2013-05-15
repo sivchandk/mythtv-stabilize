@@ -23,7 +23,7 @@ GITREPOPATH="exported"
 cd ${GITTREEDIR}
 
 git status > /dev/null 2>&1
-SOURCE_VERSION=$(git describe --dirty || git describe || echo Unknown)
+SOURCE_VERSION=$(git describe || echo Unknown)
 
 case "${SOURCE_VERSION}" in
     exported|Unknown)
