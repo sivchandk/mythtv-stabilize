@@ -249,7 +249,9 @@ int main(int argc, char *argv[])
     bool    scanFTAOnly = false;
     ServiceRequirements scanServiceRequirements = kRequireAV;
     uint    scanCardId = 0;
-    QString scanTableName = "atsc-vsb8-us";
+    QString frequencyStandard = "atsc";
+    QString modulation = "vsb8";
+    QString region = "us";
     QString scanInputName = "";
 
     MythTVSetupCommandLineParser cmdline;
@@ -341,8 +343,12 @@ int main(int argc, char *argv[])
         scanCardId = cmdline.toUInt("scan");
         doScan = true;
     }
-    if (cmdline.toBool("freqtable"))
-        scanTableName = cmdline.toString("freqtable");
+    if (cmdline.toBool("freqstd"))
+        frequencyStandard = cmdline.toString("freqstd").toLower();
+    if (cmdline.toBool("modulation"))
+        modulation = cmdline.toString("modulation").toLower();
+    if (cmdline.toBool("region"))
+        region = cmdline.toString("region").toLower();
     if (cmdline.toBool("inputname"))
         scanInputName = cmdline.toString("inputname");
 
@@ -438,31 +444,17 @@ int main(int argc, char *argv[])
     if (doScan)
     {
         int ret = 0;
-        int firstBreak   = scanTableName.indexOf("-");
-        int secondBreak  = scanTableName.lastIndexOf("-");
-        if (!firstBreak || !secondBreak || firstBreak == secondBreak)
-        {
-            cerr << "Failed to parse the frequence table parameter "
-                 << scanTableName.toLocal8Bit().constData() << endl
-                 << "Please make sure it is in the format freq_std-"
-                    "modulation-country." << endl;
-            return GENERIC_EXIT_INVALID_CMDLINE;
-        }
-        QString freq_std = scanTableName.mid(0, firstBreak).toLower();
-        QString mod      = scanTableName.mid(
-            firstBreak+1, secondBreak-firstBreak-1).toLower();
-        QString tbl      = scanTableName.mid(secondBreak+1).toLower();
         uint    inputid  = CardUtil::GetInputID(scanCardId, scanInputName);
         uint    sourceid = CardUtil::GetSourceID(inputid);
         QMap<QString,QString> startChan;
         {
             ChannelScannerCLI scanner(doScanSaveOnly, scanInteractive);
             scanner.Scan(
-                (freq_std=="atsc") ?
+                (frequencyStandard=="atsc") ?
                 ScanTypeSetting::FullScan_ATSC :
-                ((freq_std=="dvbt") ?
-                 ScanTypeSetting::FullScan_DVBT :
-                 ScanTypeSetting::FullScan_ATSC),
+                ((frequencyStandard=="dvbt") ?
+                 ScanTypeSetting::FullScan_DVBT :((frequencyStandard=="mpeg") ? ScanTypeSetting::CurrentTransportScan :
+                 ScanTypeSetting::FullScan_ATSC)),
                 /* cardid    */ scanCardId,
                 /* inputname */ scanInputName,
                 /* sourceid  */ sourceid,
@@ -473,7 +465,7 @@ int main(int argc, char *argv[])
                 scanServiceRequirements,
                 // stuff needed for particular scans
                 /* mplexid   */ 0,
-                startChan, freq_std, mod, tbl);
+                startChan, frequencyStandard, modulation, region);
             ret = qApp->exec();
         }
         return (ret) ? GENERIC_EXIT_NOT_OK : GENERIC_EXIT_OK;
