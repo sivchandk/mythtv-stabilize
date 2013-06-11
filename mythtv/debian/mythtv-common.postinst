@@ -44,7 +44,11 @@ case "$1" in
 	fi
 
        cat $INPUT > $NEW
-
+       
+       export hostname
+       export mythtv_username
+       export mythtv_password
+       export database
        perl -pi -e 's/(<Host>).*?(<\/Host>)/$1$ENV{'hostname'}$2/;' $NEW
        perl -pi -e 's/(<UserName>).*?(<\/UserName>)/$1$ENV{'mythtv_username'}$2/;' $NEW
        perl -pi -e 's/(<Password>).*?(<\/Password>)/$1$ENV{'mythtv_password'}$2/;' $NEW
