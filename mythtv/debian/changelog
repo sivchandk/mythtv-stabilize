@@ -1,3 +1,16 @@
+mythtv (0.26-20130612-a0e20f0) stable; urgency=low
+
+  * Upstream changes since last package ace98ad
+  * [a0e20f0] mythtv-common creates a /etc/mythtv/config.xml with empty
+    Host DBName DBPassword and Database.
+  * [d709cae] Added command line scanning support for ASI.
+  * [7841a6b] Merge branches 'fixes/0.26' and 'fixes/0.26' of
+    https://github.com/sivchandk/mythtv-stabilize into fixes/0.26
+  * [fe3ccaa] Updated debian/changelog. Fixed minor issues in packaging
+    scripts.
+
+ -- Digital Nirvana <sysadmin@digital-nirvana.com>  Wed, 12 Jun 2013 05:10:15 +0530
+
 mythtv (0.26-20130515-ace98ad) stable; urgency=low
 
   * Upstream changes since last package 5689045
