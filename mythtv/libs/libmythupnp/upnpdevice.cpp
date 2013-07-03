@@ -642,8 +642,11 @@ UPnpDeviceDesc *UPnpDeviceDesc::Retrieve( QString &sURL )
     LOG(VB_UPNP, LOG_DEBUG, QString("UPnpDeviceDesc::Retrieve( %1 )")
         .arg(sURL));
 
-    QString sXml;
-    bool ok = GetMythDownloadManager()->download(sURL, sXml);
+    QByteArray buffer;
+
+    bool ok = GetMythDownloadManager()->download(sURL, &buffer);
+
+    QString sXml(buffer);
 
     if (ok && sXml.startsWith( QString("<?xml") ))
     {
@@ -856,7 +859,7 @@ QString UPnpDevice::toString(uint padding) const
     }
 
     // remove trailing newline
-    if (ret.right(1)=="\n")
+    if (ret.endsWith("\n"))
         ret = ret.left(ret.length()-1);
 
     // add any padding as necessary

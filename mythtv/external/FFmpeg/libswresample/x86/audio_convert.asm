@@ -18,7 +18,6 @@
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
-%include "libavutil/x86/x86inc.asm"
 %include "libavutil/x86/x86util.asm"
 
 SECTION_RODATA
@@ -196,7 +195,12 @@ cglobal %2_to_%1_%3, 3, 3, 6, dst, src, len
     add lenq, 2*mmsize/(1<<%4)
 %endif
         jl .next
+%if mmsize == 8
+    emms
+    RET
+%else
     REP_RET
+%endif
 %endmacro
 
 %macro PACK_6CH 5-7

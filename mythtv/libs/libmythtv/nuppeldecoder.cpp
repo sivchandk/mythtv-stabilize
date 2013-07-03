@@ -22,6 +22,7 @@ using namespace std;
 #include "mythlogging.h"
 #include "myth_imgconvert.h"
 #include "programinfo.h"
+#include "audiooutpututil.h"
 
 #include "minilzo.h"
 
@@ -47,7 +48,7 @@ NuppelDecoder::NuppelDecoder(MythPlayer *parent,
       directframe(NULL),            decoded_video_frame(NULL),
       mpa_vidcodec(0), mpa_vidctx(0), mpa_audcodec(0), mpa_audctx(0),
       directrendering(false),
-      lastct('1'), strm(0), buf(0), buf2(0),
+      lastct('1'), strm_buf(0), strm(0), buf(0), buf2(0),
       videosizetotal(0), videoframesread(0), setreadahead(false)
 {
     // initialize structures
@@ -56,7 +57,8 @@ NuppelDecoder::NuppelDecoder(MythPlayer *parent,
     memset(&extradata, 0, sizeof(extendeddata));
     memset(&tmppicture, 0, sizeof(AVPicture));
     planes[0] = planes[1] = planes[2] = 0;
-    m_audioFrame = avcodec_alloc_frame();
+    m_audioSamples = (uint8_t *)av_mallocz(AVCODEC_MAX_AUDIO_FRAME_SIZE *
+                                           sizeof(int32_t));
 
     // set parent class variables
     positionMapType = MARK_KEYFRAME;
@@ -95,7 +97,7 @@ NuppelDecoder::~NuppelDecoder()
     if (strm_buf)
         delete [] strm_buf;
 
-    av_free(m_audioFrame);
+    av_free(m_audioSamples);
 
     while (!StoredData.empty())
     {
@@ -1271,27 +1273,25 @@ bool NuppelDecoder::GetFrame(DecodeType decodetype)
 
                 QMutexLocker locker(avcodeclock);
 
-                while (pkt.size > 0)
+                while (pkt.size > 0 && m_audio->HasAudioOut())
                 {
-                    int got_frame = 0;
-                    ret = avcodec_decode_audio4(mpa_audctx, m_audioFrame,
-                                                &got_frame, &pkt);
+                    int data_size = 0;
 
-                    if (got_frame && ret > 0)
+                    ret = m_audio->DecodeAudio(mpa_audctx, m_audioSamples,
+                                               data_size, &pkt);
+                    if (ret < 0)
                     {
-                        int data_size =
-                            av_samples_get_buffer_size(NULL,
-                                                       mpa_audctx->channels,
-                                                       m_audioFrame->nb_samples,
-                                                       mpa_audctx->sample_fmt,
-                                                       1);
-                        m_audio->AddAudioData(
-                            (char *)m_audioFrame->extended_data[0],
-                            data_size, frameheader.timecode, 0);
+                        LOG(VB_GENERAL, LOG_ERR, LOC + "Unknown audio decoding error");
+                        return false;
                     }
 
                     pkt.size -= ret;
                     pkt.data += ret;
+                    if (data_size <= 0)
+                        continue;
+
+                    m_audio->AddAudioData((char *)m_audioSamples, data_size,
+                                          frameheader.timecode, 0);
                 }
             }
             else

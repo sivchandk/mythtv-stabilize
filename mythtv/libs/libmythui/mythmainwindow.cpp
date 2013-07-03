@@ -83,6 +83,8 @@ using namespace std;
 #include "mythpainter_d3d9.h"
 #endif
 
+#include "mythuinotificationcenter.h"
+
 #define GESTURE_TIMEOUT 1000
 #define STANDBY_TIMEOUT 90 // Minutes
 
@@ -233,6 +235,7 @@ class MythMainWindowPrivate
     QMap<int, JumpData*> jumpMap;
     QMap<QString, JumpData> destinationMap;
     QMap<QString, MPData> mediaPluginMap;
+    QHash<QString, QHash<QString, QString> > actionText;
 
     void (*exitmenucallback)(void);
 
@@ -583,6 +586,8 @@ MythMainWindow::~MythMainWindow()
 #endif
 
     delete d;
+
+    delete MythUINotificationCenter::GetInstance();
 }
 
 MythPainter *MythMainWindow::GetCurrentPainter(void)
@@ -1085,6 +1090,9 @@ void MythMainWindow::Init(QString forcedpainter)
         d->m_themeBase->Reload();
     else
         d->m_themeBase = new MythThemeBase();
+
+    // Will create Notification Center singleton
+    (void)MythUINotificationCenter::GetInstance();
 }
 
 void MythMainWindow::InitKeys()
@@ -1147,6 +1155,8 @@ void MythMainWindow::InitKeys()
         ,"Copy text from textedit"), "Ctrl+C");
     RegisterKey("Global", "PASTE", QT_TRANSLATE_NOOP("MythControls",
         "Paste text into textedit"), "Ctrl+V");
+    RegisterKey("Global", "NEWLINE", QT_TRANSLATE_NOOP("MythControls",
+        "Insert newline into textedit"), "Ctrl+Return");
     RegisterKey("Global", "UNDO", QT_TRANSLATE_NOOP("MythControls",
         "Undo"), "Ctrl+Z");
     RegisterKey("Global", "REDO", QT_TRANSLATE_NOOP("MythControls",
@@ -1699,6 +1709,7 @@ void MythMainWindow::RegisterKey(const QString &context, const QString &action,
     }
 
     BindKey(context, action, keybind);
+    d->actionText[context][action] = description;
 }
 
 QString MythMainWindow::GetKey(const QString &context,
@@ -1721,6 +1732,18 @@ QString MythMainWindow::GetKey(const QString &context,
         return "?";
 
     return query.value(0).toString();
+}
+
+QString MythMainWindow::GetActionText(const QString &context,
+                                      const QString &action) const
+{
+    if (d->actionText.contains(context))
+    {
+        QHash<QString, QString> entry = d->actionText.value(context);
+        if (entry.contains(action))
+            return entry.value(action);
+    }
+    return "";
 }
 
 void MythMainWindow::ClearJump(const QString &destination)
@@ -2387,6 +2410,10 @@ void MythMainWindow::customEvent(QEvent *ce)
 
         if (!message.isEmpty())
             ShowOkPopup(message);
+    }
+    else if ((MythEvent::Type)(ce->type()) == MythUINotificationCenterEvent::kEventType)
+    {
+        MythUINotificationCenter::GetInstance()->ProcessQueue();
     }
 }
 
