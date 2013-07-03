@@ -223,7 +223,7 @@ QString debugDirectory(int chanid, const QDateTime& recstartts)
         return "";
 
     QString pburl = pginfo.GetPlaybackURL(true);
-    if (pburl.left(1) != "/")
+    if (!pburl.startsWith("/"))
         return "";
 
     QString basename(query.value(0).toString());
@@ -645,7 +645,7 @@ bool CommDetector2::go(void)
                 *currentPass, finishedAnalyzers,
                 deadAnalyzers, currentFrame, currentFrameNumber);
 
-            if (((currentFrameNumber >= 1) &&
+            if (((currentFrameNumber >= 1) && (nframes > 0) &&
                  (((nextFrame * 10) / nframes) !=
                   ((currentFrameNumber * 10) / nframes))) ||
                 (nextFrame >= nframes))

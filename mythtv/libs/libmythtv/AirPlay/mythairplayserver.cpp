@@ -18,6 +18,7 @@
 #include "mythuistatetracker.h"
 #include "plist.h"
 #include "tv_play.h"
+#include "mythuinotificationcenter.h"
 
 #include "bonjourregister.h"
 #include "mythairplayserver.h"
@@ -196,7 +197,8 @@ QByteArray DigestMd5Response(QString response, QString option,
 class APHTTPRequest
 {
   public:
-    APHTTPRequest(QByteArray &data) : m_readPos(0), m_data(data)
+    APHTTPRequest(QByteArray& data) : m_readPos(0), m_data(data), m_size(0),
+                                      m_incomingPartial(false)
     {
         Process();
         Check();
@@ -208,6 +210,12 @@ class APHTTPRequest
     QByteArray&       GetBody(void)    { return m_body;     }
     QMap<QByteArray,QByteArray>& GetHeaders(void)
                                        { return m_headers;  }
+
+    void Append(QByteArray& data)
+    {
+        m_body.append(data);
+        Check();
+    }
 
     QByteArray GetQueryValue(QByteArray key)
     {
@@ -231,6 +239,11 @@ class APHTTPRequest
             }
         }
         return result;
+    }
+
+    bool IsComplete(void)
+    {
+        return !m_incomingPartial;
     }
 
   private:
@@ -277,32 +290,43 @@ class APHTTPRequest
         if (m_headers.contains("Content-Length"))
         {
             int remaining = m_data.size() - m_readPos;
-            int size = m_headers["Content-Length"].toInt();
-            if (size > 0 && remaining > 0 && size <= remaining)
+            m_size = m_headers["Content-Length"].toInt();
+            if (m_size > 0 && remaining > 0)
             {
-                m_body = m_data.mid(m_readPos, size);
-                m_readPos += size;
+                m_body = m_data.mid(m_readPos, m_size);
+                m_readPos += m_body.size();
             }
         }
     }
 
     void Check(void)
     {
-        LOG(VB_GENERAL, LOG_DEBUG, LOC +
-            QString("HTTP Request:\n%1").arg(m_data.data()));
-        if (m_readPos == m_data.size())
+        if (!m_incomingPartial)
+        {
+            LOG(VB_GENERAL, LOG_DEBUG, LOC +
+                QString("HTTP Request:\n%1").arg(m_data.data()));
+        }
+        if (m_body.size() < m_size)
+        {
+            LOG(VB_PLAYBACK, LOG_DEBUG, LOC +
+                QString("AP HTTPRequest: Didn't read entire buffer."
+                        "Left to receive: %1 (got %2 of %3) body=%4")
+                .arg(m_size-m_body.size()).arg(m_readPos).arg(m_size).arg(m_body.size()));
+            m_incomingPartial = true;
             return;
-        LOG(VB_GENERAL, LOG_WARNING, LOC +
-            "AP HTTPRequest: Didn't read entire buffer.");
+        }
+        m_incomingPartial = false;
     }
 
-    int  m_readPos;
+    int        m_readPos;
     QByteArray m_data;
     QByteArray m_method;
     QByteArray m_uri;
     QList<QPair<QByteArray, QByteArray> > m_queries;
     QMap<QByteArray,QByteArray> m_headers;
     QByteArray m_body;
+    int        m_size;
+    bool       m_incomingPartial;
 };
 
 bool MythAirplayServer::Create(void)
@@ -334,6 +358,9 @@ bool MythAirplayServer::Create(void)
         QObject::connect(
             gMythAirplayServerThread->qthread(), SIGNAL(started()),
             gMythAirplayServer,                  SLOT(Start()));
+        QObject::connect(
+            gMythAirplayServerThread->qthread(), SIGNAL(finished()),
+            gMythAirplayServer,                  SLOT(Stop()));
         gMythAirplayServerThread->start(QThread::LowestPriority);
     }
 
@@ -344,9 +371,6 @@ bool MythAirplayServer::Create(void)
 void MythAirplayServer::Cleanup(void)
 {
     LOG(VB_GENERAL, LOG_INFO, LOC + "Cleaning up.");
-
-    if (gMythAirplayServer)
-        gMythAirplayServer->Teardown();
 
     QMutexLocker locker(gMythAirplayServerMutex);
     if (gMythAirplayServerThread)
@@ -364,16 +388,19 @@ void MythAirplayServer::Cleanup(void)
 
 MythAirplayServer::MythAirplayServer()
   : ServerPool(), m_name(QString("MythTV")), m_bonjour(NULL), m_valid(false),
-    m_lock(new QMutex(QMutex::Recursive)), m_setupPort(5100)
+    m_lock(new QMutex(QMutex::Recursive)), m_setupPort(5100), m_id(-1)
 {
 }
 
 MythAirplayServer::~MythAirplayServer()
 {
-    Teardown();
-
     delete m_lock;
     m_lock = NULL;
+    if (m_id > 0)
+    {
+        MythUINotificationCenter::GetInstance()->UnRegister(this, m_id);
+        m_id = -1;
+    }
 }
 
 void MythAirplayServer::Teardown(void)
@@ -394,6 +421,19 @@ void MythAirplayServer::Teardown(void)
         delete connection;
     }
     m_sockets.clear();
+
+    // remove all incoming buffers
+    foreach (APHTTPRequest* request, m_incoming)
+    {
+        delete request;
+    }
+    m_incoming.clear();
+
+    if (m_id > 0)
+    {
+        MythUINotificationCenter::GetInstance()->UnRegister(this, m_id);
+        m_id = -1;
+    }
 }
 
 void MythAirplayServer::Start(void)
@@ -438,7 +478,7 @@ void MythAirplayServer::Start(void)
         QByteArray type = "_airplay._tcp";
         QByteArray txt;
         txt.append(26); txt.append("deviceid="); txt.append(GetMacAddress());
-        txt.append(14); txt.append("features=0x219");
+        txt.append(14); txt.append("features=0x23b");
         txt.append(16); txt.append("model=AppleTV2,1");
         txt.append(14); txt.append("srcvers=101.28");
 
@@ -450,6 +490,11 @@ void MythAirplayServer::Start(void)
     }
     m_valid = true;
     return;
+}
+
+void MythAirplayServer::Stop(void)
+{
+    Teardown();
 }
 
 void MythAirplayServer::newConnection(QTcpSocket *client)
@@ -509,9 +554,23 @@ void MythAirplayServer::deleteConnection(QTcpSocket *socket)
         LOG(VB_GENERAL, LOG_INFO, LOC + QString("Removing session '%1'")
             .arg(remove.data()));
         m_connections.remove(remove);
+
+        // close any photos that could be displayed
+        MythUINotificationCenter::GetInstance()->UnRegister(this, m_id);
+        m_id = -1;
+
+        MythNotification n(tr("Client disconnected"), tr("AirPlay"),
+                           tr("from %1").arg(socket->peerAddress().toString()));
+        MythUINotificationCenter::GetInstance()->Queue(n);
     }
 
     socket->deleteLater();
+
+    if (m_incoming.contains(socket))
+    {
+        delete m_incoming[socket];
+        m_incoming.remove(socket);
+    }
 }
 
 void MythAirplayServer::read(void)
@@ -525,8 +584,24 @@ void MythAirplayServer::read(void)
         .arg(socket->peerAddress().toString()).arg(socket->peerPort()));
 
     QByteArray buf = socket->readAll();
-    APHTTPRequest request(buf);
-    HandleResponse(&request, socket);
+
+    if (!m_incoming.contains(socket))
+    {
+        APHTTPRequest *request = new APHTTPRequest(buf);
+        m_incoming.insert(socket, request);
+    }
+    else
+    {
+        m_incoming[socket]->Append(buf);
+    }
+    if (!m_incoming[socket]->IsComplete())
+        return;
+    HandleResponse(m_incoming[socket], socket);
+    if (m_incoming.contains(socket))
+    {
+        delete m_incoming[socket];
+        m_incoming.remove(socket);
+    }
 }
 
 QByteArray MythAirplayServer::StatusToString(int status)
@@ -623,6 +698,13 @@ void MythAirplayServer::HandleResponse(APHTTPRequest *req,
         // Got a full connection, disconnect any other clients
         DisconnectAllClients(session);
         m_connections[session].initialized = true;
+
+        MythNotification n(tr("New Connection"), tr("AirPlay"),
+                           tr("from %1").arg(socket->peerAddress().toString()));
+        MythUINotificationCenter::GetInstance()->Queue(n);
+
+        m_id = MythUINotificationCenter::GetInstance()->Register(this);
+
     }
 
     double position    = 0.0f;
@@ -732,8 +814,27 @@ void MythAirplayServer::HandleResponse(APHTTPRequest *req,
     {
         StopSession(session);
     }
-    else if (req->GetURI() == "/photo" ||
-             req->GetURI() == "/slideshow-features")
+    else if (req->GetURI() == "/photo")
+    {
+        if (req->GetMethod() == "PUT")
+        {
+            // this may be received before playback starts...
+            QImage image = QImage::fromData(req->GetBody());
+            bool png =
+                req->GetBody().size() > 3 && req->GetBody()[1] == 'P' &&
+                req->GetBody()[2] == 'N' && req->GetBody()[3] == 'G';
+            LOG(VB_GENERAL, LOG_INFO, LOC +
+                QString("Received %1 photo").arg(png ? "jpeg" : "png"));
+
+            // send full screen display notification
+            MythImageNotification n(MythNotification::New, image);
+            n.SetId(m_id);
+            n.SetParent(this);
+            n.SetFullScreen(true);
+            MythUINotificationCenter::GetInstance()->Queue(n);
+        }
+    }
+    else if (req->GetURI() == "/slideshow-features")
     {
         LOG(VB_GENERAL, LOG_INFO, LOC +
             "Slideshow functionality not implemented.");
@@ -830,7 +931,8 @@ void MythAirplayServer::SendResponse(QTcpSocket *socket,
                                      int status, QByteArray header,
                                      QByteArray content_type, QString body)
 {
-    if (!socket)
+    if (!socket || !m_incoming.contains(socket) ||
+        socket->state() != QAbstractSocket::ConnectedState)
         return;
     QTextStream response(socket);
     response.setCodec("UTF-8");
@@ -1003,6 +1105,11 @@ void MythAirplayServer::DisconnectAllClients(const QByteArray &session)
             socket->close();
             m_sockets.removeOne(socket);
             socket->deleteLater();
+            if (m_incoming.contains(socket))
+            {
+                delete m_incoming[socket];
+                m_incoming.remove(socket);
+            }
         }
         socket = it.value().controlSocket;
         if (socket)
@@ -1011,6 +1118,11 @@ void MythAirplayServer::DisconnectAllClients(const QByteArray &session)
             socket->close();
             m_sockets.removeOne(socket);
             socket->deleteLater();
+            if (m_incoming.contains(socket))
+            {
+                delete m_incoming[socket];
+                m_incoming.remove(socket);
+            }
         }
         it = m_connections.erase(it);
     }

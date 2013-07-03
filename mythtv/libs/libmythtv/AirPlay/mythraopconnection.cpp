@@ -15,6 +15,8 @@
 #include "mythraopconnection.h"
 #include "mythairplayserver.h"
 
+#include "mythuinotificationcenter.h"
+
 #define LOC QString("RAOP Conn: ")
 #define MAX_PACKET_SIZE  2048
 
@@ -33,7 +35,7 @@ QString MythRAOPConnection::g_rsaLastError;
 
 
 // Size (in ms) of audio buffered in audio card
-#define AUDIOCARD_BUFFER 800
+#define AUDIOCARD_BUFFER 500
 // How frequently we may call ProcessAudio (via QTimer)
 // ideally 20ms, but according to documentation
 // anything lower than 50ms on windows, isn't reliable
@@ -75,13 +77,15 @@ MythRAOPConnection::MythRAOPConnection(QObject *parent, QTcpSocket *socket,
     m_lastSequence(0),     m_lastTimestamp(0),
     m_currentTimestamp(0), m_nextSequence(0),        m_nextTimestamp(0),
     m_bufferLength(0),     m_timeLastSync(0),
-    m_cardLatency(0),      m_adjustedLatency(0),     m_audioStarted(false),
+    m_cardLatency(-1),     m_adjustedLatency(-1),    m_audioStarted(false),
     // clock sync
     m_masterTimeStamp(0),  m_deviceTimeStamp(0),     m_networkLatency(0),
     m_clockSkew(0),
     m_audioTimer(NULL),
-    m_progressStart(0),    m_progressCurrent(0),     m_progressEnd(0)
+    m_progressStart(0),    m_progressCurrent(0),     m_progressEnd(0),
+    m_firstsend(false)
 {
+    m_id = MythUINotificationCenter::GetInstance()->Register(this);
 }
 
 MythRAOPConnection::~MythRAOPConnection()
@@ -116,6 +120,11 @@ MythRAOPConnection::~MythRAOPConnection()
     {
         delete m_textStream;
         m_textStream = NULL;
+    }
+
+    if (m_id > 0)
+    {
+        MythUINotificationCenter::GetInstance()->UnRegister(this, m_id);
     }
 }
 
@@ -259,8 +268,8 @@ void MythRAOPConnection::udpDataReady(QByteArray buf, QHostAddress peer,
             return;
 
         case FIRSTAUDIO_DATA:
-            m_nextSequence  = seq;
-            m_nextTimestamp = timestamp;
+            m_nextSequence      = seq;
+            m_nextTimestamp     = timestamp;
             // With iTunes we know what the first sequence is going to be.
             // iOS device do not tell us before streaming start what the first
             // packet is going to be.
@@ -296,9 +305,9 @@ void MythRAOPConnection::udpDataReady(QByteArray buf, QHostAddress peer,
         if (m_streamingStarted && seq != m_nextSequence)
             SendResendRequest(timestamp, m_nextSequence, seq);
 
-        m_nextSequence     = seq + 1;
-        m_nextTimestamp    = timestamp;
-        m_streamingStarted = true;
+        m_nextSequence      = seq + 1;
+        m_nextTimestamp     = timestamp;
+        m_streamingStarted  = true;
     }
 
     if (!m_streamingStarted)
@@ -352,6 +361,12 @@ void MythRAOPConnection::ProcessSync(const QByteArray &buf)
     m_nextTimestamp     = next;
     m_bufferLength      = m_nextTimestamp - m_currentTimestamp;
 
+    if (current_ts > m_progressStart)
+    {
+        m_progressCurrent = next_ts;
+        SendNotification(true);
+    }
+
     if (first)
     {
         LOG(VB_GENERAL, LOG_DEBUG, LOC + QString("Receiving first SYNC packet"));
@@ -367,49 +382,54 @@ void MythRAOPConnection::ProcessSync(const QByteArray &buf)
     LOG(VB_GENERAL, LOG_DEBUG, LOC + QString("SYNC: cur:%1 next:%2 time:%3")
         .arg(m_currentTimestamp).arg(m_nextTimestamp).arg(m_timeLastSync));
 
-    uint64_t delay = framesToMs(m_audioQueue.size() * m_framesPerPacket);
-    delay += m_networkLatency;
+    int64_t delay = framesToMs(m_audioQueue.size() * m_framesPerPacket);
+    int64_t audiots = m_audio->GetAudiotime();
+    int64_t currentLatency = 0LL;
 
-    // Calculate audio card latency
-    if (first)
-    {
-        m_cardLatency = AudioCardLatency();
-        // if audio isn't started, start playing 200ms worth of silence
-        // and measure timestamp difference
-        LOG(VB_GENERAL, LOG_DEBUG, LOC +
-            QString("Audio hardware latency: %1ms").arg(m_cardLatency));
-    }
-
-    uint64_t audiots = m_audio->GetAudiotime();
     if (m_audioStarted)
     {
-        m_adjustedLatency = (int64_t)audiots - (int64_t)m_currentTimestamp;
+        currentLatency = (int64_t)audiots - (int64_t)m_currentTimestamp;
     }
-    if (m_adjustedLatency > (int64_t)m_bufferLength)
-    {
-        // Too much delay in playback
-        // will reset audio card in next ProcessAudio
-        m_audioStarted = false;
-        m_adjustedLatency = 0;
-    }
+
+    LOG(VB_GENERAL, LOG_DEBUG, LOC +
+        QString("RAOP timestamps: about to play:%1 desired:%2 latency:%3")
+        .arg(audiots).arg(m_currentTimestamp)
+        .arg(currentLatency));
 
     delay += m_audio->GetAudioBufferedTime();
-    delay += m_adjustedLatency;
-
-    // Expire old audio
-    ExpireResendRequests(m_currentTimestamp);
-    int res = ExpireAudio(m_currentTimestamp);
-    if (res > 0)
-    {
-        LOG(VB_GENERAL, LOG_DEBUG, LOC + QString("Drop %1 packets").arg(res));
-    }
+    delay += currentLatency;
 
     LOG(VB_GENERAL, LOG_DEBUG, LOC +
         QString("Queue=%1 buffer=%2ms ideal=%3ms diffts:%4ms")
         .arg(m_audioQueue.size())
         .arg(delay)
         .arg(m_bufferLength)
-        .arg(m_adjustedLatency));
+        .arg(m_bufferLength-delay));
+
+    if (m_adjustedLatency <= 0 && m_audioStarted &&
+        (-currentLatency > AUDIOCARD_BUFFER))
+    {
+        // Too much delay in playback.
+        // The threshold is a value chosen to be loose enough so it doesn't
+        // trigger too often, but should be low enough to detect any accidental
+        // interruptions.
+        // Will drop some frames in next ProcessAudio
+        LOG(VB_PLAYBACK, LOG_DEBUG, LOC +
+            QString("Too much delay (%1ms), adjusting")
+            .arg(m_bufferLength - delay));
+
+        m_adjustedLatency = m_cardLatency + m_networkLatency;
+
+        // Expire old audio
+        ExpireResendRequests(m_currentTimestamp - m_adjustedLatency);
+        int res = ExpireAudio(m_currentTimestamp - m_adjustedLatency);
+        if (res > 0)
+        {
+            LOG(VB_GENERAL, LOG_DEBUG, LOC + QString("Drop %1 packets").arg(res));
+        }
+
+        m_audioStarted = false;
+    }
 }
 
 /**
@@ -533,6 +553,8 @@ void MythRAOPConnection::ProcessTimeResponse(const QByteArray &buf)
     // network latency equal time difference in ms between request and response
     // divide by two for approximate time of one way trip
     m_networkLatency = (time2 - time1) / 2;
+    LOG(VB_AUDIO, LOG_DEBUG, LOC + QString("Network Latency: %1ms")
+        .arg(m_networkLatency));
 
     // now calculate the time difference between the client and us.
     // this is NTP time, where sec is in seconds, and ticks is in 1/2^32s
@@ -659,7 +681,7 @@ void MythRAOPConnection::ProcessAudio()
     }
     timeval  t; gettimeofday(&t, NULL);
     uint64_t dtime    = (t.tv_sec * 1000 + t.tv_usec / 1000) - m_timeLastSync;
-    uint64_t rtp      = dtime + m_currentTimestamp + m_networkLatency;
+    uint64_t rtp      = dtime + m_currentTimestamp;
     uint64_t buffered = m_audioStarted ? m_audio->GetAudioBufferedTime() : 0;
 
     // Keep audio framework buffer as short as possible, keeping everything in
@@ -669,12 +691,11 @@ void MythRAOPConnection::ProcessAudio()
 
     // Also make sure m_audioQueue never goes to less than 1/3 of the RDP stream
     // total latency, this should gives us enough time to receive missed packets
-    uint64_t queue = framesToMs(m_audioQueue.size() * m_framesPerPacket);
+    int64_t queue = framesToMs(m_audioQueue.size() * m_framesPerPacket);
     if (queue < m_bufferLength / 3)
         return;
 
     rtp += buffered;
-    rtp += m_cardLatency;
 
     // How many packets to add to the audio card, to fill AUDIOCARD_BUFFER
     int max_packets    = ((AUDIOCARD_BUFFER - buffered)
@@ -709,8 +730,27 @@ void MythRAOPConnection::ProcessAudio()
             for (; it != frames.data->end(); ++it)
             {
                 AudioData *data = &(*it);
-                m_audio->AddData((char *)data->data, data->length,
-                                 timestamp, data->frames);
+                int offset = 0;
+                int frames = 0;
+
+                if (m_adjustedLatency > 0)
+                {
+                        // calculate how many frames we have to drop to catch up
+                    offset = (m_adjustedLatency * m_frameRate / 1000) *
+                        m_audio->GetBytesPerFrame();
+                    if (offset > data->length)
+                        offset = data->length;
+                    frames = offset / m_audio->GetBytesPerFrame();
+                    m_adjustedLatency -= framesToMs(frames+1);
+                    LOG(VB_PLAYBACK, LOG_DEBUG, LOC +
+                        QString("ProcessAudio: Dropping %1 frames to catch up "
+                                "(%2ms to go)")
+                        .arg(frames).arg(m_adjustedLatency));
+                    timestamp += framesToMs(frames);
+                }
+                m_audio->AddData((char *)data->data + offset,
+                                 data->length - offset,
+                                 timestamp, frames);
                 timestamp += m_audio->LengthLastData();
             }
             i++;
@@ -930,13 +970,13 @@ void MythRAOPConnection::ProcessRequest(const QStringList &header,
     if (tags.contains("Apple-Challenge"))
     {
         LOG(VB_GENERAL, LOG_DEBUG, LOC + QString("Received Apple-Challenge"));
-        
+
         *m_textStream << "Apple-Response: ";
         if (!LoadKey())
             return;
         int tosize = RSA_size(LoadKey());
         uint8_t *to = new uint8_t[tosize];
-        
+
         QByteArray challenge =
         QByteArray::fromBase64(tags["Apple-Challenge"].toLatin1());
         int challenge_size = challenge.size();
@@ -948,7 +988,7 @@ void MythRAOPConnection::ProcessRequest(const QStringList &header,
             if (challenge_size > 16)
                 challenge_size = 16;
         }
-        
+
         int i = 0;
         unsigned char from[38];
         memcpy(from, challenge.constData(), challenge_size);
@@ -980,24 +1020,24 @@ void MythRAOPConnection::ProcessRequest(const QStringList &header,
         }
         memcpy(from + i, m_hardwareId.constData(), AIRPLAY_HARDWARE_ID_SIZE);
         i += AIRPLAY_HARDWARE_ID_SIZE;
-        
+
         int pad = 32 - i;
         if (pad > 0)
         {
             memset(from + i, 0, pad);
             i += pad;
         }
-        
+
         LOG(VB_GENERAL, LOG_DEBUG, LOC +
             QString("Full base64 response: '%1' size %2")
             .arg(QByteArray((const char *)from, i).toBase64().constData())
             .arg(i));
-        
+
         RSA_private_encrypt(i, from, to, LoadKey(), RSA_PKCS1_PADDING);
-        
+
         QByteArray base64 = QByteArray((const char *)to, tosize).toBase64();
         delete[] to;
-        
+
         for (int pos = base64.size() - 1; pos > 0; pos--)
         {
             if (base64[pos] == '=')
@@ -1205,7 +1245,19 @@ void MythRAOPConnection::ProcessRequest(const QStringList &header,
             }
 
             if (OpenAudioDevice())
+            {
                 CreateDecoder();
+                    // Calculate audio card latency
+                if (m_cardLatency < 0)
+                {
+                    m_adjustedLatency = m_cardLatency = AudioCardLatency();
+                    // if audio isn't started, start playing 500ms worth of silence
+                    // and measure timestamp difference
+                    LOG(VB_GENERAL, LOG_DEBUG, LOC +
+                        QString("Audio hardware latency: %1ms")
+                        .arg(m_cardLatency + m_networkLatency));
+                }
+            }
 
             // Recreate transport line with new ports value
             QString newdata;
@@ -1243,6 +1295,9 @@ void MythRAOPConnection::ProcessRequest(const QStringList &header,
             *m_textStream << "Transport: " << newdata << "\r\n";
             *m_textStream << "Session: 1\r\n";
             *m_textStream << "Audio-Jack-Status: connected\r\n";
+
+            // Ask for master clock value to determine time skew and average network latency
+            SendTimeRequest();
         }
         else
         {
@@ -1257,15 +1312,20 @@ void MythRAOPConnection::ProcessRequest(const QStringList &header,
             m_nextSequence  = RTPseq;
             m_nextTimestamp = RTPtimestamp;
         }
-        // Ask for master clock value to determine time skew and average network latency
-        SendTimeRequest();
+
+        // Calculate audio card latency
+        if (m_cardLatency > 0)
+        {
+            *m_textStream << QString("Audio-Latency: %1")
+                .arg(m_cardLatency+m_networkLatency);
+        }
     }
     else if (option == "FLUSH")
     {
         if (gotRTP)
         {
             m_nextSequence     = RTPseq;
-            m_nextTimestamp    = RTPtimestamp;
+            m_nextTimestamp    = framesToMs(RTPtimestamp);
             m_currentTimestamp = m_nextTimestamp - m_bufferLength;
         }
         // determine RTP timestamp of last sample played
@@ -1316,21 +1376,29 @@ void MythRAOPConnection::ProcessRequest(const QStringList &header,
                         LOC +QString("Progress: %1/%2")
                         .arg(stringFromSeconds(current))
                         .arg(stringFromSeconds(length)));
+                    SendNotification(true);
                 }
             }
-            else if(tags["Content-Type"] == "image/jpeg")
+            else if(tags["Content-Type"] == "image/none")
+            {
+                m_artwork.clear();
+                SendNotification(false);
+            }
+            else if(tags["Content-Type"].startsWith("image/"))
             {
                 // Receiving image coverart
                 m_artwork = content;
+                SendNotification(false);
             }
             else if (tags["Content-Type"] == "application/x-dmap-tagged")
             {
                 // Receiving DMAP metadata
-                QMap<QString,QString> map = decodeDMAP(content);
+                m_dmap = decodeDMAP(content);
                 LOG(VB_GENERAL, LOG_INFO,
                     QString("Receiving Title:%1 Artist:%2 Album:%3 Format:%4")
-                    .arg(map["minm"]).arg(map["asar"])
-                    .arg(map["asal"]).arg(map["asfm"]));
+                    .arg(m_dmap["minm"]).arg(m_dmap["asar"])
+                    .arg(m_dmap["asal"]).arg(m_dmap["asfm"]));
+                SendNotification(false);
             }
         }
     }
@@ -1660,18 +1728,18 @@ int64_t MythRAOPConnection::AudioCardLatency(void)
     if (!m_audio)
         return 0;
 
-    uint64_t timestamp = 123456;
-
     int16_t *samples = (int16_t *)av_mallocz(AVCODEC_MAX_AUDIO_FRAME_SIZE);
     int frames = AUDIOCARD_BUFFER * m_frameRate / 1000;
     m_audio->AddData((char *)samples,
                      frames * (m_sampleSize>>3) * m_channels,
-                     timestamp,
+                     0,
                      frames);
     av_free(samples);
     usleep(AUDIOCARD_BUFFER * 1000);
     uint64_t audiots = m_audio->GetAudiotime();
-    return (int64_t)timestamp - (int64_t)audiots;
+    LOG(VB_PLAYBACK, LOG_DEBUG, LOC + QString("AudioCardLatency: ts=%1ms")
+        .arg(audiots));
+    return AUDIOCARD_BUFFER - (int64_t)audiots;
 }
 
 void MythRAOPConnection::newEventClient(QTcpSocket *client)
@@ -1692,4 +1760,31 @@ void MythRAOPConnection::deleteEventClient(void)
     LOG(VB_GENERAL, LOG_DEBUG, LOC +
         QString("%1:%2 disconnected from RAOP events server.")
         .arg(client->peerAddress().toString()).arg(client->peerPort()));
+}
+
+void MythRAOPConnection::SendNotification(bool update)
+{
+    QImage image = m_artwork.isEmpty() ? QImage() : QImage::fromData(m_artwork);
+    int duration  =
+        (float)(m_progressEnd-m_progressStart) / m_frameRate + 0.5f;
+    int position =
+        (m_progressCurrent-m_progressStart) / m_frameRate;
+
+    MythNotification *n;
+
+    if (!update || !m_firstsend)
+    {
+        n = new MythMediaNotification(MythNotification::New,
+                                      image, m_dmap, duration, position);
+    }
+    else
+    {
+        n = new MythPlaybackNotification(MythNotification::Update,
+                                         duration, position);
+    }
+    n->SetId(m_id);
+    n->SetParent(this);
+    MythUINotificationCenter::GetInstance()->Queue(*n);
+    m_firstsend = true;
+    delete n;
 }
