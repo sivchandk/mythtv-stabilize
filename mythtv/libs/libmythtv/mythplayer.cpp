@@ -62,6 +62,7 @@ using namespace std;
 #include "mythlogging.h"
 #include "mythmiscutil.h"
 #include "icringbuffer.h"
+#include "audiooutput.h"
 
 extern "C" {
 #include "vbitext/vbi.h"
@@ -574,7 +575,7 @@ void MythPlayer::ReinitVideo(void)
     if (!videoOutput->IsPreferredRenderer(video_disp_dim))
     {
         LOG(VB_PLAYBACK, LOG_INFO, LOC + "Need to switch video renderer.");
-        SetErrored(tr("Need to switch video renderer."));
+        SetErrored(tr("Need to switch video renderer"));
         errorType |= kError_Switch_Renderer;
         return;
     }
@@ -809,16 +810,19 @@ void MythPlayer::SetScanType(FrameScanType scan)
 void MythPlayer::SetVideoParams(int width, int height, double fps,
                                 FrameScanType scan)
 {
-    if (width < 1 || height < 1 || qIsNaN(fps))
-        return;
+    bool paramsChanged = false;
 
-    video_dim      = QSize((width + 15) & ~0xf, (height + 15) & ~0xf);
-    video_disp_dim = QSize(width, height);
-    if (height)
-        video_aspect = (float)width / height;
-
-    if (fps > 0.0f && fps < 121.0f)
+    if (width >= 1 && height >= 1)
     {
+        paramsChanged  = true;
+        video_dim      = QSize((width + 15) & ~0xf, (height + 15) & ~0xf);
+        video_disp_dim = QSize(width, height);
+        video_aspect   = (float)width / height;
+    }
+
+    if (!qIsNaN(fps) && fps > 0.0f && fps < 121.0f)
+    {
+        paramsChanged    = true;
         video_frame_rate = fps;
         if (ffrew_skip != 0 && ffrew_skip != 1)
         {
@@ -833,6 +837,9 @@ void MythPlayer::SetVideoParams(int width, int height, double fps,
                              1.0 / (video_frame_rate * temp_speed));
         }
     }
+
+    if (!paramsChanged)
+        return;
 
     if (videoOutput)
         ReinitVideo();
@@ -933,6 +940,7 @@ int MythPlayer::OpenFile(uint retries)
                         .arg(testreadsize)
                         .arg(player_ctx->buffer->GetFilename()));
                 delete[] testbuf;
+                SetErrored(tr("Could not read first %1 bytes").arg(testreadsize));
                 return -1;
             }
             LOG(VB_GENERAL, LOG_WARNING, LOC + "OpenFile() waiting on data");
@@ -952,6 +960,7 @@ int MythPlayer::OpenFile(uint retries)
         LOG(VB_GENERAL, LOG_ERR, LOC +
             QString("Couldn't find an A/V decoder for: '%1'")
                 .arg(player_ctx->buffer->GetFilename()));
+        SetErrored(tr("Could not find an A/V decoder"));
 
         delete[] testbuf;
         return -1;
@@ -960,6 +969,7 @@ int MythPlayer::OpenFile(uint retries)
     {
         LOG(VB_GENERAL, LOG_ERR, LOC + "Could not initialize A/V decoder.");
         SetDecoder(NULL);
+        SetErrored(tr("Could not initialize A/V decoder"));
 
         delete[] testbuf;
         return -1;
@@ -984,6 +994,7 @@ int MythPlayer::OpenFile(uint retries)
     {
         LOG(VB_GENERAL, LOG_ERR, QString("Couldn't open decoder for: %1")
                 .arg(player_ctx->buffer->GetFilename()));
+        SetErrored(tr("Could not open decoder"));
         return -1;
     }
 
@@ -2388,6 +2399,8 @@ bool MythPlayer::VideoLoop(void)
 
     if (FlagIsSet(kVideoIsNull) && decoder)
         decoder->UpdateFramesPlayed();
+    else if (decoder && decoder->GetEof() != kEofStateNone)
+        ++framesPlayed;
     else
         framesPlayed = videoOutput->GetFramesPlayed();
     return !IsErrored();
@@ -2940,8 +2953,12 @@ void MythPlayer::EventLoop(void)
             return;
         }
 
-        if (eof != kEofStateDelayed ||
-            (videoOutput && videoOutput->ValidVideoFrames() < 1))
+        bool videoDrained =
+            videoOutput && videoOutput->ValidVideoFrames() < 1;
+        bool audioDrained =
+            !audio.GetAudioOutput() ||
+            audio.GetAudioOutput()->GetAudioBufferedTime() < 100;
+        if (eof != kEofStateDelayed || (videoDrained && audioDrained))
         {
             if (eof == kEofStateDelayed)
                 LOG(VB_PLAYBACK, LOG_INFO,
@@ -2989,8 +3006,8 @@ void MythPlayer::EventLoop(void)
             SetOSDStatus(tr("Not Flagged"), kOSDTimeout_Med);
             QString message = "COMMFLAG_REQUEST ";
             player_ctx->LockPlayingInfo(__FILE__, __LINE__);
-            message += player_ctx->playingInfo->GetChanID() + " " +
-                   player_ctx->playingInfo->MakeUniqueKey();
+            message += QString("%1").arg(player_ctx->playingInfo->GetChanID()) +
+                " " + player_ctx->playingInfo->MakeUniqueKey();
             player_ctx->UnlockPlayingInfo(__FILE__, __LINE__);
             gCoreContext->SendMessage(message);
         }
@@ -4699,6 +4716,10 @@ int MythPlayer::GetSecondsBehind(void) const
 
 int64_t MythPlayer::GetSecondsPlayed(bool honorCutList, int divisor) const
 {
+    int64_t pos = TranslatePositionFrameToMs(framesPlayed, honorCutList);
+    LOG(VB_PLAYBACK, LOG_DEBUG, LOC +
+        QString("GetSecondsPlayed: framesPlayed %1, honorCutList %2, divisor %3, pos %4")
+        .arg(framesPlayed).arg(honorCutList).arg(divisor).arg(pos));
     return TranslatePositionFrameToMs(framesPlayed, honorCutList) / divisor;
 }
 
@@ -5099,7 +5120,7 @@ void MythPlayer::JumpToStream(const QString &stream)
     {
         LOG(VB_GENERAL, LOG_ERR, LOC + "JumpToStream buffer OpenFile failed");
         SetEof(kEofStateImmediate);
-        SetErrored(QObject::tr("Error opening remote stream buffer"));
+        SetErrored(tr("Error opening remote stream buffer"));
         return;
     }
 
@@ -5112,7 +5133,7 @@ void MythPlayer::JumpToStream(const QString &stream)
     {
         LOG(VB_GENERAL, LOG_ERR, LOC + "JumpToStream OpenFile failed.");
         SetEof(kEofStateImmediate);
-        SetErrored(QObject::tr("Error opening remote stream"));
+        SetErrored(tr("Error opening remote stream"));
         return;
     }
 
@@ -5221,7 +5242,7 @@ bool MythPlayer::PosMapFromEnc(uint64_t start,
     return true;
 }
 
-void MythPlayer::SetErrored(const QString &reason) const
+void MythPlayer::SetErrored(const QString &reason)
 {
     QMutexLocker locker(&errorLock);
 
@@ -5237,6 +5258,13 @@ void MythPlayer::SetErrored(const QString &reason) const
     {
         LOG(VB_GENERAL, LOG_ERR, LOC + QString("%1").arg(reason));
     }
+}
+
+void MythPlayer::ResetErrored(void)
+{
+    QMutexLocker locker(&errorLock);
+
+    errorMsg = QString();
 }
 
 bool MythPlayer::IsErrored(void) const
@@ -5353,7 +5381,7 @@ void MythPlayer::SetOSDMessage(const QString &msg, OSDTimeout timeout)
     if (!osd)
         return;
 
-    QHash<QString,QString> info;
+    InfoMap info;
     info.insert("message_text", msg);
     osd->SetText("osd_message", info, timeout);
 }

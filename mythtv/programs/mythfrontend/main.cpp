@@ -117,6 +117,9 @@ void handleSIGUSR2(void);
 static bool gLoaded = false;
 #endif
 
+static const QString _Location = qApp->translate("(Common)", 
+                                                 "MythFrontend");
+
 namespace
 {
     class RunSettingsCompletion : public QObject
@@ -162,9 +165,9 @@ namespace
             else
             {
                 LOG(VB_GENERAL, LOG_WARNING,
-                        QObject::tr("Aggressive Parental Controls Warning: "
-                                "invalid password. An attempt to enter a "
-                                "MythVideo settings screen was prevented."));
+                        "Aggressive Parental Controls Warning: "
+                        "invalid password. An attempt to enter a "
+                        "MythVideo settings screen was prevented.");
             }
 
             deleteLater();
@@ -176,6 +179,8 @@ namespace
 
     class BookmarkDialog : MythScreenType
     {
+        Q_DECLARE_TR_FUNCTIONS(BookmarkDialog)
+
       public:
         BookmarkDialog(ProgramInfo *pginfo, MythScreenStack *parent) :
                 MythScreenType(parent, "bookmarkdialog"),
@@ -185,9 +190,9 @@ namespace
 
         bool Create()
         {
-            QString msg = QObject::tr("DVD/Video contains a bookmark");
-            QString btn0msg = QObject::tr("Play from bookmark");
-            QString btn1msg = QObject::tr("Play from beginning");
+            QString msg = tr("DVD/Video contains a bookmark");
+            QString btn0msg = tr("Play from bookmark");
+            QString btn1msg = tr("Play from beginning");
 
             MythDialogBox *popup = new MythDialogBox(msg, GetScreenStack(), "bookmarkdialog");
             if (!popup->Create())
@@ -305,8 +310,9 @@ static void startAppearWiz(void)
     bool reload = false;
 
     if (isWindowed)
-        ShowOkPopup(QObject::tr("The ScreenSetupWizard cannot be used while "
-                              "mythfrontend is operating in windowed mode."));
+        ShowOkPopup(qApp->translate("(MythFrontendMain)", 
+                    "The ScreenSetupWizard cannot be used while "
+                    "mythfrontend is operating in windowed mode."));
     else
     {
         MythSystemLegacy *wizard = new MythSystemLegacy(
@@ -574,9 +580,10 @@ static bool isLiveTVAvailable(void)
     if (RemoteGetFreeRecorderCount() > 0)
         return true;
 
-    QString msg = QObject::tr("All tuners are currently busy.");
+    QString msg = qApp->translate("(Common)", "All tuners are currently busy.");
+
     if (TV::ConfiguredTunerCards() < 1)
-        msg = QObject::tr("There are no configured tuners.");
+        msg = qApp->translate("(Common)", "There are no configured tuners.");
 
     ShowOkPopup(msg);
     return false;
@@ -621,7 +628,8 @@ static void standbyScreen(void)
 
 static void RunVideoScreen(VideoDialog::DialogType type, bool fromJump = false)
 {
-    QString message = QObject::tr("Loading videos ...");
+    QString message = qApp->translate("(MythFrontendMain)", 
+                                      "Loading videos ...");
 
     MythScreenStack *popupStack =
             GetMythMainWindow()->GetStack("popup stack");
@@ -737,10 +745,10 @@ static void playDisc()
                 command_string =
                         command_string.replace(QRegExp("%d"), dvd_device);
             }
-            sendPlaybackStart();
+            gCoreContext->emitTVPlaybackStarted();
             GetMythMainWindow()->PauseIdleTimer(true);
             myth_system(command_string);
-            sendPlaybackEnd();
+            gCoreContext->emitTVPlaybackStopped();
             GetMythMainWindow()->PauseIdleTimer(false);
             if (GetMythMainWindow())
             {
@@ -1106,10 +1114,12 @@ static int internal_play_media(const QString &mrl, const QString &plot,
          && !mrl.startsWith("myth:")
          && !mrl.startsWith("http://")))
     {
-        QString errorText = QObject::tr("Failed to open \n '%1' in %2 \n"
-                                        "Check if the video exists")
-                                        .arg(mrl.section('/', -1))
-                                        .arg(mrl.section('/', 0, -2));
+        QString errorText = qApp->translate("(MythFrontendMain)",
+            "Failed to open \n '%1' in %2 \n"
+            "Check if the video exists")
+            .arg(mrl.section('/', -1))
+            .arg(mrl.section('/', 0, -2));
+
         ShowOkPopup(errorText);
         return res;
     }
@@ -1126,7 +1136,7 @@ static int internal_play_media(const QString &mrl, const QString &plot,
     if (pginfo->IsVideoDVD())
     {
         DVDInfo *dvd = new DVDInfo(pginfo->GetPlaybackURL());
-        if (dvd && dvd->IsValid())
+        if (dvd->IsValid())
         {
             QString name;
             QString serialid;
@@ -1138,8 +1148,11 @@ static int internal_play_media(const QString &mrl, const QString &plot,
         }
         else
         {
-            if (dvd)
-                delete dvd;
+            ShowNotificationError(qApp->translate("(MythFrontendMain)", 
+                                                  "DVD Failure"), 
+                                                  _Location, 
+                                                  dvd->GetLastError());
+            delete dvd;
             delete pginfo;
             return res;
         }
@@ -1577,17 +1590,6 @@ int main(int argc, char **argv)
     }
 #endif
 
-#ifdef USING_AIRPLAY
-    if (gCoreContext->GetNumSetting("AirPlayEnabled", true))
-    {
-        MythRAOPDevice::Create();
-        if (!gCoreContext->GetNumSetting("AirPlayAudioOnly", false))
-        {
-            MythAirplayServer::Create();
-        }
-    }
-#endif
-
     LCD::SetupLCD();
     if (LCD *lcd = LCD::Get())
         lcd->setupLEDs(RemoteGetRecordingMask);
@@ -1621,7 +1623,20 @@ int main(int argc, char **argv)
 #else
     mainWindow->Init();
 #endif
-    mainWindow->setWindowTitle(QObject::tr("MythTV Frontend"));
+    mainWindow->setWindowTitle(qApp->translate("(MythFrontendMain)",
+                                               "MythTV Frontend",
+                                               "Main window title"));
+
+#ifdef USING_AIRPLAY
+    if (gCoreContext->GetNumSetting("AirPlayEnabled", true))
+    {
+        if (!gCoreContext->GetNumSetting("AirPlayAudioOnly", false))
+        {
+            MythAirplayServer::Create();
+        }
+        MythRAOPDevice::Create();
+    }
+#endif
 
     // We must reload the translation after a language change and this
     // also means clearing the cached/loaded theme strings, so reload the
