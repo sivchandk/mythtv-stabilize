@@ -8,7 +8,6 @@
 #include "mythlogging.h"
 #include "mythmainwindow.h"
 #include "mythudplistener.h"
-#include "mythuinotificationcenter.h"
 
 #define LOC QString("UDPListener: ")
 
@@ -105,6 +104,16 @@ void MythUDPListener::Process(const QByteArray &buf, QHostAddress sender,
 
     QString msg  = QString("");
     uint timeout = 0;
+    QString image;
+    QString origin;
+    QString description = "";
+    QString extra = "";
+    QString progress_text = "";
+    float progress = -1.0f;
+    bool fullscreen = false;
+    bool error = false;
+    int visibility = 0;
+    QString type = "normal";
 
     QDomNode n = docElem.firstChild();
     while (!n.isNull())
@@ -116,11 +125,35 @@ void MythUDPListener::Process(const QByteArray &buf, QHostAddress sender,
                 msg = e.text();
             else if (e.tagName() == "timeout")
                 timeout = e.text().toUInt();
+            else if (notification && e.tagName() == "image")
+                image = e.text();
+            else if (notification && e.tagName() == "origin")
+                origin = e.text();
+            else if (notification && e.tagName() == "description")
+                description = e.text();
+            else if (notification && e.tagName() == "extra")
+                extra = e.text();
+            else if (notification && e.tagName() == "progress_text")
+                progress_text = e.text();
+            else if (notification && e.tagName() == "fullscreen")
+                fullscreen = e.text().toLower() == "true";
+            else if (notification && e.tagName() == "error")
+                error = e.text().toLower() == "true";
+            else if (e.tagName() == "visibility")
+                visibility = e.text().toUInt();
+            else if (e.tagName() == "type")
+                type = e.text();
+            else if (notification && e.tagName() == "progress")
+            {
+                bool ok;
+                progress = e.text().toFloat(&ok);
+                if (!ok)
+                    progress = -1.0f;
+            }
             else
             {
                 LOG(VB_GENERAL, LOG_ERR, LOC + QString("Unknown element: %1")
                     .arg(e.tagName()));
-                return;
             }
         }
         n = n.nextSibling();
@@ -134,9 +167,12 @@ void MythUDPListener::Process(const QByteArray &buf, QHostAddress sender,
             timeout = notification ? 5 : 0;
         if (notification)
         {
-            MythNotification n(msg, tr("UDP Listener"));
-            n.SetDuration(timeout);
-            MythUINotificationCenter::GetInstance()->Queue(n);
+            origin = origin.isNull() ? tr("UDP Listener") : origin;
+            ShowNotification(error ? MythNotification::Error :
+                                     MythNotification::TypeFromString(type),
+                             msg, origin, description, image, extra,
+                             progress_text, progress, timeout, fullscreen,
+                             visibility);
         }
         else
         {

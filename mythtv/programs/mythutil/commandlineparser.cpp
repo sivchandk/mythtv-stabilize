@@ -162,6 +162,26 @@ void MythUtilCommandLineParser::LoadArguments(void)
     add("--bcastaddr", "bcastaddr", "127.0.0.1", "(optional) IP address to send to", "")
         ->SetChildOf("message")
         ->SetChildOf("notification");
+    add("--image", "image", "image_path", "(optional) Path to image to send to (http://, myth://)", "")
+        ->SetChildOf("notification");
+    add("--origin", "origin", "text", "(optional) notification origin text", "")
+        ->SetChildOf("notification");
+    add("--description", "description", "text", "(optional) notification description text", "")
+        ->SetChildOf("notification");
+    add("--extra", "extra", "text", "(optional) notification extra text", "")
+        ->SetChildOf("notification");
+    add("--progress_text", "progress_text", "text", "(optional) notification progress text", "")
+        ->SetChildOf("notification");
+    add("--progress", "progress", -1.0, "(optional) progress value (must be between 0 and 1)", "")
+        ->SetChildOf("notification");
+    add("--fullscreen", "fullscreen", false, "(optional) display notification in full screen mode", "")
+        ->SetChildOf("notification");
+    add("--error", "error", false, "(optional) set notification to be displayed as an error", "")
+    ->SetChildOf("notification");
+    add("--visibility", "visibility", 0, "(optional) bitmask indicating where to show the notification", "")
+    ->SetChildOf("notification");
+    add("--type", "type", "type", "(optional) type of notification (normal, error, warning, check", "")
+    ->SetChildOf("notification");
 
     // Generic Options used by more than one utility
     addRecording();

@@ -288,19 +288,30 @@ bool FileRingBuffer::OpenFile(const QString &lfilename, uint retry_ms)
             case 1:
                 LOG(VB_GENERAL, LOG_ERR, LOC +
                         QString("OpenFile(): Could not open."));
+
+                //: %1 is the filename
+                lastError = tr("Could not open %1").arg(filename);
                 break;
             case 2:
                 LOG(VB_GENERAL, LOG_ERR, LOC +
                         QString("OpenFile(): File too small (%1B).")
                         .arg(QFileInfo(filename).size()));
+
+                //: %1 is the file size
+                lastError = tr("File too small (%1B)")
+                            .arg(QFileInfo(filename).size());
                 break;
             case 3:
                 LOG(VB_GENERAL, LOG_ERR, LOC +
                         "OpenFile(): Improper permissions.");
+
+                lastError = tr("Improper permissions");
                 break;
             case 4:
                 LOG(VB_GENERAL, LOG_ERR, LOC +
                         "OpenFile(): Cannot seek in file.");
+
+                lastError = tr("Cannot seek in file");
                 break;
             default:
                 break;
@@ -347,6 +358,9 @@ bool FileRingBuffer::OpenFile(const QString &lfilename, uint retry_ms)
             LOG(VB_GENERAL, LOG_ERR, LOC +
                     QString("RingBuffer::RingBuffer(): Failed to open remote "
                             "file (%1)").arg(filename));
+
+            //: %1 is the filename
+            lastError = tr("Failed to open remote file %1").arg(filename);
             delete remotefile;
             remotefile = NULL;
         }

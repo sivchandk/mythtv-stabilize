@@ -16,6 +16,8 @@ namespace MythTV
 
 class MTV_PUBLIC AudioPlayer
 {
+    Q_DECLARE_TR_FUNCTIONS(AudioPlayer)
+
   public:
     AudioPlayer(MythPlayer *parent, bool muted);
    ~AudioPlayer();
@@ -85,6 +87,11 @@ class MTV_PUBLIC AudioPlayer
     int64_t LengthLastData(void);
     bool GetBufferStatus(uint &fill, uint &total);
     bool IsBufferAlmostFull(void);
+    
+    /**
+     * Return internal AudioOutput object
+     */
+    AudioOutput *GetAudioOutput(void) const { return m_audioOutput; }
 
   private:
     void AddVisuals(void);

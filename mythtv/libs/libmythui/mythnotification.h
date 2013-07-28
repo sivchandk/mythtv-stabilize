@@ -17,6 +17,7 @@
 #include "mythuiexp.h"
 
 typedef QMap<QString,QString> DMAP;
+typedef unsigned int    VNMask;
 
 class MUI_PUBLIC MythNotification : public MythEvent
 {
@@ -26,11 +27,12 @@ public:
     static Type Update;
     static Type Info;
     static Type Error;
+    static Type Warning;
+    static Type Check;
 
     MythNotification(Type t, void *parent = NULL)
         : MythEvent(t), m_id(-1), m_parent(parent), m_fullScreen(false),
         m_duration(0), m_visibility(kAll), m_priority(kDefault)
-
     {
     }
 
@@ -43,6 +45,19 @@ public:
     MythNotification(const QString &title, const QString &author,
                      const QString &details = QString())
         : MythEvent(New), m_id(-1), m_parent(NULL), m_fullScreen(false),
+        m_description(title), m_duration(0), m_visibility(kAll),
+        m_priority(kDefault)
+    {
+        DMAP map;
+        map["minm"] = title;
+        map["asar"] = author;
+        map["asal"] = details;
+        m_metadata = map;
+    }
+
+    MythNotification(Type t, const QString &title, const QString &author,
+                     const QString &details = QString())
+        : MythEvent(t), m_id(-1), m_parent(NULL), m_fullScreen(false),
         m_description(title), m_duration(0), m_visibility(kAll),
         m_priority(kDefault)
     {
@@ -88,12 +103,12 @@ public:
     enum Visibility {
         kNone       = 0,
         kAll        = ~0,
-        kPlayback   = (1 << 1),
-        kSettings   = (1 << 2),
-        kWizard     = (1 << 3),
-        kVideos     = (1 << 4),
-        kMusic      = (1 << 5),
-        kRecordings = (1 << 6),
+        kPlayback   = (1 << 0),
+        kSettings   = (1 << 1),
+        kWizard     = (1 << 2),
+        kVideos     = (1 << 3),
+        kMusic      = (1 << 4),
+        kRecordings = (1 << 5),
     };
 
     // Setter
@@ -108,7 +123,7 @@ public:
     /**
      * contains the parent address. Required if id is set
      * Id provided must match the parent address as provided during the
-     * MythUINotificationCenter registration, otherwise the id value will be
+     * MythNotificationCenter registration, otherwise the id value will be
      * ignored
      */
     void SetParent(void *parent)            { m_parent = parent; }
@@ -121,7 +136,7 @@ public:
     /**
      * contains a short description of the notification
      */
-    void SetDescription(const QString desc) { m_description = desc; }
+    void SetDescription(const QString &desc) { m_description = desc; }
     /**
      * metadata of the notification.
      * In DMAP format. DMAP can contains various information such as artist,
@@ -129,24 +144,42 @@ public:
      */
     void SetMetaData(const DMAP &data)      { m_metadata = data; }
     /**
-     * contains a duration during which the notification will be displayed.
-     * The duration is informative only as the MythUINotificationCenter will
+     * contains a duration during which the notification will be displayed for.
+     * The duration is informative only as the MythNotificationCenter will
      * determine automatically how long a notification can be displayed for
      * and will depend on priority, visibility and other factors
      */
     void SetDuration(int duration)          { m_duration = duration; };
-    void SetVisibility(Visibility n)        { m_visibility = n; }
-    void SetPriority(Priority n)            { m_priority = n; }
+    /**
+     * contains an alternative notification style.
+     * Should a style be defined, the Notification Center will attempt to load
+     * an alternative theme and fall back to the default one if unsuccessful
+     */
+    void SetStyle(const QString &style)     { m_style = style; }
+    /**
+     * define a bitmask of Visibility
+     */
+    void SetVisibility(VNMask n)            { m_visibility = n; }
+    /**
+     * For future use, not implemented at this stage
+     */
+    void SetPriority(Priority n)              { m_priority = n; }
+
+    /**
+     * return Type object from type name
+     */
+    static Type TypeFromString(const QString &type);
 
     // Getter
-    int         GetId(void)                 { return m_id; }
-    void       *GetParent(void)             { return m_parent; }
-    bool        GetFullScreen(void)         { return m_fullScreen; }
-    QString     GetDescription(void)        { return m_description; }
-    DMAP        GetMetaData(void)           { return m_metadata; }
-    int         GetDuration(void)           { return m_duration; };
-    Visibility  GetVisibility(void)         { return m_visibility; }
-    Priority    GetPriority(void)           { return m_priority; }
+    int         GetId(void) const           { return m_id; }
+    void       *GetParent(void) const       { return m_parent; }
+    bool        GetFullScreen(void) const   { return m_fullScreen; }
+    QString     GetDescription(void) const  { return m_description; }
+    DMAP        GetMetaData(void) const     { return m_metadata; }
+    int         GetDuration(void) const     { return m_duration; };
+    QString     GetStyle(void) const        { return m_style; }
+    VNMask      GetVisibility(void) const   { return m_visibility; }
+    Priority    GetPriority(void) const     { return m_priority; }
 
 protected:
     MythNotification(const MythNotification &o)
@@ -158,8 +191,6 @@ protected:
     {
     }
 
-    MythNotification &operator=(const MythNotification&);
-
 protected:
     int         m_id;
     void       *m_parent;
@@ -167,7 +198,8 @@ protected:
     QString     m_description;
     int         m_duration;
     DMAP        m_metadata;
-    Visibility  m_visibility;
+    QString     m_style;
+    VNMask      m_visibility;
     Priority    m_priority;
 };
 
@@ -207,16 +239,14 @@ public:
     void SetImagePath(const QString &image) { m_imagePath = image; }
 
     //Getter
-    QImage GetImage(void)                   { return m_image; }
-    QString GetImagePath(void)              { return m_imagePath; }
+    QImage GetImage(void) const             { return m_image; }
+    QString GetImagePath(void) const        { return m_imagePath; }
 
 protected:
     MythImageNotification(const MythImageNotification &o)
         : MythNotification(o), m_image(o.m_image), m_imagePath(o.m_imagePath)
     {
     }
-
-    MythImageNotification &operator=(const MythImageNotification&);
 
 protected:
     QImage      m_image;
@@ -228,6 +258,13 @@ class MUI_PUBLIC MythPlaybackNotification : public virtual MythNotification
 public:
     MythPlaybackNotification(Type t, float progress, const QString &progressText)
         : MythNotification(t), m_progress(progress), m_progressText(progressText)
+    {
+    }
+
+    MythPlaybackNotification(Type t, float progress, const QString &progressText,
+                             const DMAP &metadata)
+        : MythNotification(t, metadata),
+        m_progress(progress), m_progressText(progressText)
     {
     }
 
@@ -243,7 +280,7 @@ public:
     // Setter
     /**
      * current playback position to be displayed with the notification.
-     * Value to be between 0 <= x <= 1. 
+     * Value to be between 0 <= x <= 1.
      * Note: x < 0 means no progress bar to be displayed.
      */
     void SetProgress(float progress)        { m_progress = progress; }
@@ -253,8 +290,8 @@ public:
     void SetProgressText(const QString &text) { m_progressText = text; }
 
     //Getter
-    float GetProgress(void)                 { return m_progress; }
-    QString GetProgressText(void)           { return m_progressText; }
+    float GetProgress(void) const           { return m_progress; }
+    QString GetProgressText(void) const     { return m_progressText; }
 
     // utility methods
     static QString stringFromSeconds(int time);
@@ -266,8 +303,6 @@ protected:
     {
     }
 
-    MythPlaybackNotification &operator=(const MythPlaybackNotification&);
-
 protected:
     float       m_progress;
     QString     m_progressText;
@@ -277,6 +312,13 @@ class MUI_PUBLIC MythMediaNotification : public MythImageNotification,
                                          public MythPlaybackNotification
 {
 public:
+    MythMediaNotification(Type t, const QImage &image, const DMAP &metadata,
+                          float progress, const QString &durationText)
+        : MythNotification(t, metadata), MythImageNotification(t, image),
+        MythPlaybackNotification(t, progress, durationText)
+    {
+    }
+
     MythMediaNotification(Type t, const QImage &image, const DMAP &metadata,
                           int duration, int position)
         : MythNotification(t, metadata), MythImageNotification(t, image),
@@ -305,8 +347,36 @@ protected:
         : MythNotification(o), MythImageNotification(o), MythPlaybackNotification(o)
     {
     }
+};
 
-    MythMediaNotification &operator=(const MythMediaNotification&);
+class MUI_PUBLIC MythErrorNotification : public MythNotification
+{
+public:
+    MythErrorNotification(const QString &title, const QString &author,
+                          const QString &details = QString())
+        : MythNotification(Error, title, author, details)
+    {
+        SetDuration(10);
+    }
+};
+
+class MUI_PUBLIC MythWarningNotification : public MythNotification
+{
+public:
+    MythWarningNotification(const QString &title, const QString &author,
+                            const QString &details = QString())
+    : MythNotification(Warning, title, author, details)
+    {
+        SetDuration(10);
+    }
+};
+
+class MUI_PUBLIC MythCheckNotification : public MythNotification
+{
+public:
+    MythCheckNotification(const QString &title, const QString &author,
+                          const QString &details = QString())
+    : MythNotification(Check, title, author, details) { }
 };
 
 #endif /* defined(__MythTV__mythnotification__) */

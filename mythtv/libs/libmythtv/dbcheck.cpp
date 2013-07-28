@@ -2362,7 +2362,7 @@ NULL
 "INSERT INTO `housekeeping` (`tag`, `hostname`, `lastrun`)"
 "   SELECT SUBSTRING_INDEX(`tag`, '-', 1) AS `tag`,"
 "          IF(LOCATE('-', `tag`) > 0,"
-"             SUBSTRING_INDEX(`tag`, '-', -1),"
+"             SUBSTRING(`tag` FROM LENGTH(SUBSTRING_INDEX(`tag`, '-', 1)) +2),"
 "             NULL) AS `hostname`,"
 "          `lastrun`"
 "     FROM `oldhousekeeping`;",
@@ -2434,6 +2434,19 @@ NULL
             NULL
         };
         if (!performActualUpdate(&updates[0], "1314", dbver))
+            return false;
+    }
+
+    if (dbver == "1314")
+    {
+        // Migrate users from tmdb.py to tmdb3.py
+        // The web interface tmdb.py uses will be shut down 2013-09-15
+        const char *updates[] = {
+            "UPDATE settings SET data=REPLACE(data, 'tmdb.py', 'tmdb3.py') "
+             "WHERE value='MovieGrabber'",
+            NULL
+        };
+        if (!performActualUpdate(&updates[0], "1315", dbver))
             return false;
     }
 
