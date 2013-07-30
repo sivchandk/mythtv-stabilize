@@ -49,6 +49,10 @@ MythSocket::MythSocket(int socket, MythSocketCBs *cb)
       m_isValidated(false),  m_isAnnounced(false)
 {
     LOG(VB_SOCKET, LOG_DEBUG, LOC + "new socket");
+
+    // Don't let SIGPIPE kill us
+    signal(SIGPIPE, SIG_IGN);
+
     if (socket > -1)
     {
         setSocket(socket);
@@ -693,7 +697,7 @@ bool MythSocket::SendReceiveStringList(
     {
         // not for us
         // TODO: sockets should be one directional
-        // a socket that would use this call should never 
+        // a socket that would use this call should never
         // receive events
         if (strlist.size() >= 2)
         {
@@ -756,7 +760,7 @@ void MythSocket::Unlock(bool wake_readyread) const
 bool MythSocket::connect(const QString &host, quint16 port)
 {
     QHostAddress hadr;
-    
+
     if (!hadr.setAddress(host))
     {
         QHostInfo info = QHostInfo::fromName(host);
@@ -806,7 +810,7 @@ bool MythSocket::connect(const QHostAddress &hadr, quint16 port)
                 QHostAddress::SpecialAddress loopback = QHostAddress::LocalHost;
                 if (addr.protocol() == QAbstractSocket::IPv6Protocol)
                     loopback = QHostAddress::LocalHostIPv6;
-                
+
                 s_loopback_cache[addr.toString()] = loopback;
                 addr = QHostAddress(loopback);
                 usingLoopback = true;
