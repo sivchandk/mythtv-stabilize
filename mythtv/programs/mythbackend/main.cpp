@@ -98,6 +98,10 @@ int main(int argc, char **argv)
     signal(SIGINT, qt_exit);
     signal(SIGTERM, qt_exit);
 
+    // Don't let SIGPIPE kill us
+    if (signal(SIGPIPE, SIG_IGN) == SIG_ERR)
+        LOG(VB_GENERAL, LOG_WARNING, LOC + "Unable to ignore SIGPIPE");
+
     gContext = new MythContext(MYTH_BINARY_VERSION);
     if (!gContext->Init(false))
     {
