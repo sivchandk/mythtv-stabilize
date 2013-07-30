@@ -391,7 +391,11 @@ void AvFormatDecoder::CloseContext()
         ic->iformat->flags |= AVFMT_NOFILE;
 
         av_free(ic->pb->buffer);
+        ic->pb->buffer = NULL;
+
         av_free(ic->pb);
+        ic->pb = NULL;
+
         av_close_input_file(ic);
         ic = NULL;
         fmt->flags &= ~AVFMT_NOFILE;
