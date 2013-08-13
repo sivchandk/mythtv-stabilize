@@ -931,8 +931,8 @@ class ChannelTimeout : public SpinBoxSetting, public CaptureCardDBStorage
         setValue(value);
         setHelpText(QObject::tr(
                         "Maximum time (in milliseconds) MythTV waits for "
-                        "a channel lock when scanning for channels during setup, or for "
-                        "issuing a warning in Live TV mode."));
+                        "a channel lock.  For recordings, this value will "
+                        "be doubled."));
     };
 };
 
@@ -1552,7 +1552,7 @@ class IPTVConfigurationGroup : public VerticalConfigurationGroup
     {
         setUseLabel(false);
         addChild(new IPTVHost(parent));
-        addChild(new ChannelTimeout(parent, 3000, 1750));
+        addChild(new ChannelTimeout(parent, 30000, 1750));
         addChild(new EmptyAudioDevice(parent));
         addChild(new EmptyVBIDevice(parent));
     };
@@ -2225,7 +2225,7 @@ HDPVRConfigurationGroup::HDPVRConfigurationGroup(CaptureCard &a_parent) :
     addChild(new EmptyVBIDevice(parent));
     addChild(cardinfo);
     addChild(audioinput);
-    addChild(new ChannelTimeout(parent, 12000, 2000));
+    addChild(new ChannelTimeout(parent, 15000, 2000));
 
     connect(device, SIGNAL(valueChanged(const QString&)),
             this,   SLOT(  probeCard(   const QString&)));
