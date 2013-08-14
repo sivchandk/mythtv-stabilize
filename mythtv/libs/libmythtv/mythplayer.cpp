@@ -2957,6 +2957,7 @@ void MythPlayer::EventLoop(void)
             videoOutput && videoOutput->ValidVideoFrames() < 1;
         bool audioDrained =
             !audio.GetAudioOutput() ||
+            audio.IsPaused() ||
             audio.GetAudioOutput()->GetAudioBufferedTime() < 100;
         if (eof != kEofStateDelayed || (videoDrained && audioDrained))
         {
@@ -4917,7 +4918,8 @@ uint64_t MythPlayer::TranslatePositionFrameToMs(uint64_t position,
                                                 bool use_cutlist) const
 {
     float frameRate = GetFrameRate();
-    if (position == (uint64_t)-1)
+    if (position == (uint64_t)-1 &&
+        player_ctx->recorder && player_ctx->recorder->IsValidRecorder())
     {
         float recorderFrameRate = player_ctx->recorder->GetFrameRate();
         if (recorderFrameRate > 0)
