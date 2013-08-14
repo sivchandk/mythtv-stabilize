@@ -1,3 +1,73 @@
+mythtv (0.26-20130814-a84193a) stable; urgency=low
+
+  * Upstream changes since last package a0e20f0
+  * [a84193a] Re-fix scheduler part of "fall back" hour.
+  * [0e4ab87] Fix a double-free in ffmpeg decoding/encoding
+  * [3c148a7] Move signal monitor timeout into TVRec.
+  * [74ad95e] Merge pull request #11 from rkrishna1/fixes/0.26
+  * [f3f1fe2] Prevent spurious packets from corrupting the time stamp
+    informaion.
+  * [1e090c4] Merge pull request #8 from MythTV/fixes/0.26
+  * [c9accc2] Clear additional field when resetting DVD VM to ensure
+    playback doesn't abort with "Error reading NAV packet".
+  * [8916cd7] Fix Dvr::GetFilteredRecordedList() to return entries when
+    no count is
+  * [7642c5b] Add support for Miro v6.x. Fix watch video detection.
+  * [10e87f5] dtvrecorder: Flush the payload buffer whenever a new
+    payload starts.
+  * [f5c2875] H264Parser: Fix decoding of SPS
+  * [355e31d] MythWeather Environment Canada Parser update
+  * [fe3e4d0] DVD PTS discontinuities are now handled by 'flattening'
+    the timecodes of incoming packets. This prevents AVFormatDecoder
+    getting stuck buffering video frames when the timecodes jump
+    backwards.
+  * [5b306f5] Allow the use of cutlists with --video and --mpeg2
+  * [cf2e05a] Fixes playback of some streaming media.
+  * [7f71e02] HTTPLiveStream::GetLiveStreamInfo fixups.
+  * [da9ec38] Don't skip over recordings that are still tuning.
+  * [de81f2a] Mostly revert 788bc510.  It's not needed and created a new
+    bug.
+  * [04a9cd0] Don't run zeromq/configure on external/Makefile.
+  * [1f88835] Configure zeromq at configure time, not at build time -
+    attempt #2
+  * [7f966fb] Configure zeromq at configure time, not at build time
+  * [46182f4] Add External recorder
+  * [6942904] Updating the debian/changelog
+  * [15df319] MythSystem: Fix copy/paste in [8532584f]
+  * [bfd2408] Fix fence post error in 516719a
+  * [1ada4df] Pull in fix for out-of-bounds array write in
+    xine_demux_sputext.cpp from upstream. Coverity 746831
+  * [7e4295f] Potentially fix segfaults on frontend startup
+  * [5311b3f] MythMusic: fix compilation after last cherry-pick
+  * [edc7d87] MythMusic: remove any username/password when displaying
+    any radio stream URLs
+  * [2032a75] MythMusic: append "rn" to the Authorization line in the
+    shoutcast header
+  * [7150d64] Fix bug in mythtranscodes clean-cutting mechanism
+  * [d1a4831] Fix possible segfault when exiting a screen when using the
+    Qt painter
+  * [27fa52d] Rework RAOP audio sync
+  * [cada8b8] If AV codec context doesn't match the context for which it
+    was first opened, close/re-open it.
+  * [1a9aadf] Ignore network error on an interface that no longer
+    exists.
+  * [6d1ee08] Rewrite of StreamingRingBuffer::safe_read
+  * [f0d9234] Apply patch from XBMC by Joakim Plate: "changed: allow 4
+    second skew between streams in mov before attempting to seek"
+  * [fbcf22f] changed: allow 4 second skew between streams in mov before
+    attempting to seek
+  * [d942db6] Properly handle multi-part http request in AirPlay video
+  * [22428f1] Fix crash.
+  * [ac5525d] mythnews: fix debugging in NewsSite::parseRSS()
+  * [a1c79f7] Updated MythFrontend English GB translation
+  * [b02d25a] mythmusic: Save playlists to DB when changed not at
+    frontend exit
+  * [da89ee5] add NULL check missed in [a9b90652]
+  * [61174b2] update mythtranscode to work with ac3 with newer ffmpeg
+  * [2ed4e29] MythNews: improve media:content parsing in rss feeds
+
+ -- Digital Nirvana <sysadmin@digital-nirvana.com>  Wed, 14 Aug 2013 19:56:07 +0000
+
 mythtv (0.26-20130612-a0e20f0) stable; urgency=low
 
   * Upstream changes since last package ace98ad

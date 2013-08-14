@@ -9,7 +9,7 @@ export DEBFULLNAME="Digital Nirvana"
 
 TODAY=$(date +%Y%m%d)
 GIT_LAST_HASH=$(dpkg-parsechangelog | sed -e '/Version/!d' | awk -F'-' '{print $3}')
-GIT_CURRENT_HASH=$(git log --oneline -1 | awk '{print $1}')
+GIT_CURRENT_HASH=$(git log --pretty=tformat:"%h" -1 )
 GIT_BRANCH=$(git branch | grep "*" | sed "s/* //" | awk '{printf $0}' | cut -d '/' -f2 | sed -e "s/^[ \t]*//" | sed -e "s/[ \t]*$//")
 
 # Update changelog
@@ -42,7 +42,7 @@ then
 	if [ $(git branch -r --contains ${GIT_CURRENT_HASH}) == ${GIT_LAST_BRANCH} ] 
 	then
 		dch -v "${GIT_BRANCH}-${TODAY}-${GIT_CURRENT_HASH}" "Upstream changes since last package ${GIT_LAST_HASH}"
-		git log --oneline $GIT_LAST_HASH...$GIT_CURRENT_HASH | sed 's,^,[,; s, ,] ,; s,Version,version,' > .gitout
+		git log --pretty=tformat:"%h %s" $GIT_LAST_HASH...$GIT_CURRENT_HASH | sed 's,^,[,; s, ,] ,; s,Version,version,' > .gitout
 		while read line
 		do
 			dch -a "$line"
