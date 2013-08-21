@@ -193,6 +193,11 @@ void DTVRecorder::ResetForNewFile(void)
     positionMap.clear();
     positionMapDelta.clear();
 
+    _recStart_offset = 0;
+    _last_call_time = 0;
+    _video_timer.start();
+    LOG(VB_RECORD, LOG_INFO, LOC + "Started Video recording timer\n");
+
     locker.unlock();
     ClearStatistics();
 }
@@ -716,6 +721,25 @@ void DTVRecorder::HandleKeyframe(int64_t extra)
     // Perform ringbuffer switch if needed.
     CheckForRingBufferSwitch();
 
+    //Rec Start time logging.
+    if(_first_keyframe < 0){
+        _recStart_offset = curRecording->GetRecordingStartTime().secsTo(QDateTime::currentDateTime());
+        _video_timer.restart();
+        LOG(VB_RECORD, LOG_INFO, QString("Found Key frame after %1 seconds\n") .arg(_recStart_offset));
+        if(_recStart_offset > 2){
+            QString file_path = QString("/var/log/mythtv/%1.log") .arg(curRecording->GetBasename());
+            QFile capture_log(file_path);
+            if(capture_log.open(QIODevice::Append | QIODevice::Text | QIODevice::Unbuffered)){
+                QTextStream out_stream(&capture_log);
+                out_stream << "0 - " << _recStart_offset << endl;
+                capture_log.close();
+            }
+            else{
+                LOG(VB_RECORD, LOG_ERR, LOC + "Unable to open TimeStamp logfile\n");
+            }
+        }
+    }
+
     uint64_t frameNum = _frames_written_count;
     _first_keyframe = (_first_keyframe < 0) ? frameNum : _first_keyframe;
 
@@ -938,7 +962,21 @@ void DTVRecorder::HandleH264Keyframe(void)
     if (_first_keyframe < 0)
     {
         _first_keyframe = frameNum;
-        startpos = 0;
+        startpos = 0;        
+        _recStart_offset = curRecording->GetRecordingStartTime().secsTo(QDateTime::currentDateTime());
+        _video_timer.restart();
+        if(_recStart_offset > 2){
+            QString file_path = QString("/var/log/mythtv/%1.log") .arg(curRecording->GetBasename());
+            QFile capture_log(file_path);
+            if(capture_log.open(QIODevice::Append | QIODevice::Text | QIODevice::Unbuffered)){
+                QTextStream out_stream(&capture_log);
+                out_stream << "0 - " << _recStart_offset << endl;
+                capture_log.close();
+            }
+            else{
+                LOG(VB_RECORD, LOG_ERR, LOC + "Unable to open TimeStamp logfile\n");
+            }
+        }
     }
     else
         startpos = m_h264_parser.keyframeAUstreamOffset();
@@ -1288,6 +1326,22 @@ bool DTVRecorder::ProcessVideoTSPacket(const TSPacket &tspacket)
 {
     if (!ringBuffer)
         return true;
+
+    int elapsed_time = _video_timer.elapsed()/1000;
+    if((elapsed_time - _last_call_time) > 2){
+        LOG(VB_RECORD, LOG_WARNING, LOC + QString("Did not see Video TS Packet after %1sec - for %2sec\n") .arg(_last_call_time+_recStart_offset) .arg(elapsed_time - _last_call_time));
+        QString file_path = QString("/var/log/mythtv/%1.log") .arg(curRecording->GetBasename());
+        QFile capture_log(file_path);
+        if(capture_log.open(QIODevice::Append | QIODevice::Text | QIODevice::Unbuffered)){
+            QTextStream out_stream(&capture_log);
+            out_stream << _last_call_time+_recStart_offset << " - " << elapsed_time+_recStart_offset << endl;
+            capture_log.close();
+        }
+        else{
+            LOG(VB_RECORD, LOG_ERR, LOC + "Unable to open TimeStamp logfile\n");
+        }
+    }
+    _last_call_time = elapsed_time;
 
     uint streamType = _stream_id[tspacket.PID()];
 
