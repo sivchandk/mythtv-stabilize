@@ -124,6 +124,12 @@ class DTVRecorder :
 
     QString _recording_type;
 
+    //Log signal failues
+
+    QTime 	  _video_timer;
+    int       _recStart_offset;
+    int       _last_call_time;
+
     // used for scanning pes headers for keyframes
     QTime     _audio_timer;
     uint32_t  _start_code;
