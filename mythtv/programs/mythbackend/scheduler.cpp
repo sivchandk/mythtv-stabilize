@@ -3265,6 +3265,8 @@ void Scheduler::UpdateManuals(uint recordid)
     while (query.next())
         chanidlist.push_back(query.value(0).toUInt());
 
+    int adj_sec;
+    int hour = 60*60;
     int progcount;
     int skipdays;
     bool weekday;
@@ -3308,6 +3310,11 @@ void Scheduler::UpdateManuals(uint recordid)
 
     while (progcount--)
     {
+        // The day of the time change can result in an extra hour
+        QDateTime localdt = lstartdt.addDays(daysoff);
+        adj_sec = localdt.time().hour() ==
+                  localdt.addSecs(hour).time().hour() ? hour : 0;
+
         for (int i = 0; i < (int)chanidlist.size(); i++)
         {
             if (weekday && startdt.toLocalTime().date().dayOfWeek() >= 6)
@@ -3319,7 +3326,7 @@ void Scheduler::UpdateManuals(uint recordid)
                           " :SUBTITLE, :RECORDID, 1)");
             query.bindValue(":CHANID", chanidlist[i]);
             query.bindValue(":STARTTIME", startdt);
-            query.bindValue(":ENDTIME", startdt.addSecs(duration));
+            query.bindValue(":ENDTIME", startdt.addSecs(duration + adj_sec));
             query.bindValue(":TITLE", title);
             query.bindValue(":SUBTITLE", startdt.toLocalTime());
             query.bindValue(":RECORDID", recordid);
