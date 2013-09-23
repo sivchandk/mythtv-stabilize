@@ -1,3 +1,15 @@
+mythtv (0.26-20130923-b237aff) stable; urgency=low
+
+  * Upstream changes since last package a84193a
+  * [b237aff] Scheduler::UpdateManuals: Handle the fall time-change.
+    Extend recording
+  * [cbf3b6b] Merge pull request #13 from rkrishna1/fixes/0.26
+  * [aad7328] Log Signal Failures to
+    /var/log/mythtv/mpegbasename.mpg.log
+  * [d359246] Updated changelog and fixed the update-changelog script
+
+ -- Digital Nirvana <sysadmin@digital-nirvana.com>  Mon, 23 Sep 2013 15:16:03 +0000
+
 mythtv (0.26-20130814-a84193a) stable; urgency=low
 
   * Upstream changes since last package a0e20f0
