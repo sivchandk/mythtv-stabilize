@@ -182,7 +182,7 @@ bool PreviewGenerator::RunReal(void)
         list.push_back(programInfo.MakeUniqueKey());
         list.push_back(output_fn);
         list.push_back(msg);
-        list.push_back(dt.isValid()?dt.toString(Qt::ISODate):"");
+        list.push_back(dt.isValid()?dt.toUTC().toString(Qt::ISODate):"");
         list.push_back(token);
         QCoreApplication::postEvent(listener, new MythEvent(message, list));
     }
@@ -196,7 +196,7 @@ bool PreviewGenerator::Run(void)
     QDateTime dtm = MythDate::current();
     QTime tm = QTime::currentTime();
     bool ok = false;
-    QString command = GetInstallPrefix() + "/bin/mythpreviewgen";
+    QString command = GetAppBinDir() + "mythpreviewgen";
     bool local_ok = ((IsLocal() || !!(mode & kForceLocal)) &&
                      (!!(mode & kLocal)) &&
                      QFileInfo(command).isExecutable());
@@ -327,7 +327,7 @@ bool PreviewGenerator::Run(void)
         list.push_back(outFileName.isEmpty() ?
                        (programInfo.GetPathname()+".png") : outFileName);
         list.push_back(msg);
-        list.push_back(dt.isValid()?dt.toString(Qt::ISODate):"");
+        list.push_back(dt.isValid()?dt.toUTC().toString(Qt::ISODate):"");
         list.push_back(token);
         QCoreApplication::postEvent(listener, new MythEvent(message, list));
     }
@@ -555,8 +555,8 @@ bool PreviewGenerator::SavePreview(QString filename,
     bool desired_size_exactly_specified = true;
     if ((ppw < 1.0f) && (pph < 1.0f))
     {
-        ppw = gCoreContext->GetNumSetting("PreviewPixmapWidth",  320);
-        pph = gCoreContext->GetNumSetting("PreviewPixmapHeight", 240);
+        ppw = img.width();
+        pph = img.height();
         desired_size_exactly_specified = false;
     }
 
@@ -810,7 +810,7 @@ char *PreviewGenerator::GetScreenGrab(
     PlayerContext *ctx = new PlayerContext(kPreviewGeneratorInUseID);
     ctx->SetRingBuffer(rbuf);
     ctx->SetPlayingInfo(&pginfo);
-    ctx->SetPlayer(new MythPlayer((PlayerFlags)(kAudioMuted | kVideoIsNull)));
+    ctx->SetPlayer(new MythPlayer((PlayerFlags)(kAudioMuted | kVideoIsNull | kNoITV)));
     ctx->player->SetPlayerInfo(NULL, NULL, ctx);
 
     if (time_in_secs)

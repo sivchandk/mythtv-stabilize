@@ -20,7 +20,7 @@
 #include <QDateTime>
 
 #include "mythconfig.h"
-#if !( CONFIG_DARWIN || CONFIG_CYGWIN || defined(__FreeBSD__) || defined(USING_MINGW))
+#if !( CONFIG_DARWIN || CONFIG_CYGWIN || defined(__FreeBSD__) || defined(_WIN32))
 #define USE_SETSOCKOPT
 #include <sys/sendfile.h>
 #endif
@@ -29,8 +29,10 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <cerrno>
+// FOR DEBUGGING
+#include <iostream>
 
-#ifndef USING_MINGW
+#ifndef _WIN32
 #include <netinet/tcp.h>
 #endif
 
@@ -281,6 +283,12 @@ long HTTPRequest::SendResponse( void )
     int nContentLen = m_response.buffer().length();
 
     QBuffer *pBuffer = &m_response;
+
+    // ----------------------------------------------------------------------
+    // DEBUGGING
+    if (getenv("HTTPREQUEST_DEBUG"))
+        cout << m_response.data().constData() << endl;
+    // ----------------------------------------------------------------------
 
     // ----------------------------------------------------------------------
     // Should we try to return data gzip'd?

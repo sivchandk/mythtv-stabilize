@@ -63,8 +63,9 @@ The schema contains the following tables:
 <tr><td>people                     <td>pk(person) uk(name)
 <tr><td>pidcache                   <td>
 <tr><td>profilegroups              <td>pk(id) uk(name,hostname)
-<tr><td>program                    <td>k(endtime) k(title) k(title_pronounce) k(seriesid)
-                                       k(programid) k(chanid,starttime,endtime)
+<tr><td>program                    <td>k(endtime) k(title_pronounce) k(seriesid)
+                                       k(programid,starttime) k(chanid,starttime,endtime)
+                                       k(title,subtitle,starttime)
 <tr><td>programgenres              <td>pk(chanid,starttime,relevance)
 <tr><td>programrating              <td>uk(chanid,starttime,system,rating)
                                        k(starttime,system)
@@ -2449,6 +2450,78 @@ NULL
         if (!performActualUpdate(&updates[0], "1315", dbver))
             return false;
     }
+
+    if (dbver == "1315")
+    {
+        const char *updates[] = {
+"ALTER TABLE program ADD INDEX title_subtitle_start (title, subtitle, starttime);",
+"ALTER TABLE program DROP INDEX title;",
+NULL
+};
+        if (!performActualUpdate(updates, "1316", dbver))
+            return false;
+    }
+
+    if (dbver == "1316")
+    {
+        const char *updates[] = {
+// adjust programid type in various tables to match the program table
+"ALTER TABLE oldrecorded CHANGE COLUMN programid programid varchar(64);",
+"ALTER TABLE oldrecorded CHANGE COLUMN seriesid seriesid varchar(64);",
+"ALTER TABLE record CHANGE COLUMN programid programid varchar(64);",
+"ALTER TABLE record CHANGE COLUMN seriesid seriesid varchar(64);",
+"ALTER TABLE recorded CHANGE COLUMN programid programid varchar(64);",
+"ALTER TABLE recorded CHANGE COLUMN seriesid seriesid varchar(64);",
+"ALTER TABLE recordedprogram CHANGE COLUMN programid programid varchar(64);",
+"ALTER TABLE recordedprogram CHANGE COLUMN seriesid seriesid varchar(64);",
+NULL
+};
+        if (!performActualUpdate(updates, "1317", dbver))
+            return false;
+    }
+
+    if (dbver == "1317")
+    {
+        const char *updates[] = {
+            "CREATE TABLE IF NOT EXISTS gallery_directories ("
+            "  dir_id       INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,"
+            "  filename     VARCHAR(255) NOT NULL,"
+            "  name         VARCHAR(255) NOT NULL,"
+            "  path         VARCHAR(255) NOT NULL,"
+            "  parent_id    INT(11) NOT NULL,"
+            "  dir_count    INT(11) NOT NULL DEFAULT '0',"
+            "  file_count   INT(11) NOT NULL DEFAULT '0',"
+            "  hidden       TINYINT(1) NOT NULL DEFAULT '0'"
+            ") ENGINE=MyISAM DEFAULT CHARSET=utf8;",
+            "CREATE TABLE IF NOT EXISTS gallery_files ("
+            "  file_id      INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,"
+            "  filename     VARCHAR(255) NOT NULL,"
+            "  name         VARCHAR(255) NOT NULL,"
+            "  path         VARCHAR(255) NOT NULL,"
+            "  dir_id       INT(11) NOT NULL DEFAULT '0',"
+            "  type         INT(11) NOT NULL DEFAULT '0',"
+            "  modtime      INT(11) NOT NULL DEFAULT '0',"
+            "  size         INT(11) NOT NULL DEFAULT '0',"
+            "  extension    VARCHAR(255) NOT NULL,"
+            "  angle        INT(11) NOT NULL DEFAULT '0',"
+            "  date         INT(11) NOT NULL DEFAULT '0',"
+            "  zoom         INT(11) NOT NULL DEFAULT '0',"
+            "  hidden       TINYINT(1) NOT NULL DEFAULT '0',"
+            "  orientation  INT(11) NOT NULL DEFAULT '0'"
+            ") ENGINE=MyISAM DEFAULT CHARSET=utf8;",
+            "INSERT INTO settings VALUES ('ImageStorageGroupName', 'Images', NULL);",
+            "INSERT INTO settings VALUES ('ImageSortOrder', 0, NULL);",
+            "INSERT INTO settings VALUES ('ImageShowHiddenFiles', 0, NULL);",
+            "INSERT INTO settings VALUES ('ImageSlideShowTime', 3500, NULL);",
+            "INSERT INTO settings VALUES ('ImageTransitionType', 1, NULL);",
+            "INSERT INTO settings VALUES ('ImageTransitionTime', 1000, NULL);",
+            NULL
+        };
+
+        if (!performActualUpdate(&updates[0], "1318", dbver))
+            return false;
+    }
+    
 
     return true;
 }

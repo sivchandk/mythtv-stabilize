@@ -1,6 +1,7 @@
 // Qt headers
 #include <QLocale>
 #include <QCoreApplication>
+#include <QMetaType>
 
 #include "rssparse.h"
 #include "programinfo.h"
@@ -10,8 +11,12 @@
 #include "mythlocale.h"
 #include "mythmiscutil.h"
 
+static int x0 = qRegisterMetaType< RefCountHandler<MetadataLookup> >();
+
 // null constructor
 MetadataLookup::MetadataLookup(void) :
+    ReferenceCounter("MetadataLookup"),
+
     m_type(kMetadataVideo),
     m_subtype(kUnknownVideo),
     m_data(),
@@ -145,6 +150,7 @@ MetadataLookup::MetadataLookup(
     const QString &trailerURL,
     const ArtworkMap artwork,
     DownloadMap downloads) :
+    ReferenceCounter("MetadataLookup"),
 
     m_type(type),
     m_subtype(subtype),
@@ -254,6 +260,7 @@ MetadataLookup::MetadataLookup(
     const QDateTime lastupdated,
     const uint runtime,
     const uint runtimesecs) :
+    ReferenceCounter("MetadataLookup"),
 
     m_type(type),
     m_subtype(subtype),
@@ -335,6 +342,7 @@ MetadataLookup::MetadataLookup(
     const QString &trailerURL,
     const ArtworkMap artwork,
     DownloadMap downloads) :
+    ReferenceCounter("MetadataLookup"),
 
     m_type(type),
     m_subtype(subtype),
@@ -439,17 +447,31 @@ void MetadataLookup::toMap(InfoMap &metadataMap)
         m_releasedate, MythDate::kDateFull);
     metadataMap["lastupdated"] = MythDate::toString(m_lastupdated, MythDate::kDateFull);
 
+#if QT_VERSION < 0x050000
     metadataMap["runtime"] = QCoreApplication::translate("(Common)",
                                                          "%n minute(s)",
                                                          "",
                                                          QCoreApplication::UnicodeUTF8,
                                                          m_runtime);
 
+
     metadataMap["runtimesecs"] = QCoreApplication::translate("(Common)",
                                                              "%n second(s)",
                                                              "",
                                                              QCoreApplication::UnicodeUTF8,
                                                              m_runtimesecs);
+#else
+    metadataMap["runtime"] = QCoreApplication::translate("(Common)",
+                                                         "%n minute(s)",
+                                                         "",
+                                                         m_runtime);
+
+
+    metadataMap["runtimesecs"] = QCoreApplication::translate("(Common)",
+                                                             "%n second(s)",
+                                                             "",
+                                                             m_runtimesecs);
+#endif
     metadataMap["inetref"] = m_inetref;
     metadataMap["collectionref"] = m_collectionref;
     metadataMap["tmsref"] = m_tmsref;
@@ -524,7 +546,7 @@ QDomDocument CreateMetadataXML(ProgramInfo *pginfo)
     if (lookup)
         doc = CreateMetadataXML(lookup);
 
-    delete lookup;
+    lookup->DecrRef();
     lookup = NULL;
 
     return doc;
