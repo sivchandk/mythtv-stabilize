@@ -11,7 +11,7 @@ using namespace std;
 #include <fcntl.h>
 #include "mythconfig.h"
 
-#ifndef USING_MINGW
+#ifndef _WIN32
 #include <sys/ioctl.h>
 #endif
 
@@ -20,9 +20,9 @@ using namespace std;
 #  include <sys/vfs.h>
 #else // if !__linux__
 #  include <sys/param.h>
-#  ifndef USING_MINGW
+#  ifndef _WIN32
 #    include <sys/mount.h>
-#  endif // USING_MINGW
+#  endif // _WIN32
 #endif // !__linux__
 
 #include <QCoreApplication>
@@ -283,8 +283,8 @@ MainServer::MainServer(bool master, int port,
         SetExitCode(GENERIC_EXIT_SOCKET_ERROR, false);
         return;
     }
-    connect(mythserver, SIGNAL(NewConnection(int)),
-            this,       SLOT(NewConnection(int)));
+    connect(mythserver, SIGNAL(NewConnection(qt_socket_fd_t)),
+            this,       SLOT(NewConnection(qt_socket_fd_t)));
 
     gCoreContext->addListener(this);
 
@@ -417,7 +417,7 @@ void MainServer::autoexpireUpdate(void)
     AutoExpire::Update(false);
 }
 
-void MainServer::NewConnection(int socketDescriptor)
+void MainServer::NewConnection(qt_socket_fd_t socketDescriptor)
 {
     QWriteLocker locker(&sockListLock);
     controlSocketList.insert(new MythSocket(socketDescriptor, this));
@@ -425,16 +425,6 @@ void MainServer::NewConnection(int socketDescriptor)
 
 void MainServer::readyRead(MythSocket *sock)
 {
-    sockListLock.lockForRead();
-    PlaybackSock *testsock = GetPlaybackBySock(sock);
-    bool expecting_reply = testsock && testsock->isExpectingReply();
-    sockListLock.unlock();
-    if (expecting_reply)
-    {
-        LOG(VB_GENERAL, LOG_INFO, "readyRead ignoring, expecting reply");
-        return;
-    }
-
     threadPool.startReserved(
         new ProcessRequestRunnable(*this, sock),
         "ProcessRequest", PRT_TIMEOUT);
@@ -3160,7 +3150,7 @@ void MainServer::HandleQueryFileExists(QStringList &slist, PlaybackSock *pbs)
             retlist << QString::number(fileinfo.st_gid);
             retlist << QString::number(fileinfo.st_rdev);
             retlist << QString::number(fileinfo.st_size);
-#ifdef USING_MINGW
+#ifdef _WIN32
             retlist << "0"; // st_blksize
             retlist << "0"; // st_blocks
 #else
@@ -5778,6 +5768,10 @@ void MainServer::DeletePBS(PlaybackSock *sock)
 
 void MainServer::connectionClosed(MythSocket *socket)
 {
+    // we're in the middle of stopping, prevent deadlock
+    if (m_stopped)
+        return;
+
     sockListLock.lockForWrite();
 
     // make sure these are not actually deleted in the callback
@@ -6243,6 +6237,9 @@ void MainServer::reconnectTimeout(void)
         }
     }
 
+    // Calling SendReceiveStringList() with callbacks enabled is asking for
+    // trouble, our reply might be swallowed by readyRead
+    masterServerSock->SetReadyReadCallbackEnabled(false);
     if (!masterServerSock->SendReceiveStringList(strlist, 1) ||
         (strlist[0] == "ERROR"))
     {
@@ -6264,6 +6261,7 @@ void MainServer::reconnectTimeout(void)
         masterServerReconnect->start(kMasterServerReconnectTimeout);
         return;
     }
+    masterServerSock->SetReadyReadCallbackEnabled(true);
 
     masterServer = new PlaybackSock(this, masterServerSock, server,
                                     kPBSEvents_Normal);
@@ -6276,7 +6274,7 @@ void MainServer::reconnectTimeout(void)
 
 // returns true, if a client (slavebackends are not counted!)
 // is connected by checking the lists.
-bool MainServer::isClientConnected()
+bool MainServer::isClientConnected(bool onlyBlockingClients)
 {
     bool foundClient = false;
 
@@ -6287,10 +6285,16 @@ bool MainServer::isClientConnected()
     vector<PlaybackSock *>::iterator it = playbackList.begin();
     for (; !foundClient && (it != playbackList.end()); ++it)
     {
-        // we simply ignore slaveBackends!
-        // and clients that don't want to block shutdown
-        if (!(*it)->isSlaveBackend() && (*it)->getBlockShutdown())
-            foundClient = true;
+        // Ignore slave backends
+        if ((*it)->isSlaveBackend())
+            continue;
+
+        // If we are only interested in blocking clients then ignore
+        // non-blocking ones
+        if (onlyBlockingClients && !(*it)->getBlockShutdown())
+            continue;
+
+        foundClient = true;
     }
 
     sockListLock.unlock();
