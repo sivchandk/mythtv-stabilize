@@ -117,6 +117,7 @@ ProgramInfo::ProgramInfo(void) :
     episode(0),
     syndicatedepisode(),
     category(),
+    director(),
 
     recpriority(0),
 
@@ -199,6 +200,7 @@ ProgramInfo::ProgramInfo(const ProgramInfo &other) :
     episode(other.episode),
     syndicatedepisode(other.syndicatedepisode),
     category(other.category),
+    director(other.director),
 
     recpriority(other.recpriority),
 
@@ -345,6 +347,7 @@ ProgramInfo::ProgramInfo(
     episode(_episode),
     syndicatedepisode(_syndicatedepisode),
     category(_category),
+    director(),
 
     recpriority(_recpriority),
 
@@ -461,6 +464,7 @@ ProgramInfo::ProgramInfo(
     season(_season),
     episode(_episode),
     category(_category),
+    director(),
 
     recpriority(0),
 
@@ -516,8 +520,8 @@ ProgramInfo::ProgramInfo(
     recstatus(_recstatus),
     oldrecstatus(rsUnknown),
     rectype(_rectype),
-    dupin(kDupsInAll),
-    dupmethod(kDupCheckSubDesc),
+    dupin(0),
+    dupmethod(0),
 
     // everything below this line is not serialized
     availableStatus(asAvailable),
@@ -582,6 +586,7 @@ ProgramInfo::ProgramInfo(
     episode(0),
     syndicatedepisode(_syndicatedepisode),
     category(_category),
+    director(),
 
     recpriority(0),
 
@@ -734,6 +739,7 @@ ProgramInfo::ProgramInfo(
     season(_season),
     episode(_episode),
     category(_category),
+    director(),
 
     recpriority(0),
 
@@ -858,6 +864,15 @@ ProgramInfo::ProgramInfo(const QString &_pathname,
 {
     clear();
 
+    title = _title;
+    subtitle = _subtitle;
+    description = _plot;
+    season = _season;
+    episode = _episode;
+    director = _director;
+    programid = _programid;
+    inetref = _inetref;
+
     QDateTime cur = MythDate::current();
     recstartts = cur.addSecs(((int)_length_in_minutes + 1) * -60);
     recendts   = recstartts.addSecs(_length_in_minutes * 60);
@@ -877,23 +892,6 @@ ProgramInfo::ProgramInfo(const QString &_pathname,
         pn = QString("bd:%1").arg(_pathname);
     }
     SetPathname(pn);
-
-    if (!_director.isEmpty())
-    {
-        description = QString("%1: %2.  ")
-            .arg(QObject::tr("Directed By")).arg(_director);
-    }
-
-    description += _plot;
-
-    if (!_subtitle.isEmpty())
-        subtitle = _subtitle;
-
-    season = _season;
-    episode = _episode;
-    inetref = _inetref;
-    title = _title;
-    programid = _programid;
 }
 
 /** \fn ProgramInfo::ProgramInfo()
@@ -981,6 +979,7 @@ void ProgramInfo::clone(const ProgramInfo &other,
     episode = other.episode;
     syndicatedepisode = other.syndicatedepisode;
     category = other.category;
+    director = other.director;
 
     chanid = other.chanid;
     chanstr = other.chanstr;
@@ -1088,6 +1087,7 @@ void ProgramInfo::clear(void)
     episode = 0;
     syndicatedepisode.clear();
     category.clear();
+    director.clear();
 
     chanid = 0;
     chanstr.clear();
@@ -1472,6 +1472,8 @@ void ProgramInfo::ToMap(InfoMap &progMap,
     progMap["syndicatedepisode"] = syndicatedepisode;
 
     progMap["category"] = category;
+    progMap["director"] = director;
+
     progMap["callsign"] = chansign;
     progMap["commfree"] = (programflags & FL_CHANCOMMFREE) ? 1 : 0;
     progMap["outputfilters"] = chanplaybackfilters;
@@ -3903,11 +3905,14 @@ MarkTypes ProgramInfo::QueryAverageAspectRatio(void ) const
     query.bindValue(":ASPECTSTART", MARK_ASPECT_4_3); // 11
     query.bindValue(":ASPECTEND", MARK_ASPECT_CUSTOM); // 14
 
-    if (!query.exec() || !query.next())
+    if (!query.exec())
     {
         MythDB::DBError("QueryAverageAspectRatio", query);
         return MARK_UNSET;
     }
+
+    if (!query.next())
+        return MARK_UNSET;
 
     return static_cast<MarkTypes>(query.value(0).toInt());
 }
@@ -3930,6 +3935,274 @@ int64_t ProgramInfo::QueryTotalFrames(void) const
 {
     int64_t frames = load_markup_datum(MARK_TOTAL_FRAMES, chanid, recstartts);
     return frames;
+}
+
+void ProgramInfo::QueryMarkup(QVector<MarkupEntry> &mapMark,
+                              QVector<MarkupEntry> &mapSeek) const
+{
+    MSqlQuery query(MSqlQuery::InitCon());
+    // Get the markup
+    if (IsVideo())
+    {
+        query.prepare("SELECT type, mark, offset FROM filemarkup"
+                      " WHERE filename = :PATH"
+                      " AND type NOT IN (:KEYFRAME,:DURATION)"
+                      " ORDER BY mark, type;");
+        query.bindValue(":PATH", StorageGroup::GetRelativePathname(pathname));
+        query.bindValue(":KEYFRAME", MARK_GOP_BYFRAME);
+        query.bindValue(":DURATION", MARK_DURATION_MS);
+    }
+    else if (IsRecording())
+    {
+        query.prepare("SELECT type, mark, data FROM recordedmarkup"
+                      " WHERE chanid = :CHANID"
+                      " AND STARTTIME = :STARTTIME"
+                      " ORDER BY mark, type");
+        query.bindValue(":CHANID", chanid);
+        query.bindValue(":STARTTIME", recstartts);
+    }
+    else
+    {
+        return;
+    }
+    if (!query.exec())
+    {
+        MythDB::DBError("QueryMarkup markup data", query);
+        return;
+    }
+    while (query.next())
+    {
+        int type = query.value(0).toInt();
+        uint64_t frame = query.value(1).toLongLong();
+        uint64_t data = 0;
+        bool isDataNull = query.value(2).isNull();
+        if (!isDataNull)
+            data = query.value(2).toLongLong();
+        mapMark.append(MarkupEntry(type, frame, data, isDataNull));
+    }
+
+    // Get the seektable
+    if (IsVideo())
+    {
+        query.prepare("SELECT type, mark, offset FROM filemarkup"
+                      " WHERE filename = :PATH"
+                      " AND type IN (:KEYFRAME,:DURATION)"
+                      " ORDER BY mark, type;");
+        query.bindValue(":PATH", StorageGroup::GetRelativePathname(pathname));
+        query.bindValue(":KEYFRAME", MARK_GOP_BYFRAME);
+        query.bindValue(":DURATION", MARK_DURATION_MS);
+    }
+    else if (IsRecording())
+    {
+        query.prepare("SELECT type, mark, offset FROM recordedseek"
+                      " WHERE chanid = :CHANID"
+                      " AND STARTTIME = :STARTTIME"
+                      " ORDER BY mark, type");
+        query.bindValue(":CHANID", chanid);
+        query.bindValue(":STARTTIME", recstartts);
+    }
+    if (!query.exec())
+    {
+        MythDB::DBError("QueryMarkup seektable data", query);
+        return;
+    }
+    while (query.next())
+    {
+        int type = query.value(0).toInt();
+        uint64_t frame = query.value(1).toLongLong();
+        uint64_t data = 0;
+        bool isDataNull = query.value(2).isNull();
+        if (!isDataNull)
+            data = query.value(2).toLongLong();
+        mapSeek.append(MarkupEntry(type, frame, data, isDataNull));
+    }
+}
+
+void ProgramInfo::SaveMarkup(const QVector<MarkupEntry> &mapMark,
+                             const QVector<MarkupEntry> &mapSeek) const
+{
+    MSqlQuery query(MSqlQuery::InitCon());
+    if (IsVideo())
+    {
+        QString path = StorageGroup::GetRelativePathname(pathname);
+        if (mapMark.isEmpty())
+        {
+            LOG(VB_GENERAL, LOG_INFO,
+                QString("No mark entries in input, "
+                        "not removing marks from DB"));
+        }
+        else
+        {
+            query.prepare("DELETE FROM filemarkup"
+                          " WHERE filename = :PATH"
+                          " AND type NOT IN (:KEYFRAME,:DURATION)");
+            query.bindValue(":PATH", path);
+            query.bindValue(":KEYFRAME", MARK_GOP_BYFRAME);
+            query.bindValue(":DURATION", MARK_DURATION_MS);
+            if (!query.exec())
+            {
+                MythDB::DBError("SaveMarkup seektable data", query);
+                return;
+            }
+            for (int i = 0; i < mapMark.size(); ++i)
+            {
+                const MarkupEntry &entry = mapMark[i];
+                if (entry.type == MARK_DURATION_MS)
+                    continue;
+                if (entry.isDataNull)
+                {
+                    query.prepare("INSERT INTO filemarkup"
+                                  " (filename,type,mark)"
+                                  " VALUES (:PATH,:TYPE,:MARK)");
+                }
+                else
+                {
+                    query.prepare("INSERT INTO filemarkup"
+                                  " (filename,type,mark,offset)"
+                                  " VALUES (:PATH,:TYPE,:MARK,:OFFSET)");
+                    query.bindValue(":OFFSET", (quint64)entry.data);
+                }
+                query.bindValue(":PATH", path);
+                query.bindValue(":TYPE", entry.type);
+                query.bindValue(":MARK", (quint64)entry.frame);
+                if (!query.exec())
+                {
+                    MythDB::DBError("SaveMarkup seektable data", query);
+                    return;
+                }
+            }
+        }
+        if (mapSeek.isEmpty())
+        {
+            LOG(VB_GENERAL, LOG_INFO,
+                QString("No seek entries in input, "
+                        "not removing marks from DB"));
+        }
+        else
+        {
+            query.prepare("DELETE FROM filemarkup"
+                          " WHERE filename = :PATH"
+                          " AND type IN (:KEYFRAME,:DURATION)");
+            query.bindValue(":PATH", path);
+            query.bindValue(":KEYFRAME", MARK_GOP_BYFRAME);
+            query.bindValue(":DURATION", MARK_DURATION_MS);
+            if (!query.exec())
+            {
+                MythDB::DBError("SaveMarkup seektable data", query);
+                return;
+            }
+            for (int i = 0; i < mapSeek.size(); ++i)
+            {
+                if (i > 0 && (i % 1000 == 0))
+                    LOG(VB_GENERAL, LOG_INFO,
+                        QString("Inserted %1 of %2 records")
+                        .arg(i).arg(mapSeek.size()));
+                const MarkupEntry &entry = mapSeek[i];
+                query.prepare("INSERT INTO filemarkup"
+                              " (filename,type,mark,offset)"
+                              " VALUES (:PATH,:TYPE,:MARK,:OFFSET)");
+                query.bindValue(":PATH", path);
+                query.bindValue(":TYPE", entry.type);
+                query.bindValue(":MARK", (quint64)entry.frame);
+                query.bindValue(":OFFSET", (quint64)entry.data);
+                if (!query.exec())
+                {
+                    MythDB::DBError("SaveMarkup seektable data", query);
+                    return;
+                }
+            }
+        }
+    }
+    else if (IsRecording())
+    {
+        if (mapMark.isEmpty())
+        {
+            LOG(VB_GENERAL, LOG_INFO,
+                QString("No mark entries in input, "
+                        "not removing marks from DB"));
+        }
+        else
+        {
+            query.prepare("DELETE FROM recordedmarkup"
+                          " WHERE chanid = :CHANID"
+                          " AND starttime = :STARTTIME");
+            query.bindValue(":CHANID", chanid);
+            query.bindValue(":STARTTIME", recstartts);
+            if (!query.exec())
+            {
+                MythDB::DBError("SaveMarkup seektable data", query);
+                return;
+            }
+            for (int i = 0; i < mapMark.size(); ++i)
+            {
+                const MarkupEntry &entry = mapMark[i];
+                if (entry.isDataNull)
+                {
+                    query.prepare("INSERT INTO recordedmarkup"
+                                  " (chanid,starttime,type,mark)"
+                                  " VALUES (:CHANID,:STARTTIME,:TYPE,:MARK)");
+                }
+                else
+                {
+                    query.prepare("INSERT INTO recordedmarkup"
+                                  " (chanid,starttime,type,mark,data)"
+                                  " VALUES (:CHANID,:STARTTIME,"
+                                  "         :TYPE,:MARK,:OFFSET)");
+                    query.bindValue(":OFFSET", (quint64)entry.data);
+                }
+                query.bindValue(":CHANID", chanid);
+                query.bindValue(":STARTTIME", recstartts);
+                query.bindValue(":TYPE", entry.type);
+                query.bindValue(":MARK", (quint64)entry.frame);
+                if (!query.exec())
+                {
+                    MythDB::DBError("SaveMarkup seektable data", query);
+                    return;
+                }
+            }
+        }
+        if (mapSeek.isEmpty())
+        {
+            LOG(VB_GENERAL, LOG_INFO,
+                QString("No seek entries in input, "
+                        "not removing marks from DB"));
+        }
+        else
+        {
+            query.prepare("DELETE FROM recordedseek"
+                          " WHERE chanid = :CHANID"
+                          " AND starttime = :STARTTIME");
+            query.bindValue(":CHANID", chanid);
+            query.bindValue(":STARTTIME", recstartts);
+            if (!query.exec())
+            {
+                MythDB::DBError("SaveMarkup seektable data", query);
+                return;
+            }
+            for (int i = 0; i < mapSeek.size(); ++i)
+            {
+                if (i > 0 && (i % 1000 == 0))
+                    LOG(VB_GENERAL, LOG_INFO,
+                        QString("Inserted %1 of %2 records")
+                        .arg(i).arg(mapSeek.size()));
+                const MarkupEntry &entry = mapSeek[i];
+                query.prepare("INSERT INTO recordedseek"
+                              " (chanid,starttime,type,mark,offset)"
+                              " VALUES (:CHANID,:STARTTIME,"
+                              "         :TYPE,:MARK,:OFFSET)");
+                query.bindValue(":CHANID", chanid);
+                query.bindValue(":STARTTIME", recstartts);
+                query.bindValue(":TYPE", entry.type);
+                query.bindValue(":MARK", (quint64)entry.frame);
+                query.bindValue(":OFFSET", (quint64)entry.data);
+                if (!query.exec())
+                {
+                    MythDB::DBError("SaveMarkup seektable data", query);
+                    return;
+                }
+            }
+        }
+    }
 }
 
 void ProgramInfo::SaveVideoProperties(uint mask, uint vid_flags)

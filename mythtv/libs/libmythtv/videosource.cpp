@@ -201,6 +201,23 @@ class XMLTVGrabber : public ComboBoxSetting, public VideoSourceDBStorage
     };
 };
 
+class DVBNetID : public SpinBoxSetting, public VideoSourceDBStorage
+{
+  public:
+    DVBNetID(const VideoSource &parent, signed int value, signed int min_val) :
+        SpinBoxSetting(this, min_val, 100000, 1),
+        VideoSourceDBStorage(this, parent, "dvb_nit_id")
+    {
+       setLabel(QObject::tr("Network ID"));
+       //: Network_ID is the name of an identifier in the DVB's Service
+       //: Information standard specification.
+       setHelpText(QObject::tr("If your provider has asked you to configure a "
+                               "specific network identifier (Network_ID), "
+                               "enter it here. Leave it at -1 otherwise."));
+       setValue(value);
+    };
+};
+
 FreqTableSelector::FreqTableSelector(const VideoSource &parent) :
     ComboBoxSetting(this), VideoSourceDBStorage(this, parent, "freqtable")
 {
@@ -661,6 +678,7 @@ VideoSource::VideoSource()
     group->addChild(name = new Name(*this));
     group->addChild(xmltv = new XMLTVConfig(*this));
     group->addChild(new FreqTableSelector(*this));
+    group->addChild(new DVBNetID(*this, -1, -1));
     addChild(group);
 }
 
@@ -2860,7 +2878,7 @@ class DishNetEIT : public CheckBoxSetting, public CardInputDBStorage
     };
 };
 
-CardInput::CardInput(bool isDTVcard,  bool isDVBcard,
+CardInput::CardInput(const QString & cardtype,
                      bool isNewInput, int _cardid) :
     id(new ID()),
     cardid(new CardID(*this)),
@@ -2891,17 +2909,18 @@ CardInput::CardInput(bool isDTVcard,  bool isDVBcard,
     basic->addChild(new InputDisplayName(*this));
     basic->addChild(sourceid);
 
-    if (!isDTVcard)
+    if (CardUtil::IsEncoder(cardtype) || CardUtil::IsUnscanable(cardtype))
     {
         basic->addChild(new ExternalChannelCommand(*this));
-        basic->addChild(new PresetTuner(*this));
+        if (!CardUtil::IsEncoder(cardtype))
+            basic->addChild(new PresetTuner(*this));
     }
     else
     {
         ConfigurationGroup *chgroup =
             new HorizontalConfigurationGroup(false, false, true, true);
         chgroup->addChild(new QuickTune(*this));
-        if (isDVBcard)
+        if ("DVB" == cardtype)
             chgroup->addChild(new DishNetEIT(*this));
         basic->addChild(chgroup);
     }

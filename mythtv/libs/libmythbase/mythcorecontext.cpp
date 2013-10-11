@@ -4,6 +4,7 @@
 #include <QFileInfo>
 #include <QDebug>
 #include <QMutex>
+#include <QRunnable>
 #include <QWaitCondition>
 #include <QNetworkInterface>
 #include <QAbstractSocket>
@@ -96,6 +97,8 @@ class MythCoreContextPrivate : public QObject
     bool m_announcedProtocol;
 
     MythPluginManager *m_pluginmanager;
+
+    bool m_isexiting;
 };
 
 MythCoreContextPrivate::MythCoreContextPrivate(MythCoreContext *lparent,
@@ -118,7 +121,8 @@ MythCoreContextPrivate::MythCoreContextPrivate(MythCoreContext *lparent,
       m_inwanting(false),
       m_intvwanting(false),
       m_announcedProtocol(false),
-      m_pluginmanager(NULL)
+      m_pluginmanager(NULL),
+      m_isexiting(false)
 {
     MThread::ThreadSetup("CoreContext");
     srandom(MythDate::current().toTime_t() ^ QTime::currentTime().msec());
@@ -305,10 +309,7 @@ bool MythCoreContext::SafeConnectToMasterServer(bool blockingClient,
                                                 bool openEventSocket)
 {
     QMutexLocker locker(&d->m_sockLock);
-    bool success = true;
-
-    if (!d->m_serverSock || !d->m_serverSock->IsConnected())
-        success = ConnectToMasterServer(blockingClient, openEventSocket);
+    bool success = ConnectToMasterServer(blockingClient, openEventSocket);
 
     return success;
 }
@@ -557,15 +558,7 @@ void MythCoreContext::BlockShutdown(void)
     strlist << "BLOCK_SHUTDOWN";
     d->m_serverSock->SendReceiveStringList(strlist);
 
-    if (!d->m_eventSock || !d->m_eventSock->IsConnected())
-        return;
-
     d->m_blockingClient = true;
-
-    strlist.clear();
-    strlist << "BLOCK_SHUTDOWN";
-
-    d->m_eventSock->SendReceiveStringList(strlist);
 }
 
 void MythCoreContext::AllowShutdown(void)
@@ -579,15 +572,7 @@ void MythCoreContext::AllowShutdown(void)
     strlist << "ALLOW_SHUTDOWN";
     d->m_serverSock->SendReceiveStringList(strlist);
 
-    if (!d->m_eventSock || !d->m_eventSock->IsConnected())
-        return;
-
     d->m_blockingClient = false;
-
-    strlist.clear();
-    strlist << "ALLOW_SHUTDOWN";
-
-    d->m_eventSock->SendReceiveStringList(strlist);
 }
 
 bool MythCoreContext::IsBlockingClient(void) const
@@ -1566,6 +1551,16 @@ void MythCoreContext::SetPluginManager(MythPluginManager *pmanager)
 MythPluginManager *MythCoreContext::GetPluginManager(void)
 {
     return d->m_pluginmanager;
+}
+
+void MythCoreContext::SetExiting(bool exiting)
+{
+    d->m_isexiting = exiting;
+}
+
+bool MythCoreContext::IsExiting(void)
+{
+    return d->m_isexiting;
 }
 
 /* vim: set expandtab tabstop=4 shiftwidth=4: */

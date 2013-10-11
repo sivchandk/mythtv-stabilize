@@ -82,7 +82,23 @@ bool PlaybackSock::SendReceiveStringList(
     {
         QMutexLocker locker(&sockLock);
         expectingreply = true;
+
         ok = sock->SendReceiveStringList(strlist);
+        while (ok && strlist[0] == "BACKEND_MESSAGE")
+        {
+            // oops, not for us
+            if (strlist.size() >= 2)
+            {
+                QString message = strlist[1];
+                strlist.pop_front();
+                strlist.pop_front();
+                MythEvent me(message, strlist);
+                gCoreContext->dispatch(me);
+            }
+
+            ok = sock->ReadStringList(strlist);
+        }
+
         expectingreply = false;
     }
 
@@ -121,10 +137,10 @@ void PlaybackSock::GetDiskSpace(QStringList &o_strlist)
 {
     QStringList strlist(QString("QUERY_FREE_SPACE"));
 
-    SendReceiveStringList(strlist);
-
-    o_strlist += strlist;
-
+    if (SendReceiveStringList(strlist, 8))
+    {
+        o_strlist += strlist;
+    }
 }
 
 int PlaybackSock::CheckRecordingActive(const ProgramInfo *pginfo)

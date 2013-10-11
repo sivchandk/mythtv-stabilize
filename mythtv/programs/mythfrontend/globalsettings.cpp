@@ -2703,7 +2703,7 @@ static GlobalComboBox *GRSchedOpenEnd()
                                                   "recordings"));
 
     bc->setHelpText(
-        GeneralRecPrioritiesSettings::tr("Selects the situations where the"
+        GeneralRecPrioritiesSettings::tr("Selects the situations where the "
                                          "scheduler will avoid assigning shows "
                                          "to the same card if their end time "
                                          "and start time match. This will be "
@@ -2889,9 +2889,9 @@ static HostSpinBox *EPGRecThreshold()
     return gs;
 }
 
-static HostComboBox *MythLanguage()
+static GlobalComboBox *MythLanguage()
 {
-    HostComboBox *gc = new HostComboBox("Language");
+    GlobalComboBox *gc = new GlobalComboBox("Language");
 
     gc->setLabel(AppearanceSettings::tr("Language"));
 
