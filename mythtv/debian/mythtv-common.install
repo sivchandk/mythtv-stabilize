@@ -1,0 +1,8 @@
+usr/share/mythtv/themes
+usr/share/mythtv/locales
+usr/share/mythtv/internetcontent
+usr/share/mythtv/i18n
+usr/share/mythtv/hardwareprofile
+usr/share/mythtv/metadata/Movie/tmdb3.py
+usr/share/mythtv/metadata/Television/ttvdb.py
+contrib/config_files/config.xml usr/share/mythtv

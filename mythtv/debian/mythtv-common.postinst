@@ -1,0 +1,84 @@
+#!/bin/sh -e
+
+case "$1" in
+    configure)
+	. /usr/share/debconf/confmodule
+
+	if [ -n "$2" ] && dpkg --compare-versions "$2" lt "0.7-4"; then
+	  usermod -s /bin/sh mythtv
+	fi
+
+# Create mythtv user and its homedir if we may need it
+	if ! getent passwd mythtv >/dev/null; then
+		useradd --system --shell /bin/sh --home /var/lib/mythtv mythtv -G video,audio,cdrom,dialout
+	fi
+
+	HOMEDIR=$(getent passwd mythtv | awk -F: '{ print $6 }')
+
+	db_get mythtv/mysql_host
+	hostname="$RET"
+
+	db_get mythtv/mysql_mythtv_dbname
+	database="$RET"
+
+	db_get mythtv/mysql_mythtv_user
+	mythtv_username="$RET"
+
+	db_get mythtv/mysql_mythtv_password
+	mythtv_password="$RET"
+
+	if [ -z "$mythtv_password" ]; then
+	    mythtv_password="$(pwgen -s 8)"
+	    db_set mythtv/mysql_mythtv_password "$mythtv_password"
+	fi
+
+	NEW=$(mktemp -t config.xml-XXXXXX)
+	if [ -s /etc/mythtv/config.xml ]; then
+	    INPUT=/etc/mythtv/config.xml
+	    chown --reference=$INPUT $NEW
+	    chmod --reference=$INPUT $NEW
+	else
+	    INPUT=/usr/share/mythtv/config.xml
+	    chown mythtv:mythtv $NEW
+	    chmod 660 $NEW
+	fi
+
+       cat $INPUT > $NEW
+       
+       export hostname
+       export mythtv_username
+       export mythtv_password
+       export database
+       perl -pi -e 's/(<Host>).*?(<\/Host>)/$1$ENV{'hostname'}$2/;' $NEW
+       perl -pi -e 's/(<UserName>).*?(<\/UserName>)/$1$ENV{'mythtv_username'}$2/;' $NEW
+       perl -pi -e 's/(<Password>).*?(<\/Password>)/$1$ENV{'mythtv_password'}$2/;' $NEW
+       perl -pi -e 's/(<DatabaseName>).*?(<\/DatabaseName>)/$1$ENV{'database'}$2/;' $NEW
+
+       mv $NEW /etc/mythtv/config.xml
+
+       mkdir -p $HOMEDIR/.mythtv || true
+       chown mythtv:mythtv $HOMEDIR/.mythtv || true
+
+       if [ ! -e $HOMEDIR/.mythtv/config.xml ]; then
+           ln -s /etc/mythtv/config.xml $HOMEDIR/.mythtv/config.xml || true
+       fi
+
+	if dpkg --compare-versions "$2" lt 0.9-1 && test -f /etc/mythtv/backend_settings.txt; then
+	    mv /etc/mythtv/backend_settings.txt /etc/mythtv/backend_settings.txt.dpkg-old
+	fi
+
+	;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+
+	;;
+
+    *)
+	echo "postinst called with unknown argument \`$1'" >&2
+	exit 1
+	;;
+esac
+
+#DEBHELPER#
+
+exit 0

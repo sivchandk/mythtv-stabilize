@@ -1,0 +1,208 @@
+#!/usr/bin/make -f
+
+DEB_HOST_GNU_TYPE ?= $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
+DEB_BUILD_GNU_TYPE ?= $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
+DEB_BUILD_ARCH ?= $(shell dpkg-architecture -qDEB_BUILD_ARCH)
+
+NCPUS := $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)
+
+ifeq ($(NCPUS),-1)
+	NCPUS:=1
+endif
+
+ifeq ($(NCPUS),0)
+	NCPUS:=1
+endif
+
+ifeq (nostrip,$(findstring nostrip,$(DEB_BUILD_OPTIONS)))
+	DEBUG_BUILD=1
+endif
+ifeq (noopt,$(findstring noopt,$(DEB_BUILD_OPTIONS)))
+	DEBUG_BUILD=1
+endif
+ifdef DEBUG_BUILD
+	CONFIGURE_OPTS += --compile-type=debug
+endif
+
+ifeq ($(wildcard "/usr/bin/dpkg-buildflags"),)
+$(info,"/usr/bin/dpkg-buildflags does not exist")
+else
+        CPPFLAGS = $(shell dpkg-buildflags --get CPPFLAGS) ; \ 
+        LDFLAGS = $(shell dpkg-buildflags --get LDFLAGS) ; \ 
+        CFLAGS = $(shell dpkg-buildflags --get CFLAGS) ; \ 
+        CXXFLAGS = $(shell dpkg-buildflags --get CXXFLAGS) ; \ 
+endif
+
+CC := ccache $(CC)
+CXX := ccache $(CXX)
+
+MYTH_BINARY_VERSION = $(shell grep MYTH_BINARY_VERSION libs/libmythbase/mythversion.h | cut -d'"' -f2)
+
+
+LIB_PKGS = $(shell sed -nr 's/^Package:[[:space:]]*(lib(myth-0.27-|mythavcodec|mythavdevice|mythavfilter|mythavformat|mythavutil|mythpostproc|mythswresample|mythswscale|mythqjson)[0-9]+)[[:space:]]*$$/\1/p' debian/control)
+
+SHLIBS_VERSION = "0.27"
+configure: configure-stamp
+configure-stamp: 
+	dh_testdir
+
+	./configure --prefix=/usr --enable-libmp3lame --enable-libfaac --enable-libx264 \
+	--enable-libxvid --enable-libfftw3 --enable-nonfree --enable-pic \
+	--extra-ldflags="$(LDFLAGS) $(CPPFLAGS)" \
+	--extra-cflags="$(CFLAGS) $(CPPFLAGS)" \
+	--extra-cxxflags="$(CXXFLAGS) $(CPPFLAGS)" \
+	--enable-libvpx --disable-ccache --disable-distcc --cc="$(CC)" --cxx="$(CXX)" \
+	$(CONFIGURE_OPTS)
+
+#ifeq "$(DEB_BUILD_ARCH)" "ia64"
+#	perl -i -pe 's,-O3,-Os,' libs/libmythdb/mythconfig.mak
+#	perl -i -pe 's,CONFIG_SMALL 0,CONFIG_SMALL 1,' config.h
+#else
+
+ifeq "$(DEB_BUILD_ARCH)" "sparc"
+	perl -i -pe 's,HAVE_VIS 1,HAVE_VIS 0,' config.h
+	perl -i -pe 's,HAVE_VIS=yes,,' config.mak
+	perl -i -pe 's,MPEG2_ACCEL_SPARC_VIS 1,MPEG2_ACCEL_SPARC_VIS 0,' libs/libmythmpeg2/mpeg2.h
+endif
+
+#	exit 1
+
+	touch $@
+
+build: build-stamp
+build-stamp: configure-stamp
+	dh_testdir
+
+	$(MAKE) -j $(NCPUS)
+
+	touch $@
+
+clean: 
+	dh_testdir
+	dh_testroot
+	rm -f build-stamp configure-stamp
+
+#	[ -h config.mak ] || `cp debian/config.mak . && touch external/FFmpeg/config.mak`
+
+	[ ! -f config.mak ] || $(MAKE) distclean
+
+	debconf-updatepo
+
+	dh_clean version.cpp external/FFmpeg/mythffmpeg config.log external/FFmpeg/mythffplay \
+	external/FFmpeg/libavfilter/libmpcodecs/*.o external/FFmpeg/libavfilter/libmpcodecs/*.d \
+	config.fate external/FFmpeg/libavcodec/codec_names.h external/FFmpeg/.config
+
+# config.log version.cpp config.ep bindings/perl/Makefile.perl.old \
+#	config/Makefile
+
+install: build
+	dh_testdir
+	dh_testroot
+	dh_prep
+	dh_installdirs
+	dh_installdirs -pmythtv-backend var/lib/mythtv var/cache/mythtv \
+	usr/share/doc/mythtv-backend var/lib/mythvideo/temp
+
+	dh_installdirs -pmythtv-common etc/mythtv
+
+	dh_installdirs -pmythlogserver var/log/mythtv etc/rsyslog.d
+
+	$(MAKE) install PREFIX=usr INSTALL_ROOT=$(CURDIR)/debian/tmp/
+
+	rm debian/tmp/usr/local/lib/perl/*/auto/MythTV/.packlist
+	rm debian/tmp/usr/share/mythtv/themes/Terra/watermarks/README.license
+#	rm debian/tmp/usr/share/mythtv/hardwareprofile/.gitignore
+
+	find debian/tmp/usr/share -type f -exec chmod 0644 {} \;
+
+# Keep executable
+	chmod +x debian/tmp/usr/share/mythtv/*.pl
+	chmod +x debian/tmp/usr/share/mythtv/metadata/Television/ttvdb.py
+	chmod +x debian/tmp/usr/share/mythtv/metadata/Movie/tmdb3.py
+	chmod +x debian/tmp/usr/share/mythtv/internetcontent/*.py
+	chmod +x debian/tmp/usr/share/mythtv/internetcontent/*.pl
+
+	dh_install -X.a -XCOPYING -XLICENSE -Xusr/bin/mythwikiscripts -Xusr/share/mythtv/fonts \
+	-Xusr/share/mythtv/themes/MythCenter-wide/fonts -Xusr/lib/libmythzmq.la --fail-missing
+
+	dh_install -pmythtv-frontend debian/mythtv.desktop usr/share/applications
+	dh_install -XCOPYING -XLICENSE -pmythtv-backend debian/mythtv-setup.desktop usr/share/applications
+
+	cp debian/mythlogserver.rsyslogd debian/mythlogserver/etc/rsyslog.d/mythtv.conf
+
+	dh_link -pmythtv-common usr/share/fonts/truetype/freefont/FreeSans.ttf				usr/share/mythtv/fonts/FreeSans.ttf
+	dh_link -pmythtv-common usr/share/fonts/truetype/freefont/FreeSansBold.ttf			usr/share/mythtv/fonts/FreeSansBold.ttf
+	dh_link -pmythtv-common usr/share/fonts/truetype/freefont/FreeMono.ttf				usr/share/mythtv/fonts/FreeMono.ttf
+	dh_link -pmythtv-common usr/share/fonts/truetype/ttf-tiresias/tiresias_infofont_italic.ttf	"usr/share/mythtv/fonts/Tiresias Infofont Italic.ttf"
+	dh_link -pmythtv-common usr/share/fonts/truetype/ttf-tiresias/tiresias_infofont.ttf		"usr/share/mythtv/fonts/Tiresias Infofont.ttf"
+	dh_link -pmythtv-common usr/share/fonts/truetype/ttf-tiresias/tiresias_infofont_bold.ttf	"usr/share/mythtv/fonts/Tiresias Infofont Bold.ttf"
+	dh_link -pmythtv-common usr/share/fonts/truetype/droid/DroidSans-Bold.ttf			usr/share/mythtv/themes/MythCenter-wide/fonts/DroidSans-Bold.ttf
+	dh_link -pmythtv-common usr/share/fonts/truetype/droid/DroidSans.ttf				usr/share/mythtv/themes/MythCenter-wide/fonts/DroidSans.ttf
+
+	dh_link -pmythtv-backend usr/share/javascript/jquery/jquery.min.js				usr/share/mythtv/html/js/jquery.min.js
+
+	rm -f debian/mythtv/usr/share/mythtv/setup.xml
+
+# Autogenerated configuration files
+	set -e; \
+	for cf in debian/mythtv-common/usr/share/mythtv/mysql.txt; do \
+		ln -s /etc/mythtv/`basename $$cf` $$cf; \
+	done
+
+binary-indep: build install
+	dh_testdir -i
+	dh_testroot -i
+	dh_installdebconf -i
+	dh_installdocs -i -A -XCOPYING README debian/README.Debian AUTHORS FAQ UPGRADING keys.txt
+	dh_installexamples -pmythtv-doc contrib/*
+	dh_installchangelogs -i
+	dh_installcron -i
+# Only in -fixes packages
+#	cp ChangeLog /tmp
+#	find debian/*/ -name changelog | xargs -r rm
+#	cp /tmp/ChangeLog debian/mythtv-common/usr/share/doc/mythtv-common/changelog
+	dh_link -i
+	dh_perl -i
+	dh_python2 -i
+	dh_compress -i
+	dh_fixperms -i
+	dh_lintian -i
+	dh_installdeb -i
+	dh_gencontrol -i 
+	dh_md5sums -i
+	dh_builddeb -i -- -Zbzip2
+
+# Build architecture-dependent files here.
+binary-arch: build install
+	dh_testdir -a
+	dh_testroot -a
+	dh_installdocs -XCOPYING -a -A README debian/README.Debian AUTHORS keys.txt FAQ UPGRADING
+	dh_installchangelogs -a
+# Only in -fixes packages
+	find debian/*/ -name changelog | xargs -r rm
+	dh_installdebconf -a
+	dh_installexamples -a
+	dh_installmenu -a
+	dh_installlogrotate -a
+	dh_installinit -a -u'defaults 40 16'
+	dh_installcron -a
+	dh_installinfo -a
+	dh_python2 -a
+ifneq (nostrip,$(findstring nostrip,$(DEB_BUILD_OPTIONS)))
+	dh_strip -a
+endif
+	dh_link -a
+	dh_compress -a -X.py -X.pl
+	dh_fixperms -a -X.pl -X.py
+	dh_lintian -a
+	for pkg in $(LIB_PKGS); do \
+	    dh_makeshlibs -p$$pkg -V "$$pkg (>= $(SHLIBS_VERSION))"; \
+	done
+	dh_installdeb -a
+	dh_shlibdeps -a
+	dh_gencontrol -a 
+	dh_md5sums -a
+	dh_builddeb -a -- -Zbzip2
+
+binary: binary-indep binary-arch
+.PHONY: build clean binary-indep binary-arch binary install configure

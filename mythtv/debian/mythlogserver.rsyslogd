@@ -1,0 +1,62 @@
+#
+# Sample Log Entry: Aug 31 12:08:11 mythosttname mythlogserver: mythbackend[3139]: I HouseKeeping housekeeper.cpp:221 ...
+#
+
+$FileOwner mythtv
+$FileGroup mythtv
+
+# Control-code conversion. The default is on.
+$EscapeControlCharactersOnReceive off
+
+# This template drops the mythlogserver: $programname, so messages APPEAR to have the
+# traditional programname[<PID>] tag (which is really part of the $msg.)
+$template MythTVLog,"%TIMESTAMP% %HOSTNAME% %msg%\n"
+
+# For programs that DON'T use mythlogserver.  This template will create a log file named 
+# /var/log/[Replaced_with_Name_Of_Myth_Program].log.
+$template noLogServerLog,"/var/log/mythtv/%programname%.log"
+
+# By default this results in output that matches the default traditional output.  
+# This template could used to modify the output 
+# $template noLogServerLogFormat,"%TIMESTAMP% %HOSTNAME% %SYSLOGTAG% %msg%\n"
+# and by changing the following line to
+# if $syslogfacility-text == 'local6' and $programname startswith 'myth' then ?noLogServerLog;noLogServerLogFormat
+
+
+
+if $syslogfacility-text == 'local6' and $msg startswith ' mythbackend' then /var/log/mythtv/mythbackend.log;MythTVLog
+& ~
+if $syslogfacility-text == 'local6' and $msg startswith ' mythfrontend' then /var/log/mythtv/mythfrontend.log;MythTVLog
+& ~
+if $syslogfacility-text == 'local6' and $msg startswith ' mythjobqueue' then /var/log/mythtv/mythjobqueue.log;MythTVLog
+& ~
+if $syslogfacility-text == 'local6' and $msg startswith ' mythmediaserver' then /var/log/mythtv/mythmediaserver.log;MythTVLog
+& ~
+if $syslogfacility-text == 'local6' and $msg startswith ' mythtv-setup' then /var/log/mythtv/mythtv-setup.log;MythTVLog
+& ~
+if $syslogfacility-text == 'local6' and $msg startswith ' mythfilldatabase' then /var/log/mythtv/mythfilldatabase.log;MythTVLog
+& ~
+if $syslogfacility-text == 'local6' and $msg startswith ' mythcommflag' then /var/log/mythtv/mythcommflag.log;MythTVLog
+& ~
+if $syslogfacility-text == 'local6' and $msg startswith ' mythpreviewgen' then /var/log/mythtv/mythpreviewgen.log;MythTVLog
+& ~
+if $syslogfacility-text == 'local6' and $msg startswith ' mythtranscode' then /var/log/mythtv/mythtranscode.log;MythTVLog
+& ~
+if $syslogfacility-text == 'local6' and $msg startswith ' mythmetadatalookup' then /var/log/mythtv/mythmetadatalookup.log;MythTVLog
+& ~
+if $syslogfacility-text == 'local6' and $msg startswith ' mythutil' then /var/log/mythtv/mythutil.log;MythTVLog
+& ~
+if $syslogfacility-text == 'local6' and $msg startswith ' mythwelcome' then /var/log/mythtv/mythwelcome.log;MythTVLog
+& ~
+if $syslogfacility-text == 'local6' and $msg startswith ' mythshutdown' then /var/log/mythtv/mythshutdown.log;MythTVLog
+& ~
+if $syslogfacility-text == 'local6' and $msg startswith ' mythlcdserver' then /var/log/mythtv/mythlcdserver.log;MythTVLog
+& ~
+if $syslogfacility-text == 'local6' and $msg startswith ' mythccextractor' then /var/log/mythtv/mythccextractor.log;MythTVLog
+& ~
+if $syslogfacility-text == 'local6' and $msg startswith ' mythavtest' then /var/log/mythtv/mythavtest.log;MythTVLog
+& ~
+if $syslogfacility-text == 'local6' and $msg startswith ' mythlogserver' then /var/log/mythtv/mythlogserver.log;MythTVLog
+& ~
+if $syslogfacility-text == 'local6' and $programname startswith 'myth' then ?noLogServerLog
+& ~

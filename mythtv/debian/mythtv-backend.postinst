@@ -1,0 +1,40 @@
+#!/bin/sh -e
+
+case "$1" in
+    configure)
+        for dir in /var/log/mythtv /var/lib/mythtv /var/cache/mythtv; do
+	    if ! dpkg-statoverride --list $dir >/dev/null; then
+	        chown mythtv:mythtv $dir
+    	        chmod 2775 $dir
+            fi
+        done
+       if [ -z "$2" ]; then
+           # Migrate from old mythtv -> mythtv-backend
+
+           [ -f /etc/cron.daily/mythtv ] && \
+               mv /etc/cron.daily/mythtv /etc/cron.daily/mythtv-backend
+           [ -f /etc/logrotate.d/mythtv ] && \
+               mv /etc/logrotate.d/mythtv /etc/logrotate.d/mythlogserver
+
+           # Errors now sent via cron
+           rm -f /var/log/mythtv/mythfilldatabase.log*
+
+           [ -x /etc/init.d/rsyslog ] && invoke-rc.d rsyslog restart || true
+
+
+       fi
+    ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+
+    ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+    ;;
+esac
+
+#DEBHELPER#
+
+exit 0

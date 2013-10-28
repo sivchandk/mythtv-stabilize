@@ -1,0 +1,10 @@
+debian/mythtv.desktop usr/share/applications
+usr/bin/mythavtest
+usr/bin/mythfrontend
+usr/bin/mythlcdserver
+usr/bin/mythreplex
+usr/bin/mythshutdown
+usr/bin/mythmediaserver
+usr/bin/mythwelcome
+usr/lib/mythtv/filters
+usr/bin/mythscreenwizard
