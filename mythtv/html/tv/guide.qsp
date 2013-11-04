@@ -1,0 +1,303 @@
+<%
+"use strict";
+
+import "/js/utility.js"
+
+    var args = arguments[1];
+    function getArg(name)
+    {
+        name = name.toLowerCase();
+        return args[name];
+    }
+
+    var guideOnly = 0;
+    if (getArg("GuideOnly"))
+        guideOnly = 1;
+
+    var timeBarInterval = 30; // Display time markers every X minutes
+    var guideRange = 2; // Show X hours from the start time
+
+    var myth  = new Myth();
+    var guide = new Guide();
+    var dvr = new Dvr();
+
+    var now = new Date();
+    var guideStartTime;
+
+    // Use the StartTime argument if it was defined
+    if (typeof getArg("StartTime") !== "undefined")
+        guideStartTime = myth.ParseISODateString(getArg("StartTime"));
+
+    // If the StartTime wasn't valid or wasn't defined then use the current time
+    if (!isValidObject(guideStartTime))
+        guideStartTime = new Date(now);
+
+    // Round down to the nearest half hour
+    guideStartTime.setMinutes(guideStartTime.getMinutes() >= 30 ? 30 : 0);
+
+    // Remove any stray seconds that would break date comparisons later
+    guideStartTime.setSeconds(0);
+    guideStartTime.setMilliseconds(0);
+
+    // Set Next/Prev guide start times for navigation
+    var prevGuideStartTime = new Date(guideStartTime);
+    prevGuideStartTime.setHours(prevGuideStartTime.getHours() - guideRange);
+    var nextGuideStartTime = new Date(guideStartTime);
+    nextGuideStartTime.setHours(nextGuideStartTime.getHours() + guideRange);
+
+    // Calculate guide end time
+    var guideEndTime = new Date(guideStartTime);
+    guideEndTime.setHours(guideStartTime.getHours() + guideRange);
+    var guidePeriod = new Date(guideEndTime - guideStartTime);
+
+    // Hack because GetProgramGuide will include programs with a starttime matching our endtime
+    var fetchEndTime = new Date(guideEndTime);
+    fetchEndTime.setSeconds(fetchEndTime.getSeconds() - 1);
+
+    // Actually fetch the guide data
+    var guideResult = guide.GetProgramGuide(guideStartTime, fetchEndTime, 0, 0, true);
+    var channelList = guideResult.Channels;
+
+    // Indicator of time in past
+    var darkVeilWidth = 0;
+    if ((now - guideStartTime) > 0)
+    {
+        darkVeilWidth = Math.round(((now - guideStartTime)/guidePeriod) * 100);
+        if (darkVeilWidth > 100)
+            darkVeilWidth = 100;
+    }
+%>
+
+<% if (!guideOnly) {%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title><%=qsTr("Program Guide")%> - <%=myth.GetFormatDate(guideStartTime)%>,
+       <%=myth.GetFormatTime(guideStartTime)%> - <%=myth.GetFormatTime(guideEndTime)%></title>
+<link rel="stylesheet" type="text/css" href="/css/site.css">
+<link rel="stylesheet" type="text/css" href="/tv/css/common.css">
+<link rel="stylesheet" type="text/css" href="/tv/css/guide.css">
+<link rel="stylesheet" type="text/css" href="/tv/css/category_colors.css">
+<script src="/js/utility.js"></script> <!-- ECMA not JS -->
+<script src="/js/util.qjs"></script>
+<script src="/tv/js/common.js"></script>
+<script src="/tv/js/guide.js"></script>
+</head>
+<body>
+
+<h2 class="pageTitle" id="title"><%=qsTr("Program Guide")%></h2>
+
+<!-- Popup Recording Menu -->
+<div id="recMenu" class="contextMenu">
+    <div class="button" onClick="recordProgram(chanID, startTime, 'Single Record')">
+        <%=qsTr("Record this showing")%>
+    </div>
+    <div class="button" onClick="recordProgram(chanID, startTime, 'Record All')">
+        <%=qsTr("Record all showings")%>
+    </div>
+    <div class="button" onClick="recordProgram(chanID, startTime, 'Record One')">
+        <%=qsTr("Record one showing")%>
+    </div>
+    <div class="button" onClick="recordProgram(chanID, startTime, 'Record All (Channel)')">
+        <%=qsTr("Record all showings (this channel)")%>
+    </div>
+    <div class="button" onClick="loadScheduler(chanID, startTime, this.parentNode.id)">
+        <%=qsTr("Edit recording rule")%>
+    </div>
+</div>
+
+<!-- Popup Edit Recording Menu -->
+<div id="editRecMenu" class="contextMenu">
+    <div class="button" onClick="deleteRecRule(chanID, startTime)">
+        <%=qsTr("Delete Recording Rule")%>
+    </div>
+    <div class="button" onClick="loadScheduler(chanID, startTime, this.parentNode.id)">
+        <%=qsTr("Edit recording rule")%>
+    </div>
+</div>
+
+<!-- Popup Program Details Box -->
+<div id="programDetails" class="programExDetail">
+</div>
+
+<!-- Navigation by day or time -->
+<div class="navigateBox">
+
+    <label for="guideStartDate"><%=qsTr("Date")%>:</label>
+    <select id="guideStartDate" onChange="loadGuideContent('/tv/guide.qsp?GuideOnly=1&amp;StartTime=' + this.options[this.options.selectedIndex].value);">
+<%
+    var startDay = new Date(now);
+    startDay.setDate(now.getDate() - 14); // We keep old guide date for 14 days
+    for (var dateIdx = 0; dateIdx < 28; dateIdx++)
+    {
+        var selected = (startDay.getDate() == guideStartTime.getDate()) ? "selected" : "";
+
+%>
+        <option label="<%=myth.GetFormatDate(startDay)%>" value="<%=startDay.toISOString()%>" <%=selected%>><%=myth.GetFormatDate(startDay)%></option>
+<%
+        startDay.setDate(startDay.getDate() + 1);
+    }
+%>
+    </select>
+
+    <label for="guideStartTime"><%=qsTr("Time")%>:</label>
+    <select id="guideStartTime" onChange="loadGuideContent('/tv/guide.qsp?GuideOnly=1&amp;StartTime=' + this.options[this.options.selectedIndex].value);">
+<%
+    var startTime = new Date(guideStartTime);
+    startTime.setHours(0);
+    startTime.setMinutes(0);
+    for (var hourIdx = 0; hourIdx < 48; hourIdx++)
+    {
+        var selected = ((startTime.getHours() == guideStartTime.getHours()) &&
+                        (startTime.getMinutes() == guideStartTime.getMinutes())) ? "selected" : "";
+%>
+        <option label="<%=myth.GetFormatTime(startTime)%>" value="<%=startTime.toISOString()%>" <%=selected%>><%=myth.GetFormatTime(startTime)%></option>
+<%
+        startTime.setMinutes(startTime.getMinutes() + 30);
+    }
+%>
+    </select>
+
+</div>
+
+<div id="foo" style="overflow:hidden;clear:both;width:100%;">
+
+<div id="guideGrid" class="guideGrid">
+<%} // End of the header %>
+
+<div class="pageLeft" onClick="loadGuideContent('/tv/guide.qsp?GuideOnly=1&amp;StartTime=<%=prevGuideStartTime.toISOString()%>', 'right')">
+    &lt;
+</div>
+
+<div class="pageRight" onClick="loadGuideContent('/tv/guide.qsp?GuideOnly=1&amp;StartTime=<%=nextGuideStartTime.toISOString()%>', 'left')">
+    &gt;
+</div>
+
+    <div class="timeBar">
+        <div class="timeBarDate">
+            <%=myth.GetFormatDate(guideStartTime, true)%>
+        </div>
+        <div class="timeBarTimes">
+<%
+    var numTimePeriods = (guideRange * 60) / timeBarInterval;
+    var width = (100 / numTimePeriods);
+    for (var timeIdx=0; timeIdx < numTimePeriods; timeIdx++)
+    {
+        var displayTime = new Date(guideStartTime);
+        displayTime.setMinutes(displayTime.getMinutes() + (timeIdx * timeBarInterval));
+%>
+            <div style="width:<%=width%>%;float:left;height:100%;padding-left:2px;">
+                <div class="timeBarTime">
+                    <%=myth.GetFormatTime(displayTime)%>
+                    <span style="float:right;">&rsaquo;</span>
+                </div>
+            </div>
+<%
+    }
+%>
+        </div>
+    </div>
+
+<%
+    for (var chanIdx=0; chanIdx < channelList.length; chanIdx++)
+    {
+        var channel = channelList[chanIdx];
+        if (!channel.Visible)
+            continue;
+        var programList = channel.Programs;
+%>
+
+    <div class="channelRow">
+        <div class="channelBox">
+            <img class="channelIcon" height="50" alt="<%=escapeHTML(channel.ChannelName)%> Icon" src="/Guide/GetChannelIcon?ChanId=<%=channel.ChanId%>&amp;Height=50" />
+            <div class="channelText"><%=escapeHTML(channel.ChannelName)%></div>
+        </div>
+        <div class="programsBox">
+
+<%
+        var programNum = 0;
+        var cumulativeWidth = 0;
+        for (var progIdx=0; progIdx < programList.length; progIdx++)
+        {
+            var program =  programList[progIdx];
+            if (program.EndTime <= guideStartTime)
+                continue;
+            if (program.StartTime >= (guideEndTime))
+                continue;
+
+            // To allow us to indicate in some way that the program continues
+            // from an earlier time, or runs to a later time somewhere
+            // off-screen we assign one or both a class. This could do a number
+            // of things including displaying an arrow image or a special
+            // coloured border at the appropriate edge of the box
+            var startClass = "";
+            var endClass = "";
+
+            if (program.StartTime < guideStartTime)
+                startClass = "programStartsOffScreen";
+
+            if (program.EndTime > guideEndTime)
+                endClass = "programEndsOffScreen";
+
+            programNum++;
+            var windowStart = (program.StartTime > guideStartTime ? program.StartTime : guideStartTime);
+            var windowEnd = (program.EndTime > guideEndTime ? guideEndTime : program.EndTime);
+            var windowLength = (windowEnd - windowStart);
+            var width = Math.round(((windowLength / guidePeriod) * 100));
+            cumulativeWidth += width;
+
+            // Due to rounding issues we can end up a percentage point or two over
+            // this just trims the last width to prevent that happening.
+            if (progIdx == (programList.length - 1))
+            {
+                width = (cumulativeWidth < 100) ? width + (100 - cumulativeWidth) : width;
+                width = (cumulativeWidth > 100) ? width - (cumulativeWidth - 100) : width;
+            }
+            var categoryClass = "category_" + toCapitalCase(escapeHTML(program.Category).replace(/ /g, ''))
+
+            var statusStr = dvr.RecStatusToString(program.Recording.Status);
+            var statusClass = "program" + statusStr.replace(/ /g, '');
+
+            var menu = "editRecMenu";
+            if (program.Recording.Status == 0)
+                menu = "recMenu";
+
+            // Used as a unique identifier and also to access the chanid
+            // and starttime for the AJAX scheduling stuff
+            var programIdentifier = channel.ChanId + "_" + program.StartTime.toISOString();
+%>
+            <div class="programBox" style="width:<%=width%>%;" title="<%=escapeHTML(program.Title)%>">
+                <div class="programBoxInner <%=categoryClass%> <%=statusClass%> <%=startClass%> <%=endClass%>" id="<%=programIdentifier%>" onMouseOver="startDetailTimer(this, 'program');" onMouseOut="hideDetail(this);" onClick="showMenu(this, '<%=menu%>');">
+                    <div class="programHeader"><%=escapeHTML(program.Title)%> <% if (isValidObject(program.Airdate) && program.Airdate.getFullYear() != 0 && program.CatType == "movie") {%>(<%=program.Airdate.getFullYear()%>)<%}%></div>
+                    <div class="programBody">
+                        <span class="programSubtitle"><%=escapeHTML(program.SubTitle)%></span>
+                        <span class="programDescription"><%=escapeHTML(program.Description)%></span>
+                    </div>
+                    <div class="programSchedPopup" id="<%=programIdentifier%>_schedpopup">
+                        <%=qsTr("Scheduling")%> ...
+                    </div>
+                    <input type="hidden" name="chanid" value="<%=channel.ChanId%>" />
+                    <input type="hidden" name="starttime" value="<%=program.StartTime.toISOString()%>" />
+                    <input type="hidden" name="recordid" value="<%=program.Recording.RecordId%>" />
+                </div>
+            </div>
+<%
+        }
+%>
+            <div class="relentlessMarchOfTime" style="position:absolute;width:<%=darkVeilWidth%>%;">&nbsp;</div>
+
+        </div>
+    </div>
+<%
+    }
+%>
+<% if (!guideOnly) {%>
+</div> <!-- End ProgramGuide -->
+
+
+</div>
+
+</body>
+</html>
+<%}%>

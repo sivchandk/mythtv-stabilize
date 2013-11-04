@@ -29,6 +29,7 @@
 #include <QScriptEngine>
 
 #include "services/dvrServices.h"
+#include "datacontracts/recRule.h"
 
 class Dvr : public DvrServices
 {
@@ -54,7 +55,9 @@ class Dvr : public DvrServices
                                                 const QDateTime &StartTime  );
 
         bool              RemoveRecorded      ( int              ChanId,
-                                                const QDateTime &StartTime  );
+                                                const QDateTime &StartTime,
+                                                bool             ForceDelete,
+                                                bool             AllowRerecord  );
 
         DTC::ProgramList* GetConflictList     ( int              StartIndex,
                                                 int              Count      );
@@ -171,6 +174,8 @@ class Dvr : public DvrServices
         bool              EnableRecordSchedule ( uint             RecordId   );
 
         bool              DisableRecordSchedule( uint             RecordId   );
+
+        QString           RecStatusToString    ( int              RecStatus );
 };
 
 // --------------------------------------------------------------------------
@@ -226,6 +231,15 @@ class ScriptableDvr : public QObject
             return m_obj.GetRecorded( ChanId, StartTime );
         }
 
+        bool RemoveRecorded           ( int              ChanId,
+                                        const QDateTime &StartTime,
+                                        bool             ForceDelete,
+                                        bool             AllowRerecord )
+        {
+            return m_obj.RemoveRecorded( ChanId, StartTime,
+                                         ForceDelete, AllowRerecord);
+        }
+
         QObject* GetConflictList    ( int              StartIndex,
                                        int              Count      )
         {
@@ -239,6 +253,97 @@ class ScriptableDvr : public QObject
         QStringList GetTitleList    () { return m_obj.GetTitleList(); }
 
         QObject* GetTitleInfoList   () { return m_obj.GetTitleInfoList(); }
+
+        uint AddRecordSchedule ( DTC::RecRule *rule )
+        {
+            return m_obj.AddRecordSchedule(
+                                    rule->Title(),          rule->SubTitle(),
+                                    rule->Description(),    rule->Category(),
+                                    rule->StartTime(),      rule->EndTime(),
+                                    rule->SeriesId(),       rule->ProgramId(),
+                                    rule->ChanId(),         rule->CallSign(),
+                                    rule->FindDay(),        rule->FindTime(),
+                                    rule->ParentId(),       rule->Inactive(),
+                                    rule->Season(),         rule->Episode(),
+                                    rule->Inetref(),        rule->Type(),
+                                    rule->SearchType(),     rule->RecPriority(),
+                                    rule->PreferredInput(), rule->StartOffset(),
+                                    rule->EndOffset(),      rule->DupMethod(),
+                                    rule->DupIn(),          rule->Filter(),
+                                    rule->RecProfile(),     rule->RecGroup(),
+                                    rule->StorageGroup(),   rule->PlayGroup(),
+                                    rule->AutoExpire(),     rule->MaxEpisodes(),
+                                    rule->MaxNewest(),      rule->AutoCommflag(),
+                                    rule->AutoTranscode(),  rule->AutoMetaLookup(),
+                                    rule->AutoUserJob1(),   rule->AutoUserJob2(),
+                                    rule->AutoUserJob3(),   rule->AutoUserJob4(),
+                                    rule->Transcoder());
+        }
+
+        bool UpdateRecordSchedule ( DTC::RecRule *rule )
+        {
+            if (rule->Id() <= 0)
+                throw QString("Record ID cannot be <= zero");
+
+            return m_obj.UpdateRecordSchedule(
+                                    static_cast<uint>(rule->Id()),
+                                    rule->Title(),          rule->SubTitle(),
+                                    rule->Description(),    rule->Category(),
+                                    rule->StartTime(),      rule->EndTime(),
+                                    rule->SeriesId(),       rule->ProgramId(),
+                                    rule->ChanId(),         rule->CallSign(),
+                                    rule->FindDay(),        rule->FindTime(),
+                                    rule->Inactive(),
+                                    rule->Season(),         rule->Episode(),
+                                    rule->Inetref(),        rule->Type(),
+                                    rule->SearchType(),     rule->RecPriority(),
+                                    rule->PreferredInput(), rule->StartOffset(),
+                                    rule->EndOffset(),      rule->DupMethod(),
+                                    rule->DupIn(),          rule->Filter(),
+                                    rule->RecProfile(),     rule->RecGroup(),
+                                    rule->StorageGroup(),   rule->PlayGroup(),
+                                    rule->AutoExpire(),     rule->MaxEpisodes(),
+                                    rule->MaxNewest(),      rule->AutoCommflag(),
+                                    rule->AutoTranscode(),  rule->AutoMetaLookup(),
+                                    rule->AutoUserJob1(),   rule->AutoUserJob2(),
+                                    rule->AutoUserJob3(),   rule->AutoUserJob4(),
+                                    rule->Transcoder());
+        }
+
+        bool RemoveRecordSchedule ( uint RecordId )
+        {
+            return m_obj.RemoveRecordSchedule(RecordId);
+        }
+
+        QObject* GetRecordScheduleList( int StartIndex, int Count )
+        {
+            return m_obj.GetRecordScheduleList(StartIndex, Count);
+        }
+
+        QObject* GetRecordSchedule ( uint      RecordId,
+                                     QString   Template,
+                                     int       ChanId,
+                                     QDateTime StartTime,
+                                     bool      MakeOverride )
+        {
+            return m_obj.GetRecordSchedule( RecordId,  Template, ChanId,
+                                            StartTime, MakeOverride);
+        }
+
+        bool EnableRecordSchedule ( uint RecordId )
+        {
+            return m_obj.EnableRecordSchedule(RecordId);
+        }
+
+        bool DisableRecordSchedule( uint RecordId )
+        {
+            return m_obj.DisableRecordSchedule(RecordId);
+        }
+
+        QString RecStatusToString( int RecStatus )
+        {
+            return m_obj.RecStatusToString(RecStatus);
+        }
 
 };
 

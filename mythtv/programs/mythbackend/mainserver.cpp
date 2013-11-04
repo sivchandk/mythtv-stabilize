@@ -1054,12 +1054,16 @@ void MainServer::customEvent(QEvent *e)
             QStringList tokens = me->Message()
                 .split(" ", QString::SkipEmptyParts);
 
-            if (tokens.size() != 3)
+
+            if (tokens.size() < 3 || tokens.size() > 5)
             {
                 LOG(VB_GENERAL, LOG_ERR,
                     QString("Bad %1 message").arg(tokens[0]));
                 return;
             }
+
+            bool force = (tokens.size() >= 4) && (tokens[3] == "FORCE");
+            bool forget = (tokens.size() >= 5) && (tokens[4] == "FORGET");
 
             QDateTime startts = MythDate::fromString(tokens[2]);
             RecordingInfo recInfo(tokens[1].toUInt(), startts);
@@ -1067,9 +1071,9 @@ void MainServer::customEvent(QEvent *e)
             if (recInfo.GetChanID())
             {
                 if (tokens[0] == "FORCE_DELETE_RECORDING")
-                    DoHandleDeleteRecording(recInfo, NULL, true, false, false);
+                    DoHandleDeleteRecording(recInfo, NULL, true, false, forget);
                 else
-                    DoHandleDeleteRecording(recInfo, NULL, false, false, false);
+                    DoHandleDeleteRecording(recInfo, NULL, false, force, forget);
             }
             else
             {
@@ -2421,7 +2425,28 @@ void MainServer::HandleStopRecording(QStringList &slist, PlaybackSock *pbs)
     QStringList::const_iterator it = slist.begin() + 1;
     RecordingInfo recinfo(it, slist.end());
     if (recinfo.GetChanID())
+    {
+        if (ismaster)
+        {
+            // Stop recording may have been called for the same program on
+            // different channel in the guide, we need to find the actual channel
+            // that the recording is occurring on. This only needs doing once
+            // on the master backend, as the correct chanid will then be sent
+            // to the slave
+            ProgramList schedList;
+            bool hasConflicts = false;
+            LoadFromScheduler(schedList, hasConflicts);
+            for( uint n = 0; n < schedList.size(); n++)
+            {
+                ProgramInfo *pInfo = schedList[n];
+                if ((pInfo->GetRecordingStatus() == rsTuning ||
+                    pInfo->GetRecordingStatus() == rsRecording)
+                    && recinfo.IsSameProgram(*pInfo))
+                    recinfo.SetChanID(pInfo->GetChanID());
+            }
+        }
         DoHandleStopRecording(recinfo, pbs);
+    }
 }
 
 void MainServer::DoHandleStopRecording(
@@ -6179,7 +6204,7 @@ QString MainServer::LocalFilePath(const QUrl &url, const QString &wantgroup)
             else
             {
                 LOG(VB_GENERAL, LOG_ERR, QString("ERROR: LocalFilePath "
-                    "unable to find local path for '%1'.") .arg(opath));
+                    "unable to find local path for '%1'.") .arg(url.toString()));
                 lpath = "";
             }
 

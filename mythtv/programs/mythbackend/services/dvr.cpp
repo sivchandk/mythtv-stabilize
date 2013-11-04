@@ -38,9 +38,11 @@
 #include "encoderlink.h"
 #include "remoteutil.h"
 #include "mythdate.h"
+#include "recordinginfo.h"
 
 #include "serviceUtil.h"
 #include <mythscheduler.h>
+#include "scheduler.h"
 
 extern QMap<int, EncoderLink *> tvList;
 extern AutoExpire  *expirer;
@@ -66,7 +68,7 @@ DTC::ProgramList* Dvr::GetRecordedList( bool           bDescending,
 
     ProgramList progList;
 
-    int desc = 0;
+    int desc = 1;
     if (bDescending)
         desc = -1;
 
@@ -146,7 +148,8 @@ DTC::Program* Dvr::GetRecorded(int chanid, const QDateTime &recstarttsRaw)
 //
 /////////////////////////////////////////////////////////////////////////////
 
-bool Dvr::RemoveRecorded(int chanid, const QDateTime &recstarttsRaw)
+bool Dvr::RemoveRecorded(int chanid, const QDateTime &recstarttsRaw,
+                         bool forceDelete, bool allowRerecord)
 {
     if (chanid <= 0 || !recstarttsRaw.isValid())
         throw QString("Channel ID or StartTime appears invalid.");
@@ -155,9 +158,11 @@ bool Dvr::RemoveRecorded(int chanid, const QDateTime &recstarttsRaw)
 
     if (pi.GetChanID() && pi.HasPathname())
     {
-        QString cmd = QString("DELETE_RECORDING %1 %2")
+        QString cmd = QString("DELETE_RECORDING %1 %2 %3 %4")
             .arg(pi.GetChanID())
-            .arg(pi.GetRecordingStartTime(MythDate::ISODate));
+            .arg(pi.GetRecordingStartTime(MythDate::ISODate))
+            .arg(forceDelete ? "FORCE" : "NO_FORCE")
+            .arg(allowRerecord ? "FORGET" : "NO_FORGET");
         MythEvent me(cmd);
 
         gCoreContext->dispatch(me);
@@ -858,6 +863,7 @@ DTC::RecRule* Dvr::GetRecordSchedule( uint      nRecordId,
                                       bool      bMakeOverride )
 {
     RecordingRule rule;
+    QDateTime dStartTime = dStartTimeRaw.toUTC();
 
     if (nRecordId > 0)
     {
@@ -870,10 +876,10 @@ DTC::RecRule* Dvr::GetRecordSchedule( uint      nRecordId,
         if (!rule.LoadTemplate(sTemplate))
             throw QString("Template does not exist.");
     }
-    else if (nChanId > 0 && dStartTimeRaw.isValid())
+    else if (nChanId > 0 && dStartTime.isValid())
     {
         RecordingInfo::LoadStatus status;
-        RecordingInfo info(nChanId, dStartTimeRaw, false, 0, &status);
+        RecordingInfo info(nChanId, dStartTime, false, 0, &status);
         if (status != RecordingInfo::kFoundProgram)
             throw QString("Program does not exist.");
         RecordingRule *pRule = info.GetRecordingRule();
@@ -935,3 +941,8 @@ bool Dvr::DisableRecordSchedule( uint nRecordId )
     return bResult;
 }
 
+QString Dvr::RecStatusToString(int RecStatus)
+{
+    RecStatusType type = static_cast<RecStatusType>(RecStatus);
+    return toString(type);
+}

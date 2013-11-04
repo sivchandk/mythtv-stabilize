@@ -2522,6 +2522,37 @@ NULL
             return false;
     }
     
+    if (dbver == "1318")
+    {
+        const char *updates[] = {
+            "ALTER TABLE program "
+            " ADD COLUMN season INT(4) NOT NULL DEFAULT '0', "
+            " ADD COLUMN episode INT(4) NOT NULL DEFAULT '0';",
+            "ALTER TABLE recordedprogram "
+            " ADD COLUMN season INT(4) NOT NULL DEFAULT '0', "
+            " ADD COLUMN episode INT(4) NOT NULL DEFAULT '0';",
+            NULL
+        };
+
+        if (!performActualUpdate(&updates[0], "1319", dbver))
+            return false;
+    }
+
+    if (dbver == "1319")
+    {
+        // Total number of episodes in the series (season)
+        const char *updates[] = {
+            "ALTER TABLE program "
+            " ADD COLUMN totalepisodes INT(4) NOT NULL DEFAULT '0';",
+            "ALTER TABLE recordedprogram "
+            " ADD COLUMN totalepisodes INT(4) NOT NULL DEFAULT '0';",
+            NULL
+        };
+
+        if (!performActualUpdate(&updates[0], "1320", dbver))
+            return false;
+    }
+
 
     return true;
 }

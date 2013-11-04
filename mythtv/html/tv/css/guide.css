@@ -1,0 +1,271 @@
+
+/* Guide Navigation */
+.navigateBox
+{
+    float: right;
+    margin: 5px 5px 10px 5px;
+    background: #2A2A2A;
+    background-image: linear-gradient(to bottom, #555555 4%, transparent 25%);
+    border-radius: 8px;
+    padding: 10px;
+    font-weight: bold;
+}
+
+.pageLeft, .pageRight
+{
+    background-color: rgba(26, 26, 26, 0.5);
+    color: rgba(255, 255, 255, 0.5);
+    width: 30px;
+    height: 40px;
+    position: fixed;
+    font-size: 2.2em;
+    font-weight: bold;
+    z-index: 15;
+    top: 50%;
+}
+
+.pageLeft
+{
+    left: 187px;
+    border-radius: 0px 10px 10px 0px;
+}
+
+.pageRight
+{
+    right: 0px;
+    border-radius: 10px 0px 0px 10px;
+}
+
+.pageLeft:hover, .pageRight:hover
+{
+    background-color: rgba(26, 26, 26, 1.0);
+    color: rgba(255, 255, 255, 1.0);
+}
+
+/* Guide Grid */
+.guideGrid
+{
+    width: calc(100% - 20px); /* Need to subtract padding of parent */
+    float: left;
+    position: absolute;
+    padding: 0px;
+    /*overflow: visible;*/
+}
+
+.guideGrid div
+{
+    -moz-box-sizing: border-box;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.guideGrid .timeBar
+{
+    clear:both;
+    margin: 5px 0px 2px;  /* Top Horizontal Bottom */
+    height: 30px;
+    font-size: 1.1em;
+    font-weight: bold;
+    vertical-align: middle;
+    position: relative;
+}
+
+.guideGrid .timeBarDate
+{
+    float: left;
+    background: #2A2A2A;
+    background-image: linear-gradient(to bottom, #555555 4%, transparent 25%),
+                linear-gradient(to right, #555555 1%, transparent 10%);
+    border-top-left-radius: 10px;
+    font-size: 1em;
+    width: 10%;
+    height: 100%;
+    text-align: center;
+    padding: 8px 4px; /* Vertical Horizontal */
+
+}
+
+.guideGrid .timeBarTimes
+{
+    float: left;
+    width: 90%;
+    height: 100%;
+}
+
+.guideGrid .timeBarTime
+{
+    background: #2A2A2A;
+    background-image: linear-gradient(to bottom, #555555 4%, transparent 25%);
+    padding: 6px 4px; /* Vertical Horizontal */
+    height: 100%;
+}
+
+.guideGrid .channelRow
+{
+    clear: both;
+    width: 100%;
+    height: 80px;
+    margin: 2px 0px; /* Vertical Horizontal */
+    overflow: visible;
+}
+
+.guideGrid .channelBox
+{
+    float: left;
+    width: 10%;
+    height: 100%;
+    text-align: center;
+    vertical-align: middle;
+/*    background-color: #000000;
+    background-image: radial-gradient(circle, #151515 2px, transparent 3px),
+                      radial-gradient(circle, #151515 2px, transparent 3px);
+    background-size: 8px 8px;
+    background-position: 0 0, 4px 4px;*/
+    background: #2A2A2A;
+    background-image: linear-gradient(to right, #555555 1%, transparent 10%);
+    color: #FFFFFF;
+/*    border-radius: 10px;*/
+}
+
+.guideGrid .channelIcon
+{
+    margin: 5px 4px 1px; /* Top Horizontal Bottom */
+    border-radius: 5px;
+    border:1px solid #1A1A1A;
+    overflow: hidden;
+}
+
+.guideGrid .channelText
+{
+    font-weight: bold;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    padding: 0px 2px 0px; /* Top Horizontal Bottom */
+}
+
+.guideGrid .programsBox
+{
+    float: left;
+    width: 90%;
+    height: 100%;
+    position: relative;
+    overflow: visible;
+    padding: 0px 0px 0px 0px; /* Top Right Bottom Left */
+}
+
+/* An indicator of the part of the guide which is now in the past, it's width
+   is determined programatically and should not be altered, it should like up
+   exactly with the first program box. */
+.guideGrid .relentlessMarchOfTime
+{
+    background: linear-gradient(to right, rgba(26, 26, 26, 0.8), rgba(26, 26, 26, 0.4));
+/*    border-radius: 10px;*/
+    z-index: 5;
+    height: 80px;
+    margin-left: 2px;
+}
+
+.guideGrid .programBox
+{
+    float: left;
+    height: 100%;
+    overflow: visible;
+    padding: 0px 0px 0px 2px; /* Top Right Bottom Left */
+}
+
+.guideGrid .programBoxInner
+{
+    height: 100%;
+    background-color: #555555;
+    border-radius: 10px;
+    position: relative;
+    overflow: visible;
+    cursor: pointer;
+}
+
+.guideGrid .programStartsOffScreen
+{
+    border-top-left-radius: 0px;
+    border-bottom-left-radius: 0px;
+}
+
+.guideGrid .programEndsOffScreen
+{
+    border-top-right-radius: 0px;
+    border-bottom-right-radius: 0px;
+}
+
+.guideGrid .programHeader
+{
+    padding: 6px 8px 6px 8px;
+    color: #FFFFFF;
+    font-size: 1.1em;
+    width: 100%;
+    height: 30px;
+    font-weight: bold;
+/*     background-color: #444444; */
+    background: linear-gradient(to bottom, #777777 1%, #555555 20%, #222222 99%);
+    border-radius: inherit;
+    border-bottom-left-radius: 0px;
+    border-bottom-right-radius: 0px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    z-index: 4;
+    position:relative;
+}
+
+.guideGrid .programBody
+{
+    padding: 5px 5px 5px 5px;
+    color: #DDDDDD;
+    height: 45px;
+    z-index:5;
+    font-size: 0.8em;
+}
+
+.guideGrid .programDescription
+{
+    position:relative;
+    z-index:1;
+}
+
+.guideGrid .programSubtitle
+{
+    position:relative;
+    font-weight: bold;
+    font-size: 0.8em;
+    margin-right: 5px;
+    z-index: 1;
+}
+
+.guideGrid .programArrow
+{
+    font-size: 1.1em;
+    font-weight: bold;
+}
+
+.guideGrid .programScheduling .programHeader
+{
+/*    background-color: #045FB4;*/
+    background: linear-gradient(to bottom, #2681D6, #003D92 40%);
+}
+
+.guideGrid .programSchedPopup
+{
+    display: none;
+    background-color: rgba(26, 26, 26, 0.9);
+    border-radius: 8px;
+    width:110px;
+    height:30px;
+    padding:8px;
+    top: 50%;
+    left: 50%;
+    margin-top: -15px;
+    margin-left: -50px;
+    font-weight: bold;
+    position: absolute;
+    z-index: 10;
+    white-space: nowrap;
+}
+

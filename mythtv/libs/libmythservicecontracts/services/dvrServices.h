@@ -17,6 +17,7 @@
 
 #include "datacontracts/programList.h"
 #include "datacontracts/encoderList.h"
+#include "datacontracts/recRule.h"
 #include "datacontracts/recRuleList.h"
 #include "datacontracts/titleInfoList.h"
 
@@ -39,7 +40,7 @@
 class SERVICE_PUBLIC DvrServices : public Service  //, public QScriptable ???
 {
     Q_OBJECT
-    Q_CLASSINFO( "version"    , "1.9" );
+    Q_CLASSINFO( "version"    , "2.0" );
     Q_CLASSINFO( "RemoveRecordedItem_Method",                   "POST" )
     Q_CLASSINFO( "AddRecordSchedule_Method",                    "POST" )
     Q_CLASSINFO( "RemoveRecordSchedule_Method",                 "POST" )
@@ -76,7 +77,9 @@ class SERVICE_PUBLIC DvrServices : public Service  //, public QScriptable ???
                                                             const QDateTime &StartTime  ) = 0;
 
         virtual bool               RemoveRecorded        ( int              ChanId,
-                                                           const QDateTime &StartTime  ) = 0;
+                                                           const QDateTime &StartTime,
+                                                           bool             ForceDelete,
+                                                           bool             AllowRerecord ) = 0;
 
         virtual DTC::ProgramList*  GetConflictList       ( int              StartIndex,
                                                            int              Count      ) = 0;
@@ -193,6 +196,8 @@ class SERVICE_PUBLIC DvrServices : public Service  //, public QScriptable ???
         virtual bool               EnableRecordSchedule  ( uint             RecordId   ) = 0;
 
         virtual bool               DisableRecordSchedule ( uint             RecordId   ) = 0;
+
+        virtual QString            RecStatusToString     ( int              RecStatus  ) = 0;
 
 };
 
