@@ -51,7 +51,7 @@ Architecture: all
 Depends: mysql-client, ttf-freefont, ttf-dejavu-core, ttf-tiresias, ${misc:Depends}, ${python:Depends}, pwgen
 Recommends: mythtv-doc (>= ${source:Version})
 Conflicts: mythtv (<< 0.8-1)
-Replaces: mythtv (<< 0.8-1), mythtv-frontend (<= 0.26), mythtv-backend (<= 0.20.2.svn20071021-0.0), mythmusic (<= 0.20.2.svn20080126-0.0), mythtv-themes (<= 0.21.svn20090824-0.4), mythcontrols (<< 0.22-0.5), mythtv-backend-python (<= 0.24~)
+Replaces: mythtv (<< 0.8-1), mythtv-frontend (<= 0.26), mythtv-backend (<= 0.20.2.svn20071021-0.0), mythmusic (<= 0.20.2.svn20080126-0.0), mythtv-themes (<= 0.21.svn20090824-0.4), mythcontrols (<< 0.22-0.5), mythtv-backend-python (<= 0.24~), libxml-xpath-perl
 Description: Personal video recorder application (common data).
  MythTV provides a unified graphical interface for recording and viewing
  television programs. Refer to the mythtv package for more information.
