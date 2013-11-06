@@ -94,39 +94,212 @@ static int decode_picture_timing(H264Context *h){
     return 0;
 }
 
-static int decode_user_data_itu_t_t35(H264Context *h, int size) {
-    uint32_t user_identifier;
-    int dtg_active_format;
+static int decode_user_data_itu_t_t35(H264Context *s, int buf_size) {
 
-    if (size < 7)
-        return -1;
-    size -= 7;
+    const uint8_t *p = NULL, *buf_end = NULL;
 
-    skip_bits(&h->gb, 8);   // country_code
-    skip_bits(&h->gb, 16);  // provider_code
-    user_identifier = get_bits_long(&h->gb, 32);
+    //Jump index bytes to start of user data
+    //Starts with 0xB5 and 0x0031
+    p = s->gb.buffer + (s->gb.index >> 3);
 
-    switch (user_identifier) {
-        case 0x44544731:    // "DTG1" - AFD_data
-            if (size < 1)
-                return -1;
-            skip_bits(&h->gb, 1);
-            if (get_bits(&h->gb, 1)) {
-                skip_bits(&h->gb, 6);
-                if (size < 2)
-                    return -1;
-                skip_bits(&h->gb, 4);
-                dtg_active_format = get_bits(&h->gb, 4);
-                h->avctx->dtg_active_format = dtg_active_format;
-            } else {
-                skip_bits(&h->gb, 6);
+    /*Ignore first 3 bytes
+    p[0] = 0xB5 ITU-T Country Code
+    p[1-2] = 0x0031 ITU-T Provider code */
+    p += 3; //ignore 0xB50031
+    buf_end = p + buf_size-3;
+
+    /*we parse the DTG active format information */
+    if (buf_end - p >= 5 &&
+            p[0] == 'D' && p[1] == 'T' && p[2] == 'G' && p[3] == '1') {
+        int flags = p[4];
+        p += 5;
+        if (flags & 0x80) { //skip event id
+            p += 2;
+        }
+        if (flags & 0x40) {
+            if (buf_end - p < 1)
+                return;
+            s->avctx->dtg_active_format = p[0] & 0x0f;
+        }
+    } else if (buf_end - p >= 6 &&
+            p[0] == 0x43 && p[1] == 0x43 && p[2] == 0x01 && p[3] == 0xf8 &&
+            p[4] == 0x9e) {
+#undef fprintf
+        int atsc_cnt_loc = s->tmp_atsc_cc_len;
+        uint8_t real_count = 0;
+        unsigned int i;
+
+        s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = 0x40 | (0x1f&real_count);
+        s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = 0x00; // em_data
+
+        for (i=5; i < (buf_end - p - 2) &&
+        (s->tmp_atsc_cc_len + 3) < ATSC_CC_BUF_SIZE; i++)
+        {
+            if ((p[i]&0xfe) == 0xfe) // CC1&CC2 || CC3&CC4
+            {
+                uint8_t type = (p[i] & 0x01) ^ 0x01;
+                uint8_t cc_data_1 = p[++i];
+                uint8_t cc_data_2 = p[++i];
+                uint8_t valid = 1;
+                uint8_t cc608_hdr = 0xf8 | (valid ? 0x04 : 0x00) | type;
+                real_count++;
+                s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = cc608_hdr;
+                s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = cc_data_1;
+                s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = cc_data_2;
+                continue;
             }
             break;
-        default:
-            skip_bits(&h->gb, size * 8);
-            break;
-    }
+        }
+        if (!real_count)
+        {
+            s->tmp_atsc_cc_len = atsc_cnt_loc;
+        }
+        else
+        {
+            s->tmp_atsc_cc_buf[atsc_cnt_loc] = 0x40 | (0x1f&real_count);
+            s->tmp_atsc_cc_len = atsc_cnt_loc + 2 + 3 * real_count;
+        }
+    } else if (buf_end - p >= 6 &&
+            p[0] == 'G' && p[1] == 'A' && p[2] == '9' && p[3] == '4') {
+        /* Parse CEA-708/608 Closed Captions in ATSC user data */
+        int user_data_type_code = p[4];
+        if (user_data_type_code == 0x03) { // caption data
+            int cccnt = p[5] & 0x1f;
+            int cclen = 3 * cccnt + 2;
+            int proc = (p[5] >> 6) & 1;
+            int blen = s->tmp_atsc_cc_len;
 
+            p += 5;
+
+            if ((cclen <= buf_end - p) && ((cclen + blen) < ATSC_CC_BUF_SIZE)) {
+                uint8_t *dst = s->tmp_atsc_cc_buf + s->tmp_atsc_cc_len;
+                memcpy(dst, p, cclen);
+                s->tmp_atsc_cc_len += cclen;
+            }
+        }
+        else if (user_data_type_code == 0x04) {
+            // additional CEA-608 data, as per SCTE 21
+        }
+        else if (user_data_type_code == 0x05) {
+            // luma PAM data, as per SCTE 21
+        }
+        else if (user_data_type_code == 0x06) {
+            // bar data (letterboxing info)
+        }
+    } else if (buf_end - p >= 3 && p[0] == 0x03 && ((p[1]&0x7f) == 0x01)) {
+        // SCTE 20 encoding of CEA-608
+        unsigned int cc_count = p[2]>>3;
+        unsigned int cc_bits = cc_count * 26;
+        unsigned int cc_bytes = (cc_bits + 7 - 3) / 8;
+        if (buf_end - p >= (2+cc_bytes) && (s->tmp_scte_cc_len + 2 + 3*cc_count) < SCTE_CC_BUF_SIZE) {
+            int scte_cnt_loc = s->tmp_scte_cc_len;
+            uint8_t real_count = 0, marker = 1, i;
+            GetBitContext gb;
+            init_get_bits(&gb, p+2, (buf_end-p-2) * sizeof(uint8_t));
+            get_bits(&gb, 5); // swallow cc_count
+            s->tmp_scte_cc_buf[s->tmp_scte_cc_len++] = 0x40 | (0x1f&cc_count);
+            s->tmp_scte_cc_buf[s->tmp_scte_cc_len++] = 0x00; // em_data
+            for (i = 0; i < cc_count; i++) {
+                uint8_t valid, cc608_hdr;
+                uint8_t priority = get_bits(&gb, 2);
+                uint8_t field_no = get_bits(&gb, 2);
+                uint8_t line_offset = get_bits(&gb, 5);
+                uint8_t cc_data_1 = av_reverse[get_bits(&gb, 8)];
+                uint8_t cc_data_2 = av_reverse[get_bits(&gb, 8)];
+                uint8_t type = (1 == field_no) ? 0x00 : 0x01;
+                (void) priority; // we use all the data, don't need priority
+                marker &= get_bits(&gb, 1);
+                // dump if marker bit missing
+                valid = marker;
+                // ignore forbidden and repeated (3:2 pulldown) field numbers
+                valid = valid && (1 == field_no || 2 == field_no);
+                // ignore content not in line 21
+                valid = valid && (11 == line_offset);
+                if (!valid)
+                    continue;
+                cc608_hdr = 0xf8 | (valid ? 0x04 : 0x00) | type;
+                real_count++;
+                s->tmp_scte_cc_buf[s->tmp_scte_cc_len++] = cc608_hdr;
+                s->tmp_scte_cc_buf[s->tmp_scte_cc_len++] = cc_data_1;
+                s->tmp_scte_cc_buf[s->tmp_scte_cc_len++] = cc_data_2;
+            }
+            if (!real_count)
+            {
+                s->tmp_scte_cc_len = scte_cnt_loc;
+            }
+            else
+            {
+                s->tmp_scte_cc_buf[scte_cnt_loc] = 0x40 | (0x1f&real_count);
+                s->tmp_scte_cc_len = scte_cnt_loc + 2 + 3 * real_count;
+            }
+        }
+    } else if (buf_end - p >= 11 &&
+            p[0] == 0x05 && p[1] == 0x02) {
+        /* parse EIA-608 captions embedded in a DVB stream. */
+        uint8_t dvb_cc_type = p[7];
+        p += 8;
+
+        /* Predictive frame tag, but MythTV reorders predictive
+         * frames for us along with the CC data, so we ignore it.
+         */
+        if (dvb_cc_type == 0x05) {
+            dvb_cc_type = p[6];
+            p += 7;
+        }
+
+        if (dvb_cc_type == 0x02) { /* 2-byte caption, can be repeated */
+            int type = 0x00; // line 21 field 1 == 0x00, field 2 == 0x01
+            uint8_t cc608_hdr = 0xf8 | 0x04/*valid*/ | type;
+            uint8_t hi = p[1] & 0xFF;
+            uint8_t lo = p[2] & 0xFF;
+
+            dvb_cc_type = p[3];
+
+            if ((2 <= buf_end - p) && ((3 + s->tmp_atsc_cc_len) < ATSC_CC_BUF_SIZE)) {
+                s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = 0x40 | (0x1f&1/*cc_count*/);
+                s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = 0x00; // em_data
+                s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = cc608_hdr;
+                s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = hi;
+                s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = lo;
+
+                /* Only repeat characters when the next type flag
+                 * is 0x04 and the characters are repeatable (i.e., less than
+                 * 32 with the parity stripped).
+                 */
+                if (dvb_cc_type == 0x04 && (hi & 0x7f) < 32) {
+                    if ((2 <= buf_end - p) && ((3 + s->tmp_atsc_cc_len) < ATSC_CC_BUF_SIZE)) {
+                        s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = 0x40 | (0x1f&1/*cc_count*/);
+                        s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = 0x00; // em_data
+                        s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = cc608_hdr;
+                        s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = hi;
+                        s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = lo;
+                    }
+                }
+            }
+
+            p += 6;
+        } else if (dvb_cc_type == 0x04) { /* 4-byte caption, not repeated */
+            if ((4 <= buf_end - p) &&
+                    ((6 + s->tmp_atsc_cc_len) < ATSC_CC_BUF_SIZE)) {
+                int type = 0x00; // line 21 field 1 == 0x00, field 2 == 0x01
+                uint8_t cc608_hdr = 0xf8 | 0x04/*valid*/ | type;
+
+                s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = 0x40 | (0x1f&2/*cc_count*/);
+                s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = 0x00; // em_data
+                s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = cc608_hdr;
+                s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = p[1] & 0xFF;
+                s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = p[2] & 0xFF;
+                s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = cc608_hdr;
+                s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = p[3] & 0xFF;
+                s->tmp_atsc_cc_buf[s->tmp_atsc_cc_len++] = p[4] & 0xFF;
+            }
+
+            p += 9;
+        }
+    }
+    // For other CEA-608 embedding options see:
+    /* SCTE 21 */
+    /* ETSI EN 301 775 */
     return 0;
 }
 
@@ -223,6 +396,7 @@ int ff_h264_decode_sei(H264Context *h){
         case SEI_TYPE_USER_DATA_ITU_T_T35:
             if(decode_user_data_itu_t_t35(h, size) < 0)
                 return -1;
+            skip_bits(&h->gb, 8*size);
             break;
         case SEI_TYPE_USER_DATA_UNREGISTERED:
             if(decode_unregistered_user_data(h, size) < 0)

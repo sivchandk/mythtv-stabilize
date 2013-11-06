@@ -1744,6 +1744,15 @@ int ff_h264_frame_start(H264Context *h)
     pic->f.coded_picture_number = h->coded_picture_number++;
     pic->field_picture          = h->picture_structure != PICT_FRAME;
 
+
+    /* Put ATSC captions cached from parse_user_data into the correct frame */
+    memcpy(pic->f.atsc_cc_buf, h->tmp_atsc_cc_buf, h->tmp_atsc_cc_len);
+    pic->f.atsc_cc_len = h->tmp_atsc_cc_len;
+    h->tmp_atsc_cc_len = 0;
+    memcpy(pic->f.scte_cc_buf, h->tmp_scte_cc_buf, h->tmp_scte_cc_len);
+    pic->f.scte_cc_len = h->tmp_scte_cc_len;
+    h->tmp_scte_cc_len = 0;
+
     /*
      * Zero key_frame here; IDR markings per slice in frame or fields are ORed
      * in later.
@@ -2777,8 +2786,7 @@ static int field_end(H264Context *h, int in_setup)
      * past end by one (callers fault) and resync_mb_y != 0
      * causes problems for the first MB line, too.
      */
-    if (CONFIG_ERROR_RESILIENCE &&
-        !FIELD_PICTURE && h->current_slice && !h->sps.new) {
+    if (CONFIG_ERROR_RESILIENCE && !FIELD_PICTURE && h->current_slice && !h->sps.new && h->avctx->skip_frame < AVDISCARD_ALL) {
         h->er.cur_pic  = h->cur_pic_ptr;
         ff_er_frame_end(&h->er);
     }
@@ -4521,8 +4529,9 @@ static int decode_nal_units(H264Context *h, const uint8_t *buf, int buf_size,
                 }
 
             // FIXME do not discard SEI id
-            if (avctx->skip_frame >= AVDISCARD_NONREF && h->nal_ref_idc == 0)
-                continue;
+            if (avctx->skip_frame >= AVDISCARD_NONREF && h->nal_ref_idc == 0
+            		&& hx->nal_unit_type != NAL_SLICE && hx->nal_unit_type != NAL_SEI)
+            	continue;
 
 again:
             /* Ignore per frame NAL unit type during extradata
