@@ -336,6 +336,16 @@ void RingBuffer::SetBufferSizeFactors(bool estbitrate, bool matroska)
     CreateReadAheadBuffer();
 }
 
+/** \brief Sets a time until which the RingBuffer will not decide that
+ *         an end-of-file has been hit.
+ */
+void RingBuffer::SetRetardEOFTime(const QDateTime &dt)
+{
+    rwlock.lockForWrite();
+    retardEOF = dt;
+    rwlock.unlock();
+}
+
 /** \fn RingBuffer::CalcReadAheadThresh(void)
  *  \brief Calculates fill_min, fill_threshold, and readblocksize
  *         from the estimated effective bitrate of the stream.
@@ -934,9 +944,19 @@ void RingBuffer::run(void)
                 }
                 else
                 {
-                    LOG(VB_FILE, LOG_DEBUG,
-                        LOC + "setting ateof (read_return == 0)");
-                    ateof = true;
+                    if (!retardEOF.isValid() ||
+                        QDateTime::currentDateTime() > retardEOF)
+                    {
+                        LOG(VB_FILE, LOG_DEBUG,
+                            LOC + "setting ateof (read_return == 0)");
+                        ateof = true;
+                    }
+                    else
+                    {
+                        LOG(VB_FILE, LOG_DEBUG,
+                            LOC + "waiting a bit for data (read_return == 0)");
+                        generalWait.wait(&rwlock, 1000);
+                    }
                 }
             }
 
@@ -978,6 +998,9 @@ void RingBuffer::run(void)
     }
 
     rwlock.unlock();
+
+    LOG(VB_FILE, LOG_INFO, LOC + QString("exiting ateof=%1").arg(ateof));
+    sleep(1);
 
     rwlock.lockForWrite();
     rbrlock.lockForWrite();
@@ -1234,9 +1257,13 @@ int RingBuffer::ReadPriv(void *buf, int count, bool peek)
         rwlock.lockForRead();
     }
 
-    if (!WaitForReadsAllowed())
+    while (!WaitForReadsAllowed())
     {
         LOG(VB_FILE, LOG_NOTICE, LOC + loc_desc + ": !WaitForReadsAllowed()");
+
+        if (retardEOF.isValid() && QDateTime::currentDateTime() <= retardEOF)
+        	continue;
+
         rwlock.unlock();
         stopreads = true; // this needs to be outside the lock
         rwlock.lockForWrite();
@@ -1245,9 +1272,13 @@ int RingBuffer::ReadPriv(void *buf, int count, bool peek)
         return 0;
     }
 
-    if (!WaitForAvail(count))
+    while (!WaitForAvail(count))
     {
         LOG(VB_FILE, LOG_NOTICE, LOC + loc_desc + ": !WaitForAvail()");
+
+        if (retardEOF.isValid() && QDateTime::currentDateTime() <= retardEOF)
+        	continue;
+
         rwlock.unlock();
         stopreads = true; // this needs to be outside the lock
         rwlock.lockForWrite();
