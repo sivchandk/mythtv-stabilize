@@ -640,6 +640,15 @@ typedef struct H264Context {
 
     int sync;                      ///< did we had a keyframe or recovery point
 
+#define ATSC_CC_BUF_SIZE 1024
+    /// Used to hold cached user_data about caption packets before the
+    /// frame for these packets has been created in MPV_frame_start().
+    uint8_t tmp_atsc_cc_buf[ATSC_CC_BUF_SIZE];
+    int     tmp_atsc_cc_len;
+#define SCTE_CC_BUF_SIZE 1024
+    uint8_t tmp_scte_cc_buf[SCTE_CC_BUF_SIZE];
+    int     tmp_scte_cc_len;
+
     uint8_t parse_history[4];
     int parse_history_count;
     int parse_last_mb;

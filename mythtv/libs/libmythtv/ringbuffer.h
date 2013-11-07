@@ -5,6 +5,7 @@
 
 #include <QReadWriteLock>
 #include <QWaitCondition>
+#include <QDateTime>
 #include <QString>
 #include <QMutex>
 #include <QMap>
@@ -61,6 +62,7 @@ class MTV_PUBLIC RingBuffer : protected MThread
     void UpdatePlaySpeed(float playspeed);
     void EnableBitrateMonitor(bool enable) { bitrateMonitorEnabled = enable; }
     void SetBufferSizeFactors(bool estbitrate, bool matroska);
+    void SetRetardEOFTime(const QDateTime &dt);
 
     // Gets
     QString   GetSafeFilename(void) { return safefilename; }
@@ -216,6 +218,7 @@ class MTV_PUBLIC RingBuffer : protected MThread
 
     RemoteFile *remotefile;       // protected by rwlock
 
+    QDateTime retardEOF;          // protected by rwlock
     uint      bufferSize;         // protected by rwlock
     bool      low_buffers;        // protected by rwlock
     bool      fileismatroska;     // protected by rwlock

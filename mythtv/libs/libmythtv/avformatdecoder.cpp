@@ -1435,6 +1435,7 @@ void AvFormatDecoder::InitVideoCodec(AVStream *stream, AVCodecContext *enc,
         if (FlagIsSet(kDecodeNoDecode))
         {
             enc->skip_idct = AVDISCARD_ALL;
+            enc->skip_frame = AVDISCARD_ALL;
         }
     }
 

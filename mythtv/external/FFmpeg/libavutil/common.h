@@ -34,6 +34,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef UINT64_C
+#define UINT64_C(c) (c ## ULL)
+#endif
+
+
 #include "attributes.h"
 #include "version.h"
 #include "libavutil/avconfig.h"
