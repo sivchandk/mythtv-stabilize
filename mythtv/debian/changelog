@@ -1,3 +1,154 @@
+mythtv (0.27-20131128-53fac02) UNRELEASED; urgency=low
+
+  * New checkout since last package origin/fixes/0.26 / b237aff
+  * Upstream changes since last package 80fe2a9
+  * [bea0129] Merge pull request #15 from MythTV/fixes/0.27
+  * [ea5af90] Services API: Fix aggregation of channel and program
+    information in GetProgramGuide() (cherry picked from commit
+    7c8e274633cea2684171e8d2daafe61b2e9732f5)
+  * [923bd98] Services API: Order programs in GetProgramGuide() by
+    starttime (cherry picked from commit
+    a180bbc1b89290128ac617e8a640740ada3f0690)
+  * [9d1f4a6] Fix the disappearing programs bug in the Service API
+    (cherry picked from commit 0f3d24e2b478f51b1b8360386cbf97a375b1dfac)
+  * [2a4ede8] Fix inclusion of year of release in services Program
+    object. (cherry picked from commit
+    5fde814375e6d87ad42d3eade9bed100e358f876)
+  * [79f9a9e] Fix kVideoPropertyMask, we want 7 bits, not 6 (cherry
+    picked from commit a69babcffb80c58d17138219e89cd3150a5510ec)
+  * [916dd9c] Services API: Fix 'reverse' sorting in
+    Dvr::GetRecordedList()
+  * [d7c8faa] MythZoneMinder: get a normal frame image if an analysis
+    image is not available
+  * [27e74e2] MythZoneMinder: fix playback of continuous events
+  * [84c700b] MythZoneMinder: fix the monitor function popup on the
+    console screen
+  * [8845997] Manually apply logging arguments when running
+    mythfilldatabase.
+  * [b5f24f8] MythZoneMinder: tidy up the default wide zmliveplayer
+  * [5815158] MythCenter-wide: Add the six and eight camera layouts to
+    the ZM live screen
+  * [86fbdb7] MythZoneMinder: Add the six and eight camera layouts to
+    the 4:3 ZM live screen
+  * [821df49] MythZoneMinder: Add six and eight camera layouts to the
+    live view screen
+  * [eff6257] MythZoneMinder: add some initial support for ZoneMinder >=
+    1.26.0
+  * [911e194] Fix marking of 1080/720 videos. (cherry picked from commit
+    7ed0e5fb3dd90eca4eb9cdf8371be11e80a41fa6)
+  * [a9711a0] Adding debian packaging scripts for 0.27
+  * [29eab51] Any V4L card may need to preset the tuner.
+  * [6ecb83e] Fixes #11905 - HttpRequest parsing fails on parameters
+    containing encoded & character
+  * [ccf877d] Bump ABI version after
+    9ecf7a69ffc00d3f03dbb4c7a611a02d1f19f702.
+  * [9ecf7a6] Use Live TV order for the card list.
+  * [c160ce2] Revert "Use Live TV order for the card list."
+  * [83fb407] Revert "Allow Live TV to be entered from the top-level
+    Program Guide."
+  * [7555b69] Allow Live TV to be entered from the top-level Program
+    Guide.
+  * [7ed0e9d] Use Live TV order for the card list.
+  * [7323c32] Fix some cc608 field number handling.  Refs #11899.
+  * [1e5d247] Fix services GetChannelIcon() when height or width are
+    specified (cherry picked from commit
+    15b82903a101eb2111889fb2c9600181f122dcce)
+  * [1c8602a] Revert "Add ChannelIcons to the list of "special" storage
+    groups."
+  * [93ada42] decode URL before attempting to open them.
+  * [88f380d] Add ChannelIcons to the list of "special" storage groups.
+  * [85462fb] Use the ChannelIcon storage group in the services API
+    Guide/GetChannelIcon() (cherry picked from commit
+    d21c685f62c58e596ce1ece86e85040285eb0ccd)
+  * [23131d3] Disable MHEG/ITV when generating previews or flagging
+    commercials (cherry picked from commit
+    bc62d105d6cd594e18c8d0674902916d3b00d37b)
+  * [1224f05] Make sure callbacks are disabled when the slave backend
+    ANNounces.
+  * [0095fd1] Prevent the use of SendReceiveStringList() on a socket
+    with callbacks. Fixes #11777 (cherry picked from commit
+    836eb11d96abfaa5986e7382103db69769b0ae47)
+  * [06a8889] Added the missing libxml-xpath-perl dependency for mythtv-
+    common
+  * Upstream changes since last package bea0129
+  * [53fac02] Merge pull request #20 from MythTV/fixes/0.27
+  * [e5acf0c] mythzmserver: use the frame size from the shared memory in
+    ZM 1.26.x
+  * [a1e2fa4] MythZoneMinder: fix typo
+  * [c47ba63] HLS: Reopen top level url, if playlist appears to be
+    invalid.
+  * [204d643] Improve logging of playlist downloads
+  * [684e72a] On some systems, usleep will fail with a value greater
+    than 1000000-1.  Fix HLSStreamHandler::run to not exceed 1000000-1.
+  * [de5f1e5] Quiet some HLS logging
+  * [ad7aed0] Add missing 'class' to friend declaration.
+  * [d541c3e] The classes defined in httplivestreambuffer.cpp were
+    originally designed for
+  * [166c80d] MythDownloadManager has a memory leak, which can be
+    terminal when used by
+  * [50e5f45] Cleanup and simplify the HLS Recorder.
+  * [552fdc0] mythzmserver: fix a possible segfault if no event frames
+    are found
+  * [fa62a68a] MythZoneMinder: use the itemVisible signal to update the
+    event images
+  * [5db99c8] mythburn.py: fix another utcisoformat() missed in
+    fa94c154c7
+  * [860f760] mythburn.py: only use toprettyxml() in Python >= 2.7.3
+  * [a6c1d53] Limit scheduler sleeping when master backend shutdown is
+    enabled.
+  * [b0c1c97] MythZoneMinder: fix an invalid frame no. warning when
+    playing back events
+  * [fa94c15] mythburn.py: pass the starttime in utc format to
+    mythtranscode
+  * [63d0384] MythZoneMinder: finish the support for ZoneMinder >=
+    0.26.0
+  * [531b8e6] mythzmserver: fix the debug output telling us which mmap
+    files we opened
+  * [4ca9300] Fix compiler warnings spotted by Jonatan Lindblad.
+  * [cc247f0] Make ffmpeg call 'streams_changed' again when a DVD PCM
+    stream is changed from PCM_DVD to PCM_S16BE to ensure the correct
+    codec is loaded.
+  * [77a66f4] Following [080ef223c] don't segfault if curRecording is
+    NULL.
+  * [f7a44a3] Re-enable display of tuning status in LiveTV after
+    [9b22460f5]
+  * [c169ca0] Don't timeout the signalmonitor until all hope is lost.
+  * [4f9f78f] H264Parser: Only enter the "state changed" state if we
+    have seen a SPS.
+  * [4a2a63d] Update mythpython script for new tmdb library. (cherry
+    picked from commit 5c5082a6109df3e3c4ddb99569fcf37af55b97d1)
+  * [11cbec3] actually add the timecodeOffset when getting audio frames
+  * [c8fb132] Fix lossless transcode.
+  * [64a0824] Handle system keypress events during playback.  Refs
+    #11881. (cherry picked from commit
+    b83e60520062cd338f2b952a8b8bc7aeb0260b27)
+  * [d31e729] Respect LiveTVOrder priority when switching sources.
+  * [4e13424] Fix reversed logic in dfe5396.  Refs #11939.
+  * [02d88eb] Simplify MythCoreContext::GetMasterHostPrefix(). It's a
+    waste of time to get the IP/port from the socket when we can be
+    using the values from the settings instead, if we're not already
+    connected to the master we will soon be connecting anyway to conduct
+    the file transfer. (cherry picked from commit
+    22b48f435a97b6b973a2e0dea9e89548350bc01e)
+  * [dfe5396] Mythtranscode: Don't overwrite cutlist from the command
+    line.
+  * [45459f9] Update ABI version after
+    1b16c65f465588a8991b730fb23ef0d1c61ed181.
+  * [1b16c65] Improve the performance of Live TV embedded in the Program
+    Guide.
+  * [32107c3] Added command line scanning support for ASI.
+  * [a2a3e19] Merge pull request #17 from rkrishna1/fixes/0.27
+  * [1dbf39c] Extends timeout for caption extraction.
+  * [94ffd10] Add H264 Caption extraction
+  * [0a5c67e] Since IPv6 addresses can contain %{num} as the zone index,
+    it's not safe to use QString::arg() in GenMythUrl(). Potentially
+    fixes #11937 (cherry picked from commit
+    08b2525642ef1defa1390a4dbf35d5a3d2993147)
+  * [06a8889] Added the missing libxml-xpath-perl dependency for mythtv-
+    common
+
+ -- Digital Nirvana <sysadmin@digital-nirvana.com>  Thu, 28 Nov 2013 00:10:39 +0530
+
 mythtv (0.27-20131029-80fe2a9) UNRELEASED; urgency=low
 
   * New checkout since last package origin/fixes/0.26 / b237aff
