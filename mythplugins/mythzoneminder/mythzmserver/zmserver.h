@@ -16,7 +16,7 @@
 #ifndef ZMSERVER_H
 #define ZMSERVER_H
 
-
+#include <stdint.h>
 #include <unistd.h>
 #include <string>
 #include <sstream>
@@ -60,7 +60,7 @@ const string RELOAD           = "reload";
 const string RUNNING          = "running";
 
 typedef enum 
-{ 
+{
     IDLE,
     PREALARM,
     ALARM,
@@ -162,6 +162,7 @@ class MONITOR
     int getLastWriteIndex(void);
     int getSubpixelOrder(void);
     int getState(void);
+    int getFrameSize(void);
 
     string name;
     string type;
@@ -177,7 +178,6 @@ class MONITOR
     unsigned char *shared_images;
     int last_read;
     string status;
-    int frame_size;
     int palette;
     int controllable;
     int trackMotion;
@@ -213,6 +213,7 @@ class ZMServer
                           string enabled);
     void handleGetServerStatus(void);
     void handleGetMonitorStatus(void);
+    void handleGetAlarmStates(void);
     void handleGetMonitorList(void);
     void handleGetCameraList(void);
     void handleGetEventList(vector<string> tokens);
@@ -230,13 +231,15 @@ class ZMServer
 
     bool                 m_debug;
     int                  m_sock;
-    map<int, MONITOR *>  m_monitors;
+    vector<MONITOR *>    m_monitors;
+    map<int, MONITOR *>  m_monitorMap;
     bool                 m_useDeepStorage;
     bool                 m_useAnalysisImages;
     string               m_eventFileFormat;
     string               m_analysisFileFormat;
     key_t                m_shmKey;
     string               m_mmapPath;
+    char                 m_buf[10];
 };
 
 

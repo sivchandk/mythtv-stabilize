@@ -1,24 +1,7 @@
 
-function getChild(element, name)
+function jq(id) // F*%$ jQuery
 {
-    if (!isValidObject(element))
-        return;
-
-    var children = element.children;
-    for (var i = 0; i < children.length; i++)
-    {
-        if (children[i].name == name)
-            return children[i];
-    }
-}
-
-function getChildValue(element, name)
-{
-    var child = getChild(element, name);
-    if (isValidObject(child))
-        return child.value;
-
-    return "";
+    return "#" + id.replace( /(:|\.|\[|\])/g, "\\$1" );
 }
 
 function toggleVisibility(layer, show)
@@ -57,16 +40,16 @@ function moveToPosition(layer, customer)
     var pageWidth = document.body.clientWidth; //window.innerHeight;
 
     //alert("Page Width: " + pageWidth + " Customer Left: " + customerLeft + " Layer Width: " + layerWidth + " Parent Offset: " + parentXOffset);
-    //alert("Page Height: " + pageHeight + " Customer Bottom: " + customerBottom + " Layer Height: " + layerHeight + " Parent Offset: " + parentYOffset);
+    //alert("Page Bottom: " + pageBottom + " Page Scroll Offset: " +  window.pageYOffset + " Customer Bottom: " + customerBottom + " Layer Height: " + layerHeight + " Parent Offset: " + parentYOffset);
 
-    if ((customerLeft + layerWidth + 10) < pageWidth + window.pageXOffset)
+    if ((customerLeft + layerWidth + 10) < (pageWidth + window.pageXOffset))
     {
         layer.style.left = (customerLeft + 10 - parentXOffset) + "px";
     }
     else
         layer.style.left = (pageWidth - layerWidth - 5 - parentXOffset) + "px";
 
-    if ((customerBottom + layerHeight) < pageBottom + window.pageYOffset)
+    if ((customerBottom + layerHeight) < pageBottom)
     {
         layer.style.top = (customerBottom - parentYOffset) + "px";
     }
@@ -105,10 +88,10 @@ function isClassSet(element, className)
 var selectedElement;
 var chanID = "";
 var startTime = "";
-function showMenu(parent, menuName)
+function showMenu(parent, typeStr)
 {
     hideDetail(parent);
-    hideMenu(menuName);
+    hideMenu("optMenu");
 
     if (selectedElement === parent)
     {
@@ -121,7 +104,17 @@ function showMenu(parent, menuName)
     chanID = values[0];
     startTime = values[1];
 
-    var menu = document.getElementById(menuName);
+    var menu = document.getElementById("optMenu");
+    var types = typeStr.split(' ');
+    for (var i = 0; i < types.length; i++)
+    {
+        var children = menu.getElementsByClassName(types[i]);
+        for (var j = 0; j < children.length; j++)
+        {
+            children[j].style.display = "block";
+        }
+    }
+
 
     // Toggle the "itemSelected" class on the program div, this gives the
     // user visual feedback on which one the menu relates to
@@ -140,6 +133,11 @@ function showMenu(parent, menuName)
 function hideMenu(menuName)
 {
     var menu = document.getElementById(menuName);
+    var children = menu.getElementsByClassName("button");
+    for (var i = 0; i < children.length; i++)
+    {
+        children[i].style.display = "none";
+    }
     // Reset visibility
     if (checkVisibility(menu))
     {
@@ -179,7 +177,7 @@ function showDetail(parentID, type)
     if (type == "recording")
         method = "getRecordingDetailHTML";
 
-    var url = "/tv/qjs/program_util.qjs?action=" + method + "&chanID=" + chanID + "&startTime=" + startTime;
+    var url = "/tv/ajax_backends/program_util.qsp?action=" + method + "&chanID=" + chanID + "&startTime=" + startTime;
     var ajaxRequest = $.ajax( url )
                             .done(function()
                         {
@@ -208,18 +206,49 @@ function hideDetail(parent)
     toggleVisibility(layer, false);
 }
 
-function loadScheduler(chanID, startTime, from)
+function loadScheduler(chanID, startTime)
 {
-    hideMenu(from);
-    loadContent('/tv/schedule.qsp?chanId=' + chanID + '&amp;startTime=' + startTime);
+    hideMenu("optMenu");
+    var layer = document.getElementById(chanID + "_" + startTime);
+    var recRuleID = layer.getAttribute("data-recordid");
+    loadContent('/tv/schedule.qsp?chanId=' + chanID + '&amp;startTime=' + startTime + '&amp;recRuleId' + recRuleID);
+}
+
+function checkRecordingStatus(chanID, startTime)
+{
+    var url = "/tv/ajax_backends/dvr_util.qsp?action=checkRecStatus&chanID=" + chanID + "&startTime=" + startTime;
+    var ajaxRequest = $.ajax( url ).done(function()
+                            {
+                                var response = ajaxRequest.responseText.split("#");
+                                var id = response[0] + "_" + response[1];
+                                var layer = document.getElementById(id);
+                                toggleClass(layer, "programScheduling");
+                                // toggleClass(layer, response[2]);
+                                var popup = document.getElementById(id + "_schedpopup");
+                                toggleVisibility(popup);
+                                // HACK: Easiest way to ensure that everything
+                                //       on the page is correctly updated for now
+                                //       is to reload
+                                reloadTVContent();
+                            });
+}
+
+function recRuleChanged(chandID, startTime)
+{
+    var layer = document.getElementById(chanID + "_" + startTime);
+    toggleClass(layer, "programScheduling");
+    var popup = document.getElementById(chanID + "_" + startTime + "_schedpopup");
+    toggleVisibility(popup);
+
+    setTimeout(function(){checkRecordingStatus(chanID, startTime)}, 2500);
 }
 
 function deleteRecRule(chandID, startTime)
 {
     var layer = document.getElementById(chanID + "_" + startTime);
-    var recRuleID = getChildValue(layer, "recordid");
-    hideMenu("editRecMenu");
-    var url = "/tv/qjs/dvr_util.qjs?action=deleteRecRule&recRuleID=" + recRuleID + "&chanID=" + chanID + "&startTime=" + startTime;
+    var recRuleID = layer.getAttribute("data-recordid");
+    hideMenu("optMenu");
+    var url = "/tv/ajax_backends/dvr_util.qsp?action=deleteRecRule&recRuleID=" + recRuleID + "&chanID=" + chanID + "&startTime=" + startTime;
     var ajaxRequest = $.ajax( url )
                             .done(function()
                             {
@@ -228,7 +257,117 @@ function deleteRecRule(chandID, startTime)
                             });
 }
 
-function submitForm(formElement)
+function dontRecord(chandID, startTime)
+{
+    var layer = document.getElementById(chanID + "_" + startTime);
+    var recRuleID = layer.getAttribute("data-recordid");
+    hideMenu("optMenu");
+    var url = "/tv/ajax_backends/dvr_util.qsp?action=dontRecord&chanID=" + chanID + "&startTime=" + startTime;
+    var ajaxRequest = $.ajax( url )
+                            .done(function()
+                            {
+                                var response = ajaxRequest.responseText.split("#");
+                                recRuleChanged( response[0], response[1] );
+                            });
+}
+
+function neverRecord(chandID, startTime)
+{
+    var layer = document.getElementById(chanID + "_" + startTime);
+    var recRuleID = layer.getAttribute("data-recordid");
+    hideMenu("optMenu");
+    var url = "/tv/ajax_backends/dvr_util.qsp?action=neverRecord&chanID=" + chanID + "&startTime=" + startTime;
+    var ajaxRequest = $.ajax( url )
+                            .done(function()
+                            {
+                                var response = ajaxRequest.responseText.split("#");
+                                recRuleChanged( response[0], response[1] );
+                            });
+}
+
+function loadTVContent(url, targetDivID, transition, args)
+{
+    currentContentURL = url;   // currentContentURL is defined in util.qjs
+
+    if (!targetDivID)
+        targetDivID = "content";
+    if (!transition)
+        transition = "none"; // dissolve
+
+    if (transition === "none")
+    {
+        loadContent(url);
+        return;
+    }
+
+    $("#busyPopup").show();
+
+    var targetDiv = document.getElementById(targetDivID);
+    var newDiv = document.createElement('div');
+    newDiv.style = "left: 100%";
+    targetDiv.parentNode.insertBefore(newDiv, null);
+
+    for (var key in args)
+    {
+        // Check that this arg hasn't already been appended
+        // we don't currently support altering of existing args
+        if (url.indexOf(key) === -1)
+        {
+            // Check if any args presently exist
+            if (url.indexOf("?") !== -1)
+                url += "&amp;";
+            else
+                url += "?";
+
+            url += key + "=" + args[key];
+        }
+    }
+
+    var html = $.ajax({
+      url: url,
+        async: false
+     }).responseText;
+
+    newDiv.innerHTML = html;
+    newDiv.className = targetDiv.className;
+
+    // Need to assign the id to the new div
+    newDiv.id = targetDivID;
+    targetDiv.id = "old" + targetDivID;
+    switch (transition)
+    {
+        case 'left':
+            leftSlideTransition(targetDiv.id, newDiv.id);
+            break;
+        case 'right':
+            rightSlideTransition(targetDiv.id, newDiv.id);
+            break;
+        case 'dissolve':
+            dissolveTransition(targetDiv.id, newDiv.id);
+            break;
+    }
+    newDiv.id = targetDivID;
+
+    $("#busyPopup").hide();
+}
+
+function reloadTVContent()
+{
+    loadTVContent(currentContentURL);  // currentContentURL is defined in util.qjs
+}
+
+function formOnLoad(form)
+{
+    // Prepopulate some user-attributes to save time later
+    var elements = form.elements;
+    for (var idx = 0; idx < elements.length; idx++)
+    {
+        if (elements[idx].tagName == "SELECT")
+            elements[idx].setAttribute('data-oldIndex', elements[idx].selectedIndex);
+    }
+}
+
+function submitForm(formElement, target, transition)
 {
     var url = formElement.action;
     var queryString = new Array();
@@ -238,7 +377,22 @@ function submitForm(formElement)
         queryString.push(input.name + "=" + input.value);
     }
     url += "?" + queryString.join('&');
-    loadContent(url);
+    loadTVContent(url, target, transition);
+}
+
+function loadJScroll()
+{
+    // Always have at least one window heights worth loaded off-screen
+    $('.jscroll').jscroll({
+    padding: $(window).height(),
+    nextSelector: 'a.jscroll-next:last',
+    callback: function() { scrollCallback(); }
+    });
+}
+
+function postLoad()
+{
+    //loadJScroll();
 }
 
 function leftSlideTransition(oldDivID, newDivID)
@@ -251,7 +405,7 @@ function leftSlideTransition(oldDivID, newDivID)
     $("#" + newDivID).css("z-index", "-10");
     var oldLeft = $("#" + oldDivID).position().left;
     $("#" + oldDivID).animate({opacity: "0.3"}, 800, function() {
-                   $("#" + oldDivID).remove(); });
+                   $("#" + oldDivID).remove(); postLoad(); });
     $("#" + newDivID).animate({left: oldLeft}, 800, function() {
                    $("#" + newDivID).css("width", '');
                    $("#" + newDivID).css("z-index", "0"); });
@@ -265,7 +419,7 @@ function rightSlideTransition(oldDivID, newDivID)
     $("#" + newDivID).css("z-index", "-10");
     var oldLeft = $("#" + oldDivID).position().left;
     $("#" + oldDivID).animate({opacity: "0.3"}, 800, function() {
-                   $("#" + oldDivID).remove(); });
+                   $("#" + oldDivID).remove(); postLoad(); });
     $("#" + newDivID).animate({left: oldLeft}, 800, function() {
                    $("#" + newDivID).css("width", '');
                    $("#" + newDivID).css("z-index", "0"); });
@@ -277,6 +431,6 @@ function dissolveTransition(oldDivID, newDivID)
     var oldLeft = $("#" + oldDivID).position().left;
     $("#" + newDivID).css("left", oldLeft);
     $("#" + oldDivID).animate({opacity: "0.0"}, 800, function() {
-                   $("#" + oldDivID).remove(); });
+                   $("#" + oldDivID).remove(); postLoad(); });
     $("#" + newDivID).animate({opacity: "1.0"}, 800);
 }

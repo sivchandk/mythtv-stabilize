@@ -2928,7 +2928,8 @@ void TVRec::ToggleChannelFavorite(QString changroupname)
     {
         LOG(VB_GENERAL, LOG_ERR, LOC +
             QString("Channel: \'%1\' was not found in the database.\n"
-                    "\t\tMost likely, your DefaultTVChannel setting is wrong.\n"
+                    "\t\tMost likely, the 'starting channel' for this "
+                    "Input Connection is invalid.\n"
                     "\t\tCould not toggle favorite.").arg(channum));
         return;
     }
@@ -4297,8 +4298,7 @@ void TVRec::TuningRestartRecorder(void)
         curRecording->SaveAutoExpire(
             curRecording->GetRecordingRule()->GetAutoExpire());
 
-        curRecording->ApplyRecordRecGroupChange(
-            curRecording->GetRecordingRule()->m_recGroup);
+        curRecording->ApplyRecordRecGroupChange(curRecording->GetRecordingRule()->m_recGroupID);
 
         InitAutoRunJobs(curRecording, kAutoRunProfile, NULL, __LINE__);
     }
@@ -4455,8 +4455,8 @@ bool TVRec::GetProgramRingBufferForLiveTV(RecordingInfo **pginfo,
         {
             LOG(VB_GENERAL, LOG_ERR, LOC +
                 QString("Channel: \'%1\' was not found in the database.\n"
-                        "\t\tMost likely, your DefaultTVChannel setting is "
-                        "wrong.\n"
+                        "\t\tMost likely, the 'starting channel' for this "
+                        "Input Connection is invalid.\n"
                         "\t\tCould not start livetv.").arg(channum));
             return false;
         }
@@ -4505,7 +4505,7 @@ bool TVRec::GetProgramRingBufferForLiveTV(RecordingInfo **pginfo,
     }
 
     if (!pseudoLiveTVRecording)
-        prog->ApplyRecordRecGroupChange("LiveTV");
+        prog->ApplyRecordRecGroupChange(RecordingInfo::kLiveTVRecGroup);
 
     StartedRecording(prog);
 
@@ -4558,7 +4558,7 @@ bool TVRec::CreateLiveTVRingBuffer(const QString & channum)
 
     pginfo->SaveAutoExpire(kLiveTVAutoExpire);
     if (!pseudoLiveTVRecording)
-        pginfo->ApplyRecordRecGroupChange("LiveTV");
+        pginfo->ApplyRecordRecGroupChange(RecordingInfo::kLiveTVRecGroup);
 
     bool discont = (tvchain->TotalSize() > 0);
     tvchain->AppendNewProgram(pginfo, channel->GetCurrentName(),
@@ -4616,7 +4616,7 @@ bool TVRec::SwitchLiveTVRingBuffer(const QString & channum,
     pginfo->MarkAsInUse(true, kRecorderInUseID);
     pginfo->SaveAutoExpire(kLiveTVAutoExpire);
     if (!pseudoLiveTVRecording)
-        pginfo->ApplyRecordRecGroupChange("LiveTV");
+        pginfo->ApplyRecordRecGroupChange(RecordingInfo::kLiveTVRecGroup);
     tvchain->AppendNewProgram(pginfo, channel->GetCurrentName(),
                               channel->GetCurrentInput(), discont);
 

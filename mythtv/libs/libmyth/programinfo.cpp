@@ -1310,6 +1310,7 @@ void ProgramInfo::ToStringList(QStringList &list) const
     INT_TO_LIST(year);              // 45
     INT_TO_LIST(partnumber);   // 46
     INT_TO_LIST(parttotal);    // 47
+    INT_TO_LIST(catType);      // 48
 /* do not forget to update the NUMPROGRAMLINES defines! */
 }
 
@@ -1413,6 +1414,7 @@ bool ProgramInfo::FromStringList(QStringList::const_iterator &it,
     INT_FROM_LIST(year);              // 45
     INT_FROM_LIST(partnumber);        // 46
     INT_FROM_LIST(parttotal);         // 47
+    ENUM_FROM_LIST(catType, CategoryType); // 48
 
     if (!origChanid || !origRecstartts.isValid() ||
         (origChanid != chanid) || (origRecstartts != recstartts))
@@ -4359,7 +4361,7 @@ QString ProgramInfo::QueryRecordingGroupPassword(const QString &group)
     QString result;
 
     MSqlQuery query(MSqlQuery::InitCon());
-    query.prepare("SELECT password FROM recgrouppassword "
+    query.prepare("SELECT password FROM recgroups "
                     "WHERE recgroup = :GROUP");
     query.bindValue(":GROUP", group);
 
@@ -5079,6 +5081,42 @@ bool LoadFromProgram(
     }
 
     return true;
+}
+
+ProgramInfo* LoadProgramFromProgram(const uint chanid,
+                                   const QDateTime& starttime)
+{
+    ProgramInfo *progInfo = NULL;
+
+    // Build add'l SQL statement for Program Listing
+
+    MSqlBindings bindings;
+    QString      sSQL = "WHERE program.chanid = :ChanId "
+                          "AND program.starttime = :StartTime ";
+
+    bindings[":ChanId"   ] = chanid;
+    bindings[":StartTime"] = starttime;
+
+    // Get all Pending Scheduled Programs
+
+    ProgramList  schedList;
+    bool hasConflicts;
+    LoadFromScheduler(schedList, hasConflicts);
+
+    // ----------------------------------------------------------------------
+
+    ProgramList progList;
+
+    LoadFromProgram( progList, sSQL, bindings, schedList );
+
+    if (progList.size() == 0)
+        return progInfo;
+
+    // progList is an Auto-delete deque, the object will be deleted with the
+    // list, so we need to make a copy
+    progInfo = new ProgramInfo(*(progList[0]));
+
+    return progInfo;
 }
 
 bool LoadFromOldRecorded(

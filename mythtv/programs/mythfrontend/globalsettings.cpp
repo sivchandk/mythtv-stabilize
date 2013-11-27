@@ -2662,7 +2662,7 @@ static HostComboBox *ChannelGroupDefault()
        gc->addSelection(it->name, QString("%1").arg(it->grpid));
 
     gc->setHelpText(ChannelGroupSettings::tr("Default channel group to be "
-                                             "shown in the the EPGPressing "
+                                             "shown in the EPG.  Pressing "
                                              "GUIDE key will toggle channel "
                                              "group."));
     gc->setValue(false);
@@ -2883,7 +2883,8 @@ static HostLineEdit *DefaultTVChannel()
 
     ge->setHelpText(EPGSettings::tr("The program guide starts on this channel "
                                     "if it is run from outside of Live TV "
-                                    "mode."));
+                                    "mode. Leave blank to enable Live TV "
+                                    "automatic start channel."));
 
     return ge;
 }
@@ -3797,21 +3798,6 @@ MacDesktopSettings::MacDesktopSettings() : TriggeredConfigurationGroup(false)
 };
 #endif
 
-static HostCheckBox *WatchTVGuide()
-{
-    HostCheckBox *gc = new HostCheckBox("WatchTVGuide");
-
-    gc->setLabel(EPGSettings::tr("Show the program guide when starting "
-                                 "Live TV"));
-
-    gc->setHelpText(EPGSettings::tr("This starts the program guide immediately "
-                                    "upon starting to watch Live TV."));
-
-    gc->setValue(false);
-
-    return gc;
-}
-
 MainGeneralSettings::MainGeneralSettings()
 {
     DatabaseSettings::addDatabaseSettings(this);
@@ -4135,7 +4121,6 @@ EPGSettings::EPGSettings()
 
     epg->setLabel(tr("Program Guide %1/%2").arg("1").arg("1"));
 
-    epg->addChild(WatchTVGuide());
     epg->addChild(DefaultTVChannel());
     epg->addChild(EPGRecThreshold());
 

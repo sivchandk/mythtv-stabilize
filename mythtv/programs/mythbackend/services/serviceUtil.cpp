@@ -34,6 +34,7 @@
 #include "channelinfo.h"
 #include "videoutils.h"
 #include "metadataimagehelper.h"
+#include "cardutil.h"
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -42,7 +43,8 @@
 void FillProgramInfo( DTC::Program *pProgram,
                       ProgramInfo  *pInfo,
                       bool          bIncChannel /* = true */,
-                      bool          bDetails    /* = true */)
+                      bool          bDetails    /* = true */,
+                      bool          bIncCast    /* = true */)
 {
     if ((pProgram == NULL) || (pInfo == NULL))
         return;
@@ -87,6 +89,12 @@ void FillProgramInfo( DTC::Program *pProgram,
         pProgram->setTotalEpisodes( pInfo->GetEpisodeTotal() );
     }
 
+    pProgram->setSerializeCast(bIncCast);
+    if (bIncCast)
+    {
+        FillCastMemberList( pProgram->Cast(), pInfo );
+    }
+
     pProgram->setSerializeChannel( bIncChannel );
 
     if ( bIncChannel )
@@ -126,6 +134,12 @@ void FillProgramInfo( DTC::Program *pProgram,
             pRecording->setDupInType   ( pInfo->GetDuplicateCheckSource() );
             pRecording->setDupMethod   ( pInfo->GetDuplicateCheckMethod() );
             pRecording->setEncoderId   ( pInfo->GetCardID()               );
+            if (pProgram->Channel())
+            {
+                QString encoderName = CardUtil::GetDisplayName(pInfo->GetCardID(),
+                                                               pProgram->Channel()->SourceId());
+                pRecording->setEncoderName( encoderName );
+            }
 
             const RecordingInfo ri(*pInfo);
             pRecording->setProfile( ri.GetProgramRecordingProfile() );
@@ -206,6 +220,19 @@ bool FillChannelInfo( DTC::ChannelInfo *pChannel,
 
     return false;
 }
+/////////////////////////////////////////////////////////////////////////////
+//
+/////////////////////////////////////////////////////////////////////////////
+
+void FillChannelGroup(DTC::ChannelGroup* pGroup, ChannelGroupItem pGroupItem)
+{
+    if (!pGroup)
+        return;
+
+    pGroup->setGroupId(pGroupItem.grpid);
+    pGroup->setName(pGroupItem.name);
+    pGroup->setPassword(""); // Not currently supported
+}
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -247,7 +274,7 @@ void FillRecRuleInfo( DTC::RecRule  *pRecRule,
     pRecRule->setDupIn          (  toRawString(pRule->m_dupIn)     );
     pRecRule->setFilter         (  pRule->m_filter                 );
     pRecRule->setRecProfile     (  pRule->m_recProfile             );
-    pRecRule->setRecGroup       (  pRule->m_recGroup               );
+    pRecRule->setRecGroup       (  RecordingInfo::GetRecgroupString(pRule->m_recGroupID) );
     pRecRule->setStorageGroup   (  pRule->m_storageGroup           );
     pRecRule->setPlayGroup      (  pRule->m_playGroup              );
     pRecRule->setAutoExpire     (  pRule->m_autoExpire             );
@@ -400,4 +427,95 @@ void FillVideoMetadataInfo (
                               .arg(pMetadata->GetScreenshot()));
         }
     }
+}
+
+/////////////////////////////////////////////////////////////////////////////
+//
+/////////////////////////////////////////////////////////////////////////////
+
+void FillInputInfo(DTC::Input* input, InputInfo inputInfo)
+{
+    input->setId(inputInfo.inputid);
+    input->setInputName(inputInfo.name);
+    input->setCardId(inputInfo.cardid);
+    input->setSourceId(inputInfo.sourceid);
+    input->setDisplayName(inputInfo.displayName);
+    input->setLiveTVOrder(inputInfo.livetvorder);
+    input->setScheduleOrder(inputInfo.scheduleOrder);
+    input->setRecPriority(inputInfo.recPriority);
+    input->setQuickTune(inputInfo.quickTune);
+}
+
+/////////////////////////////////////////////////////////////////////////////
+//
+/////////////////////////////////////////////////////////////////////////////
+
+void FillCastMemberList(DTC::CastMemberList* pCastMemberList,
+                        ProgramInfo* pInfo)
+{
+    if (!pCastMemberList || !pInfo)
+        return;
+
+    MSqlQuery query(MSqlQuery::InitCon());
+    if (pInfo->GetFilesize() > 0) // FIXME: This shouldn't be the way to determine what is or isn't a recording!
+        query.prepare("SELECT role, people.name FROM recordedcredits"
+                        " AS credits"
+                        " LEFT JOIN people ON credits.person = people.person"
+                        " WHERE credits.chanid = :CHANID"
+                        " AND credits.starttime = :STARTTIME"
+                        " ORDER BY role;");
+    else
+        query.prepare("SELECT role, people.name FROM credits"
+                        " LEFT JOIN people ON credits.person = people.person"
+                        " WHERE credits.chanid = :CHANID"
+                        " AND credits.starttime = :STARTTIME"
+                        " ORDER BY role;");
+    query.bindValue(":CHANID",    pInfo->GetChanID());
+    query.bindValue(":STARTTIME", pInfo->GetScheduledStartTime());
+
+    if (query.exec() && query.size() > 0)
+    {
+        QMap<QString, QString> translations;
+        translations["ACTOR"] = QObject::tr("Actors");
+        translations["DIRECTOR"] = QObject::tr("Director");
+        translations["PRODUCER"] = QObject::tr("Producer");
+        translations["EXECUTIVE_PRODUCER"] = QObject::tr("Executive Producer");
+        translations["WRITER"] = QObject::tr("Writer");
+        translations["GUEST_STAR"] = QObject::tr("Guest Star");
+        translations["HOST"] = QObject::tr("Host");
+        translations["ADAPTER"] = QObject::tr("Adapter");
+        translations["PRESENTER"] = QObject::tr("Presenter");
+        translations["COMMENTATOR"] = QObject::tr("Commentator");
+        translations["GUEST"] = QObject::tr("Guest");
+
+        while (query.next())
+        {
+            DTC::CastMember *pCastMember = pCastMemberList->AddNewCastMember();
+
+            QString role = query.value(0).toString();
+            pCastMember->setRole(role);
+            pCastMember->setTranslatedRole(translations.value(role.toUpper()));
+            /* The people.name column uses utf8_bin collation.
+                * Qt-MySQL drivers use QVariant::ByteArray for string-type
+                * MySQL fields marked with the BINARY attribute (those using a
+                * *_bin collation) and QVariant::String for all others.
+                * Since QVariant::toString() uses QString::fromAscii()
+                * (through QVariant::convert()) when the QVariant's type is
+                * QVariant::ByteArray, we have to use QString::fromUtf8()
+                * explicitly to prevent corrupting characters.
+                * The following code should be changed to use the simpler
+                * toString() approach, as above, if we do a DB update to
+                * coalesce the people.name values that differ only in case and
+                * change the collation to utf8_general_ci, to match the
+                * majority of other columns, or we'll have the same problem in
+                * reverse.
+                */
+            pCastMember->setName(QString::fromUtf8(query.value(1)
+                                        .toByteArray().constData()));
+
+        }
+    }
+
+    //pCastMemberList->setCount(query.size());
+    //pCastMemberList->setTotalAvailable(query.size());
 }

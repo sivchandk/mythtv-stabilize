@@ -16,7 +16,7 @@ HLSReader::HLSReader(void)
     : m_curstream(NULL), m_error(false), m_cancel(false), m_throttle(true),
       m_aesmsg(false), m_playlistworker(NULL), m_streamworker(NULL),
       m_seq_begin(-1), m_seq_first(-1), m_seq_next(-1), m_seq_end(-1),
-      m_bandwidthcheck(false), m_prebuffer_cnt(10), m_slow_cnt(0)
+      m_bandwidthcheck(false), m_prebuffer_cnt(10), m_debug(false), m_slow_cnt(0)
 {
 }
 
@@ -36,6 +36,7 @@ bool HLSReader::Open(const QString & m3u)
     }
     if (m_curstream)
         Close();
+    m_cancel = false;
 
     QByteArray buffer;
 
@@ -67,6 +68,10 @@ bool HLSReader::Open(const QString & m3u)
     }
 
     m_m3u8 = m3u;
+
+    QMutexLocker lock(&m_stream_lock);
+    m_streams.clear();
+    m_curstream = NULL;
 
     if (!ParseM3U8(buffer))
         return false;
@@ -169,7 +174,7 @@ int HLSReader::Read(uint8_t* buffer, int maxlen)
     if (!m_curstream)
     {
         LOG(VB_RECORD, LOG_ERR, LOC + "Read: no stream selected");
-        return -1;
+        return 0;
     }
     if (m_cancel)
     {
@@ -180,7 +185,7 @@ int HLSReader::Read(uint8_t* buffer, int maxlen)
     QMutexLocker lock(&m_buflock);
 
     int len = m_buffer.size() < maxlen ? m_buffer.size() : maxlen;
-    LOG(VB_RECORD, LOG_INFO, LOC + QString("Reading %1 of %2 bytes")
+    LOG(VB_RECORD, LOG_DEBUG, LOC + QString("Reading %1 of %2 bytes")
         .arg(len).arg(m_buffer.size()));
 
     memcpy(buffer, m_buffer.constData(), len);
@@ -919,6 +924,7 @@ bool HLSReader::ParseM3U8(const QByteArray& buffer, HLSRecStream* stream)
                     .arg(behind).arg(behind - max_behind));
                 m_seq_next = m_seq_first - max_behind;
                 m_streamworker->CancelCurrentDownload();
+                m_debug = true;
             }
         }
     }
@@ -945,7 +951,7 @@ bool HLSReader::LoadMetaPlaylists(MythSingleDownload& downloader)
         if (buffered < 15)
         {
             // It is taking too long to download the segments
-            LOG(VB_RECORD, LOG_INFO, LOC +
+            LOG(VB_RECORD, LOG_WARNING, LOC +
                 QString("Falling behind: only %1% buffered").arg(buffered));
             DecreaseBitrate(m_curstream->Id());
             m_bandwidthcheck = false;
@@ -991,7 +997,7 @@ bool HLSReader::UpdateSegment(int64_t sequence_num, int duration,
         if (m_seq_end < 0)
         {
             LOG(VB_RECORD, LOG_DEBUG, LOC +
-                QString("UpdateSegment appending new segment %1 %2 %3 %4")
+                QString("UpdateSegment appending new segment [%1] %2 secs %3 %4")
                 .arg(sequence_num).arg(duration).arg(title).arg(url));
             LOG(VB_RECORD, LOG_DEBUG, LOC +
                 QString("%1 buffer segments").arg(m_segments.size()));
@@ -999,7 +1005,7 @@ bool HLSReader::UpdateSegment(int64_t sequence_num, int duration,
         else
         {
             LOG(VB_RECORD, LOG_INFO, LOC +
-                QString("UpdateSegment appending new segment %1 %2 %3 %4")
+                QString("UpdateSegment appending new segment [%1] %2 secs %3 %4")
                 .arg(sequence_num).arg(duration).arg(title).arg(url));
             LOG(VB_RECORD, LOG_INFO, LOC +
                 QString("%1 buffer segments, %2 in use")
@@ -1117,11 +1123,12 @@ void HLSReader::IncreaseBitrate(int progid)
 
 bool HLSReader::LoadSegments(MythSingleDownload& downloader)
 {
-    LOG(VB_RECORD, LOG_INFO, LOC + "LoadSegment -- start");
+    LOG(VB_RECORD, LOG_DEBUG, LOC + "LoadSegment -- start");
 
     if (!m_curstream)
     {
         LOG(VB_RECORD, LOG_ERR, LOC + "LoadSegment: current stream not set.");
+        m_bandwidthcheck = true;
         return false;
     }
 
@@ -1144,7 +1151,7 @@ bool HLSReader::LoadSegments(MythSingleDownload& downloader)
         int64_t offset = m_seq_next - m_seq_begin;
         seg = m_segments[offset];
         ++m_seq_next;
-        LOG(VB_RECORD, LOG_INFO, LOC +
+        LOG(VB_RECORD, LOG_DEBUG, LOC +
             QString("Downloading segment %1, begin: %2 "
                     "first %3: next: %4 end: %5")
             .arg(seg.Sequence()).arg(m_seq_begin).arg(m_seq_first)
@@ -1181,7 +1188,7 @@ bool HLSReader::LoadSegments(MythSingleDownload& downloader)
             --m_prebuffer_cnt;
     }
 
-    LOG(VB_RECORD, LOG_INFO, LOC + "LoadSegment -- end");
+    LOG(VB_RECORD, LOG_DEBUG, LOC + "LoadSegment -- end");
     return true;
 }
 
@@ -1213,16 +1220,16 @@ int HLSReader::DownloadSegmentData(MythSingleDownload& downloader,
         {
             LOG(VB_RECORD, LOG_INFO, LOC +
                 QString("downloading of %1 will take %2s, "
-                        "which is longer than its playback (%3s) at %4bit/s")
+                        "which is longer than its playback (%3s) at %4kiB/s")
                 .arg(segment.Sequence())
                 .arg(estimated_time)
                 .arg(segment.Duration())
-                .arg(bandwidth));
+                .arg(bandwidth / 8192));
         }
     }
 
-    uint64_t start = MDate();
     QByteArray buffer;
+    uint64_t start = MDate();
 
 #ifdef HLS_USE_MYTHDOWNLOADMANAGER // MythDownloadManager leaks memory
                                    // and can only handle six download at a time
@@ -1253,7 +1260,7 @@ int HLSReader::DownloadSegmentData(MythSingleDownload& downloader,
     }
 #endif
 
-    uint64_t downloadduration = MDate() - start;
+    uint64_t downloadduration = (MDate() - start) / 1000;
 
 #ifdef USING_LIBCRYPTO
     /* If the segment is encrypted, decode it */
@@ -1285,8 +1292,8 @@ int HLSReader::DownloadSegmentData(MythSingleDownload& downloader,
         LOG(VB_RECORD, LOG_WARNING, LOC +
             QString("streambuffer is not reading fast enough. "
                     "buffer size %1.  Dropping %2 bytes")
-            .arg(m_buffer.size()).arg(buffer.size()));
-        m_buffer.remove(0, buffer.size());
+            .arg(m_buffer.size()).arg(segment_len));
+        m_buffer.remove(0, segment_len);
     }
 
     m_buffer += buffer;
@@ -1295,7 +1302,7 @@ int HLSReader::DownloadSegmentData(MythSingleDownload& downloader,
     if (hls->Bitrate() == 0 && segment.Duration() > 0)
     {
         /* Try to estimate the bandwidth for this stream */
-        hls->SetBitrate((uint64_t)(((double)buffer.size() * 8) /
+        hls->SetBitrate((uint64_t)(((double)segment_len * 8) /
                                    ((double)segment.Duration())));
     }
 
@@ -1303,18 +1310,18 @@ int HLSReader::DownloadSegmentData(MythSingleDownload& downloader,
         downloadduration = 1;
 
     /* bits/sec */
-    bandwidth = buffer.size() * 8 * 1000000ULL / downloadduration;
+    bandwidth = segment_len * 8 * 1000ULL / downloadduration;
     hls->AverageBandwidth(bandwidth);
     hls->SetCurrentByteRate(static_cast<uint64_t>
-                            ((static_cast<double>(buffer.size()) /
+                            ((static_cast<double>(segment_len) /
                               static_cast<double>(segment.Duration()))));
 
-    LOG(VB_RECORD, LOG_INFO, LOC +
+    LOG(VB_RECORD, (m_debug ? LOG_INFO : LOG_DEBUG), LOC +
         QString("%1 took %3ms for %4 bytes: "
                 "bandwidth:%5kiB/s")
         .arg(segment.Sequence())
-        .arg(downloadduration / 1000)
-        .arg(buffer.size())
+        .arg(downloadduration)
+        .arg(segment_len)
         .arg(bandwidth / 8192.0));
 
     return m_slow_cnt;

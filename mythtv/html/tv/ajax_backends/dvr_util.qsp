@@ -62,10 +62,31 @@ import "/js/utility.js"
         return chanID + "#" + startTime.toISOString()  + "#" + recRuleID;
     }
 
-    function deleteRecording(chanID, startTime, allowReRecord)
+    function dontRecord(chanID, startTime)
     {
         var dvr = new Dvr();
-        dvr.RemoveRecorded(chanID, startTime, false, allowReRecord);
+        dvr.AddDontRecordSchedule(chanID, startTime, false);
+        return chanID + "#" + startTime.toISOString();
+    }
+
+    function neverRecord(chanID, startTime)
+    {
+        var dvr = new Dvr();
+        dvr.AddDontRecordSchedule(chanID, startTime, true);
+        return chanID + "#" + startTime.toISOString();
+    }
+
+    function deleteRecording(chanID, startTime, allowReRecord, forceDelete)
+    {
+        var dvr = new Dvr();
+        dvr.DeleteRecording(chanID, startTime, forceDelete, allowReRecord);
+        return chanID + "#" + startTime.toISOString();
+    }
+
+    function unDeleteRecording(chanID, startTime)
+    {
+        var dvr = new Dvr();
+        dvr.UnDeleteRecording(chanID, startTime);
         return chanID + "#" + startTime.toISOString();
     }
 
@@ -84,9 +105,24 @@ import "/js/utility.js"
             var validDate = myth.ParseISODateString(getArg("StartTime"));
             ret = deleteRecRule(args.recruleid, getArg("ChanID"), validDate);
             break;
+        case "dontRecord":
+            var validDate = myth.ParseISODateString(getArg("StartTime"));
+            ret = dontRecord(getArg("ChanID"), validDate);
+            break;
+        case "neverRecord":
+            var validDate = myth.ParseISODateString(getArg("StartTime"));
+            ret = neverRecord(getArg("ChanID"), validDate);
+            break;
         case "deleteRecording":
             var validDate = myth.ParseISODateString(getArg("StartTime"));
-            ret = deleteRecording(getArg("ChanID"), validDate, getArg("AllowRerecord") == 1);
+            ret = deleteRecording(getArg("ChanID"), validDate,
+                                  getArg("AllowRerecord") == 1,
+                                  getArg("ForceDelete") == 1);
+            break;
+        case "unDeleteRecording":
+            var validDate = myth.ParseISODateString(getArg("StartTime"));
+            ret = unDeleteRecording(getArg("ChanID"), validDate);
+            break;
         default:
             break;
     }

@@ -30,7 +30,7 @@
    mythtv/bindings/python/MythTV/static.py (version number)
    mythtv/bindings/python/MythTV/mythproto.py (layout)
 */
-#define NUMPROGRAMLINES 48
+#define NUMPROGRAMLINES 49
 
 class ProgramInfo;
 typedef AutoDeleteDeque<ProgramInfo*> ProgramList;
@@ -769,6 +769,9 @@ MPUBLIC bool LoadFromProgram(
     const QString      &sql,
     const MSqlBindings &bindings,
     const ProgramList  &schedList);
+
+MPUBLIC ProgramInfo*  LoadProgramFromProgram(
+        const uint chanid, const QDateTime &starttime);
 
 MPUBLIC bool LoadFromOldRecorded(
     ProgramList        &destination,

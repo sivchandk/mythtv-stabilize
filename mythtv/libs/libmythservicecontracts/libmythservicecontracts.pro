@@ -45,7 +45,11 @@ HEADERS += datacontracts/titleInfo.h             datacontracts/titleInfoList.h
 HEADERS += datacontracts/labelValue.h
 HEADERS += datacontracts/logMessage.h            datacontracts/logMessageList.h
 HEADERS += datacontracts/imageMetadataInfoList.h datacontracts/imageMetadataInfo.h
-HEADERS += datacontracts/imageSyncInfo.h
+HEADERS += datacontracts/imageSyncInfo.h         datacontracts/channelGroup.h
+HEADERS += datacontracts/channelGroupList.h      datacontracts/input.h
+HEADERS += datacontracts/inputList.h
+HEADERS += datacontracts/recRuleFilter.h         datacontracts/recRuleFilterList.h
+HEADERS += datacontracts/castMember.h            datacontracts/castMemberList.h
 
 SOURCES += service.cpp
 
@@ -87,7 +91,11 @@ incDatacontracts.files += datacontracts/titleInfo.h           datacontracts/titl
 incDatacontracts.files += datacontracts/labelValue.h
 incDatacontracts.files += datacontracts/logMessage.h          datacontracts/logMessageList.h
 incDatacontracts.files += datacontracts/imageMetadataInfoList.h datacontracts/imageMetadataInfo.h
-incDatacontracts.files += datacontracts/imageSyncInfo.h
+incDatacontracts.files += datacontracts/imageSyncInfo.h       datacontracts/channelGroup.h
+incDatacontracts.files += datacontracts/channelGroupList.h    datacontracts/input.h
+incDatacontracts.files += datacontracts/inputList.h
+incDatacontracts.files += datacontracts/recRuleFilter.h       datacontracts/recRuleFilterList.h
+incDatacontracts.files += datacontracts/castMember.h          datacontracts/castMemberList.h
 
 INSTALLS += inc incServices incDatacontracts
 

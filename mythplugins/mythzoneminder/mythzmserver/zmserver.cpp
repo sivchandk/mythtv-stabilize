@@ -49,12 +49,13 @@
 #include "zmserver.h"
 
 // the version of the protocol we understand
-#define ZM_PROTOCOL_VERSION "10"
+#define ZM_PROTOCOL_VERSION "11"
 
 // the maximum image size we are ever likely to get from ZM
 #define MAX_IMAGE_SIZE  (2048*1536*3)
 
 #define ADD_STR(list,s)  list += s; list += "[]:[]";
+#define ADD_INT(list,n)  sprintf(m_buf, "%d", (int)n); list += m_buf; list += "[]:[]";
 
 // error messages
 #define ERROR_TOKEN_COUNT      "Invalid token count"
@@ -65,6 +66,7 @@
 #define ERROR_INVALID_POINTERS "Cannot get shared memory pointers"
 #define ERROR_INVALID_MONITOR_FUNCTION  "Invalid Monitor Function"
 #define ERROR_INVALID_MONITOR_ENABLE_VALUE "Invalid Monitor Enable Value"
+#define ERROR_NO_FRAMES         "No frames found for event"
 
 // Subpixel ordering (from zm_rgb.h)
 // Based on byte order naming. For example, for ARGB (on both little endian or big endian)
@@ -226,7 +228,7 @@ void kickDatabase(bool debug)
 MONITOR::MONITOR(void) :
     name(""), type(""), function(""), enabled(0), device(""), host(""),
     image_buffer_count(0),  width(0), height(0), bytes_per_pixel(3), mon_id(0),
-    shared_images(NULL), last_read(0), status(""), frame_size(0), palette(0),
+    shared_images(NULL), last_read(0), status(""), palette(0),
     controllable(0), trackMotion(0), mapFile(-1), shm_ptr(NULL),
     shared_data(NULL), shared_data26(NULL), id("")
 {
@@ -234,9 +236,8 @@ MONITOR::MONITOR(void) :
 
 void MONITOR::initMonitor(bool debug, string mmapPath, int shmKey)
 {
-    frame_size = width * height * bytes_per_pixel;
-
     int shared_data_size;
+    int frame_size = width * height * bytes_per_pixel;
 
     if (checkVersion(1, 26, 0))
     {
@@ -410,6 +411,14 @@ int MONITOR::getSubpixelOrder(void)
     return shared_data26->format;
 }
 
+int MONITOR::getFrameSize(void)
+{
+    if (shared_data)
+        return width * height * bytes_per_pixel;
+
+    return shared_data26->imagesize;
+}
+
 ///////////////////////////////////////////////////////////////////////
 
 ZMServer::ZMServer(int sock, bool debug)
@@ -484,9 +493,9 @@ ZMServer::ZMServer(int sock, bool debug)
 
 ZMServer::~ZMServer()
 {
-    for (std::map<int, MONITOR*>::iterator it = m_monitors.begin(); it != m_monitors.end(); ++it)
+    for (uint x = 0; x < m_monitors.size(); x++)
     {
-        MONITOR *mon = it->second;
+        MONITOR *mon = m_monitors.at(x);
         if (mon->mapFile != -1)
         {
             if (close(mon->mapFile) == -1)
@@ -500,6 +509,7 @@ ZMServer::~ZMServer()
     }
 
     m_monitors.clear();
+    m_monitorMap.clear();
 
     if (m_debug)
         cout << "ZMServer destroyed\n";
@@ -557,6 +567,8 @@ bool ZMServer::processRequest(char* buf, int nbytes)
         handleGetServerStatus();
     else if (tokens[0] == "GET_MONITOR_STATUS")
         handleGetMonitorStatus();
+    else if (tokens[0] == "GET_ALARM_STATES")
+        handleGetAlarmStates();
     else if (tokens[0] == "GET_EVENT_LIST")
         handleGetEventList(tokens);
     else if (tokens[0] == "GET_EVENT_DATES")
@@ -708,11 +720,33 @@ void ZMServer::handleGetServerStatus(void)
     send(outStr);
 }
 
+void ZMServer::handleGetAlarmStates(void)
+{
+    string outStr("");
+    ADD_STR(outStr, "OK")
+
+    // add the monitor count
+    ADD_INT(outStr, m_monitors.size())
+
+    for (int x = 0; x < (int)m_monitors.size(); x++)
+    {
+        MONITOR *monitor = m_monitors.at(x);
+
+        // add monitor ID
+        ADD_INT(outStr, monitor->mon_id)
+
+        // add monitor status
+        ADD_INT(outStr, monitor->getState())
+    }
+
+    send(outStr);
+}
+
 void ZMServer::handleGetEventList(vector<string> tokens)
 {
     string outStr("");
 
-    if (tokens.size() != 4)
+    if (tokens.size() != 5)
     {
         sendError(ERROR_TOKEN_COUNT);
         return;
@@ -721,6 +755,7 @@ void ZMServer::handleGetEventList(vector<string> tokens)
     string monitor = tokens[1];
     bool oldestFirst = (tokens[2] == "1");
     string date = tokens[3];
+    bool includeContinuous = (tokens[4] == "1");
 
     if (m_debug)
         cout << "Loading events for monitor: " << monitor << ", date: " << date << endl;
@@ -744,7 +779,15 @@ void ZMServer::handleGetEventList(vector<string> tokens)
     else
     {
         if (date != "<ANY>")
+        {
             sql += "WHERE DATE(E.StartTime) = DATE('" + date + "') ";
+
+            if (!includeContinuous)
+                sql += "AND Cause != 'Continuous' ";
+        }
+        else
+            if (!includeContinuous)
+                sql += "WHERE Cause != 'Continuous' ";
     }
 
     if (oldestFirst)
@@ -765,9 +808,7 @@ void ZMServer::handleGetEventList(vector<string> tokens)
     if (m_debug)
         cout << "Got " << eventCount << " events" << endl;
 
-    char str[10];
-    sprintf(str, "%d", eventCount);
-    ADD_STR(outStr, str)
+    ADD_INT(outStr, eventCount)
 
     for (int x = 0; x < eventCount; x++)
     {
@@ -840,9 +881,7 @@ void ZMServer::handleGetEventDates(vector<string> tokens)
     if (m_debug)
         cout << "Got " << dateCount << " dates" << endl;
 
-    char str[10];
-    sprintf(str, "%d", dateCount);
-    ADD_STR(outStr, str)
+    ADD_INT(outStr, dateCount)
 
     for (int x = 0; x < dateCount; x++)
     {
@@ -890,9 +929,7 @@ void ZMServer::handleGetMonitorStatus(void)
     if (m_debug)
         cout << "Got " << monitorCount << " monitors" << endl;
 
-    char str[10];
-    sprintf(str, "%d", monitorCount);
-    ADD_STR(outStr, str)
+    ADD_INT(outStr, monitorCount)
 
     for (int x = 0; x < monitorCount; x++)
     {
@@ -1084,8 +1121,7 @@ void ZMServer::handleGetEventFrame(vector<string> tokens)
         cout << "Frame size: " <<  fileSize << endl;
 
     // get the file size
-    sprintf(str, "%d", fileSize);
-    ADD_STR(outStr, str)
+    ADD_INT(outStr, fileSize)
 
     // send the data
     send(outStr, buffer, fileSize);
@@ -1215,8 +1251,7 @@ void ZMServer::handleGetAnalysisFrame(vector<string> tokens)
         cout << "Frame size: " <<  fileSize << endl;
 
     // get the file size
-    sprintf(str, "%d", fileSize);
-    ADD_STR(outStr, str)
+    ADD_INT(outStr, fileSize)
 
     // send the data
     send(outStr, buffer, fileSize);
@@ -1225,7 +1260,6 @@ void ZMServer::handleGetAnalysisFrame(vector<string> tokens)
 void ZMServer::handleGetLiveFrame(vector<string> tokens)
 {
     static unsigned char buffer[MAX_IMAGE_SIZE];
-    char str[100];
 
     // we need to periodically kick the DB connection here to make sure it
     // stays alive because the user may have left the frontend on the live
@@ -1249,13 +1283,12 @@ void ZMServer::handleGetLiveFrame(vector<string> tokens)
     ADD_STR(outStr, "OK")
 
     // echo the monitor id
-    sprintf(str, "%d", monitorID);
-    ADD_STR(outStr, str)
+    ADD_INT(outStr, monitorID)
 
     // try to find the correct MONITOR
     MONITOR *monitor;
-    if (m_monitors.find(monitorID) != m_monitors.end())
-        monitor = m_monitors[monitorID];
+    if (m_monitorMap.find(monitorID) != m_monitorMap.end())
+        monitor = m_monitorMap[monitorID];
     else
     {
         sendError(ERROR_INVALID_MONITOR);
@@ -1288,8 +1321,7 @@ void ZMServer::handleGetLiveFrame(vector<string> tokens)
     ADD_STR(outStr, monitor->status)
 
     // send the data size
-    sprintf(str, "%d", dataSize);
-    ADD_STR(outStr, str)
+    ADD_INT(outStr, dataSize)
 
     // send the data
     send(outStr, buffer, dataSize);
@@ -1331,10 +1363,16 @@ void ZMServer::handleGetFrameList(vector<string> tokens)
     res = mysql_store_result(&g_dbConn);
     row = mysql_fetch_row(res);
 
+    // make sure we have some frames to display
+    if (row[1] == NULL || row[2] == NULL)
+    {
+        sendError(ERROR_NO_FRAMES);
+        return;
+    }
+
     string cause = row[0];
     double length = atof(row[1]);
     int frameCount = atoi(row[2]);
-    char str[10];
 
     mysql_free_result(res);
 
@@ -1345,8 +1383,7 @@ void ZMServer::handleGetFrameList(vector<string> tokens)
         if (m_debug)
             cout << "Got " << frameCount << " frames (continuous event)" << endl;
 
-        sprintf(str, "%d\n", frameCount);
-        ADD_STR(outStr, str)
+        ADD_INT(outStr, frameCount)
 
         double delta = length / frameCount;
         double time = 0;
@@ -1381,8 +1418,7 @@ void ZMServer::handleGetFrameList(vector<string> tokens)
         if (m_debug)
             cout << "Got " << frameCount << " frames" << endl;
 
-        sprintf(str, "%d\n", frameCount);
-        ADD_STR(outStr, str)
+        ADD_INT(outStr, frameCount)
 
         for (int x = 0; x < frameCount; x++)
         {
@@ -1412,42 +1448,12 @@ void ZMServer::handleGetCameraList(void)
 
     ADD_STR(outStr, "OK")
 
-    MYSQL_RES *res;
-    MYSQL_ROW row;
+    ADD_INT(outStr, m_monitors.size())
 
-    string sql("");
-    sql += "SELECT DISTINCT M.Name FROM Events AS E ";
-    sql += "INNER JOIN Monitors AS M ON E.MonitorId = M.Id;";
-
-    if (mysql_query(&g_dbConn, sql.c_str()))
+    for (uint x = 0; x < m_monitors.size(); x++)
     {
-        fprintf(stderr, "%s\n", mysql_error(&g_dbConn));
-        sendError(ERROR_MYSQL_QUERY);
-        return;
+        ADD_STR(outStr, m_monitors.at(x)->name)
     }
-
-    res = mysql_store_result(&g_dbConn);
-    int monitorCount = mysql_num_rows(res);
-    char str[10];
-    sprintf(str, "%d", monitorCount);
-    ADD_STR(outStr, str)
-
-    for (int x = 0; x < monitorCount; x++)
-    {
-        row = mysql_fetch_row(res);
-        if (row)
-        {
-            ADD_STR(outStr, row[0]) // Name
-        }
-        else
-        {
-            cout << "handleGetCameraList: Failed to get mysql row " << x << endl;
-            sendError(ERROR_MYSQL_ROW);
-            return;
-        }
-    }
-
-    mysql_free_result(res);
 
     send(outStr);
 }
@@ -1458,83 +1464,33 @@ void ZMServer::handleGetMonitorList(void)
 
     ADD_STR(outStr, "OK")
 
-    MYSQL_RES *res;
-    MYSQL_ROW row;
-
-    string sql("");
-    sql += "SELECT Id, Name, Width, Height, Palette";
-
-    if (checkVersion(1, 26, 0))
-        sql += ", Colours";
-
-    sql += " FROM Monitors ORDER BY Id";
-
-    if (mysql_query(&g_dbConn, sql.c_str()))
-    {
-        fprintf(stderr, "%s\n", mysql_error(&g_dbConn));
-        sendError(ERROR_MYSQL_QUERY);
-        return;
-    }
-
-    res = mysql_store_result(&g_dbConn);
-    int monitorCount = mysql_num_rows(res);
-
     if (m_debug)
-        cout << "Got " << monitorCount << " monitors" << endl;
+        cout << "We have " << m_monitors.size() << " monitors" << endl;
 
-    char str[10];
-    sprintf(str, "%d", monitorCount);
-    ADD_STR(outStr, str)
+    ADD_INT(outStr, m_monitors.size())
 
-    for (int x = 0; x < monitorCount; x++)
+    for (uint x = 0; x < m_monitors.size(); x++)
     {
-        row = mysql_fetch_row(res);
-        if (row)
+        MONITOR *mon = m_monitors.at(x);
+
+        ADD_INT(outStr, mon->mon_id)
+        ADD_STR(outStr, mon->name)
+        ADD_INT(outStr, mon->width)
+        ADD_INT(outStr, mon->height)
+        ADD_INT(outStr, mon->bytes_per_pixel)
+
+        if (m_debug)
         {
-            ADD_STR(outStr, row[0]) // Id
-            ADD_STR(outStr, row[1]) // Name
-            ADD_STR(outStr, row[2]) // Width
-            ADD_STR(outStr, row[3]) // Height
-
-            if (checkVersion(1, 26, 0))
-            {
-                ADD_STR(outStr, row[5]) // Colours (bytes per pixel)
-            }
-            else
-            {
-                if (atoi(row[4]) == 1)
-                {
-                    ADD_STR(outStr, "1")
-                }
-                else
-                {
-                    ADD_STR(outStr, "3")
-                }
-            }
-
-            if (m_debug)
-            {
-                cout << "id:             " << row[0] << endl;
-                cout << "name:           " << row[1] << endl;
-                cout << "width:          " << row[2] << endl;
-                cout << "height:         " << row[3] << endl;
-                cout << "palette:        " << row[4] << endl;
-
-                if (checkVersion(1, 26, 0))
-                    cout << "byte per pixel: " << row[5] << endl;
-
-                cout << "-------------------" << endl;
-            }
-        }
-        else
-        {
-            cout << "Failed to get mysql row" << endl;
-            sendError(ERROR_MYSQL_ROW);
-            return;
+            cout << "id:             " << mon->mon_id             << endl;
+            cout << "name:           " << mon->name               << endl;
+            cout << "width:          " << mon->width              << endl;
+            cout << "height:         " << mon->height             << endl;
+            cout << "palette:        " << mon->palette            << endl;
+            cout << "byte per pixel: " << mon->bytes_per_pixel    << endl;
+            cout << "sub pixel order:" << mon->getSubpixelOrder() << endl;
+            cout << "-------------------" << endl;
         }
     }
-
-    mysql_free_result(res);
 
     send(outStr);
 }
@@ -1632,6 +1588,7 @@ void ZMServer::handleRunZMAudit(void)
 void ZMServer::getMonitorList(void)
 {
     m_monitors.clear();
+    m_monitorMap.clear();
 
     string sql("SELECT Id, Name, Width, Height, ImageBufferCount, MaxFPS, Palette, ");
     sql += " Type, Function, Enabled, Device, Host, Controllable, TrackMotion";
@@ -1640,6 +1597,7 @@ void ZMServer::getMonitorList(void)
         sql += ", Colours";
 
     sql += " FROM Monitors";
+    sql += " ORDER BY Sequence";
 
     MYSQL_RES *res;
     MYSQL_ROW row;
@@ -1686,7 +1644,8 @@ void ZMServer::getMonitorList(void)
                 else
                     m->bytes_per_pixel = 3;
 
-            m_monitors[m->mon_id] = m;
+            m_monitors.push_back(m);
+            m_monitorMap[m->mon_id] = m;
 
             m->initMonitor(m_debug, m_mmapPath, m_shmKey);
         }
@@ -1741,7 +1700,7 @@ int ZMServer::getFrame(unsigned char *buffer, int bufferSize, MONITOR *monitor)
     // just copy the data to our buffer for now
 
     // fixup the colours if necessary we aim to always send RGB24 images
-    unsigned char *data = monitor->shared_images + monitor->frame_size * monitor->last_read;
+    unsigned char *data = monitor->shared_images + monitor->getFrameSize() * monitor->last_read;
     unsigned int rpos = 0;
     unsigned int wpos = 0;
 
@@ -1831,7 +1790,7 @@ int ZMServer::getFrame(unsigned char *buffer, int bufferSize, MONITOR *monitor)
         }
     }
 
-    return monitor->frame_size;
+    return monitor->width * monitor->height * 3;
 }
 
 string ZMServer::getZMSetting(const string &setting)
@@ -1884,7 +1843,7 @@ void ZMServer::handleSetMonitorFunction(vector<string> tokens)
     string enabled(tokens[3]);
 
     // Check validity of input passed to server. Does monitor exist && is function ok
-    if (m_monitors.find(atoi(monitorID.c_str())) == m_monitors.end())
+    if (m_monitorMap.find(atoi(monitorID.c_str())) == m_monitorMap.end())
     {
         sendError(ERROR_INVALID_MONITOR);
         return;
@@ -1909,7 +1868,7 @@ void ZMServer::handleSetMonitorFunction(vector<string> tokens)
 
 
     // Now perform db update && (re)start/stop daemons as required.
-    MONITOR *monitor = m_monitors[atoi(monitorID.c_str())];
+    MONITOR *monitor = m_monitorMap[atoi(monitorID.c_str())];
     string oldFunction = monitor->function;
     string newFunction = function;
     int oldEnabled  = monitor->enabled;

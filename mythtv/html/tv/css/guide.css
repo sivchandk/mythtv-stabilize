@@ -1,18 +1,7 @@
 
-/* Guide Navigation */
-.navigateBox
-{
-    float: right;
-    margin: 5px 5px 10px 5px;
-    background: #2A2A2A;
-    background-image: linear-gradient(to bottom, #555555 4%, transparent 25%);
-    border-radius: 8px;
-    padding: 10px;
-    font-weight: bold;
-}
-
 .pageLeft, .pageRight
 {
+    border:1px #444444 solid;
     background-color: rgba(26, 26, 26, 0.5);
     color: rgba(255, 255, 255, 0.5);
     width: 30px;
@@ -26,27 +15,42 @@
 
 .pageLeft
 {
-    left: 187px;
+/*    left: 0px;*/
+    border-left: 0px;
+    margin-left:-13px;
     border-radius: 0px 10px 10px 0px;
 }
 
 .pageRight
 {
+    border-right: 0px;
     right: 0px;
     border-radius: 10px 0px 0px 10px;
 }
 
 .pageLeft:hover, .pageRight:hover
 {
-    background-color: rgba(26, 26, 26, 1.0);
+    background-color: #003147;
+    border-color: #0B93D5;
+    color: rgba(255, 255, 255, 1.0);
+}
+
+.pageLeft:active, .pageRight:active
+{
+    background-color: #0B93D5;
+    border-color: #0B93D5;
     color: rgba(255, 255, 255, 1.0);
 }
 
 /* Guide Grid */
 .guideGrid
 {
+    /* BEGIN HACK Most modern browsers support calc, but some like Opera 12 on
+     * linux don't, so we have trust this will work for now */
+    width: 98%;
+    /* END HACK */
+
     width: calc(100% - 20px); /* Need to subtract padding of parent */
-    float: left;
     position: absolute;
     padding: 0px;
     /*overflow: visible;*/
@@ -79,6 +83,7 @@
     border-top-left-radius: 10px;
     font-size: 1em;
     width: 10%;
+    width: calc(91px - 1px);
     height: 100%;
     text-align: center;
     padding: 8px 4px; /* Vertical Horizontal */
@@ -89,6 +94,7 @@
 {
     float: left;
     width: 90%;
+    width: calc(100% - 91px);
     height: 100%;
 }
 
@@ -96,7 +102,7 @@
 {
     background: #2A2A2A;
     background-image: linear-gradient(to bottom, #555555 4%, transparent 25%);
-    padding: 6px 4px; /* Vertical Horizontal */
+    padding: 7px 3px 6px 3px; /* Vertical Horizontal */
     height: 100%;
 }
 
@@ -109,10 +115,26 @@
     overflow: visible;
 }
 
+.guideGrid .noChannelsRow
+{
+    clear: both;
+    width: 100%;
+    height: 50px;
+    margin: 2px 0px; /* Vertical Horizontal */
+    overflow: hidden;
+    text-align: center;
+    vertical-align: middle;
+    background-color: #555555;
+    font-size: 1.0em;
+    font-weight: bold;
+    padding-top: 15px;
+}
+
 .guideGrid .channelBox
 {
     float: left;
     width: 10%;
+    width: calc(91px - 1px); /* Opera still doesn't support calc() on linux, so use that to force a fixed size on browsers that do */
     height: 100%;
     text-align: center;
     vertical-align: middle;
@@ -124,30 +146,34 @@
     background: #2A2A2A;
     background-image: linear-gradient(to right, #555555 1%, transparent 10%);
     color: #FFFFFF;
+    padding-left: 6px;
 /*    border-radius: 10px;*/
 }
 
 .guideGrid .channelIcon
 {
-    margin: 5px 4px 1px; /* Top Horizontal Bottom */
-    border-radius: 5px;
-    border:1px solid #1A1A1A;
+    height: 57px;
+    margin-left: 4px;
+    margin-bottom: 3px;
     overflow: hidden;
+    float: right;
 }
 
 .guideGrid .channelText
 {
+    clear: both;
     font-weight: bold;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-    padding: 0px 2px 0px; /* Top Horizontal Bottom */
+    padding: 0px 3px; /* Vertical Horizontal */
 }
 
 .guideGrid .programsBox
 {
     float: left;
     width: 90%;
+    width: calc(100% - 91px);
     height: 100%;
     position: relative;
     overflow: visible;
@@ -179,8 +205,7 @@
     height: 100%;
     background-color: #555555;
     border-radius: 10px;
-    position: relative;
-    overflow: visible;
+    position: relative; /* Required for programSchedPopup to be centred */
     cursor: pointer;
 }
 
@@ -198,45 +223,64 @@
 
 .guideGrid .programHeader
 {
-    padding: 6px 8px 6px 8px;
+    padding: 5px 8px 4px 7px;
     color: #FFFFFF;
-    font-size: 1.1em;
     width: 100%;
-    height: 30px;
-    font-weight: bold;
+    height: 28px;
 /*     background-color: #444444; */
     background: linear-gradient(to bottom, #777777 1%, #555555 20%, #222222 99%);
     border-radius: inherit;
     border-bottom-left-radius: 0px;
     border-bottom-right-radius: 0px;
+    z-index: 4;
+    position: relative;
+
+}
+
+.guideGrid .programHeader IMG
+{
+    float: left;
+    margin-top: 2px;
+    margin-right: 3px;
+    vertical-align: middle;
+}
+
+.guideGrid .programTitle
+{
+    float: left;
+    color: #FFFFFF;
+    font-size: 1.1em;
+    width: 100%;
     white-space: nowrap;
     text-overflow: ellipsis;
-    z-index: 4;
-    position:relative;
+    font-weight: bold;
+    vertical-align: middle;
 }
 
 .guideGrid .programBody
 {
-    padding: 5px 5px 5px 5px;
+    margin: 3px 5px 4px 5px;
     color: #DDDDDD;
     height: 45px;
-    z-index:5;
+    z-index: 5;
     font-size: 0.8em;
+
 }
 
 .guideGrid .programDescription
 {
-    position:relative;
-    z-index:1;
+    position: relative;
+    z-index: 1;
+    line-height: 15px;
 }
 
 .guideGrid .programSubtitle
 {
-    position:relative;
+    position: relative;
     font-weight: bold;
-    font-size: 0.8em;
     margin-right: 5px;
     z-index: 1;
+    line-height: 15px;
 }
 
 .guideGrid .programArrow
@@ -245,27 +289,4 @@
     font-weight: bold;
 }
 
-.guideGrid .programScheduling .programHeader
-{
-/*    background-color: #045FB4;*/
-    background: linear-gradient(to bottom, #2681D6, #003D92 40%);
-}
-
-.guideGrid .programSchedPopup
-{
-    display: none;
-    background-color: rgba(26, 26, 26, 0.9);
-    border-radius: 8px;
-    width:110px;
-    height:30px;
-    padding:8px;
-    top: 50%;
-    left: 50%;
-    margin-top: -15px;
-    margin-left: -50px;
-    font-weight: bold;
-    position: absolute;
-    z-index: 10;
-    white-space: nowrap;
-}
 

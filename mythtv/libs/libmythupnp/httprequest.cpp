@@ -58,6 +58,7 @@ static MIMETypes g_MIMETypes[] =
     { "jpg" , "image/jpeg"                 },
     { "jpeg", "image/jpeg"                 },
     { "png" , "image/png"                  },
+    { "ico",  "image/x-icon"               },
     { "svg" , "image/svg+xml"              },
     { "svgz", "image/svg+xml"              },
     { "htm" , "text/html"                  },
@@ -222,21 +223,42 @@ long HTTPRequest::SendResponse( void )
 
     switch( m_eResponseType )
     {
+        // The following are all eligable for gzip compression
         case ResponseTypeUnknown:
         case ResponseTypeNone:
             LOG(VB_UPNP, LOG_INFO,
                 QString("HTTPRequest::SendResponse( None ) :%1 -> %2:")
                     .arg(GetResponseStatus()) .arg(GetPeerAddress()));
             return( -1 );
+        case ResponseTypeJS:
+        case ResponseTypeCSS:
+        case ResponseTypeText:
+        case ResponseTypeSVG:
+        case ResponseTypeXML:
+        case ResponseTypeHTML:
+            // If the reponse isn't already in the buffer, then load it
+            if (!m_sFileName.isEmpty() &&
+                m_response.buffer().isEmpty())
+            {
+                QByteArray fileBuffer;
+                QFile file(m_sFileName);
+                if (file.exists() && file.size() < (2 * 1024 * 1024) && // For security/stability, limit size of files read into buffer to 2MiB
+                    file.open(QIODevice::ReadOnly | QIODevice::Text))
+                    m_response.buffer() = file.readAll();
 
-        case ResponseTypeFile:
+                if (m_response.buffer().length() > 0)
+                    break;
+
+                // Let SendResponseFile try or send a 404
+                m_eResponseType = ResponseTypeFile;
+            }
+            else
+                break;
+        case ResponseTypeFile: // Binary files
             LOG(VB_UPNP, LOG_INFO,
                 QString("HTTPRequest::SendResponse( File ) :%1 -> %2:")
                     .arg(GetResponseStatus()) .arg(GetPeerAddress()));
             return( SendResponseFile( m_sFileName ));
-
-        case ResponseTypeXML:
-        case ResponseTypeHTML:
         case ResponseTypeOther:
         default:
             break;
@@ -289,8 +311,10 @@ long HTTPRequest::SendResponse( void )
     // ----------------------------------------------------------------------
     // DEBUGGING
     if (getenv("HTTPREQUEST_DEBUG"))
-        cout << m_response.data().constData() << endl;
+        cout << m_response.buffer().constData() << endl;
     // ----------------------------------------------------------------------
+
+    LOG(VB_UPNP, LOG_DEBUG, QString("Reponse Content Length: %1").arg(nContentLen));
 
     // ----------------------------------------------------------------------
     // Should we try to return data gzip'd?
@@ -308,8 +332,14 @@ long HTTPRequest::SendResponse( void )
             pBuffer = &compBuffer;
 
             m_mapRespHeaders[ "Content-Encoding" ] = "gzip";
+            LOG(VB_UPNP, LOG_DEBUG, QString("Reponse Compressed Content Length: %1").arg(compBuffer.buffer().length()));
         }
     }
+
+    // ----------------------------------------------------------------------
+    // Force IE into 'standards' mode
+    // ----------------------------------------------------------------------
+    m_mapRespHeaders[ "X-UA-Compatible" ] = "IE=Edge";
 
     // ----------------------------------------------------------------------
     // Write out Header.
@@ -761,7 +791,8 @@ void HTTPRequest::FormatFileResponse( const QString &sFileName )
     if (QFile::exists( m_sFileName ))
     {
 
-        m_eResponseType                   = ResponseTypeFile;
+        if (m_eResponseType == ResponseTypeUnknown)
+            m_eResponseType               = ResponseTypeFile;
         m_nResponseStatus                 = 200;
         m_mapRespHeaders["Cache-Control"] = "no-cache=\"Ext\", max-age = 5000";
     }
@@ -854,6 +885,10 @@ QString HTTPRequest::GetResponseType( void )
     {
         case ResponseTypeXML    : return( "text/xml; charset=\"UTF-8\"" );
         case ResponseTypeHTML   : return( "text/html; charset=\"UTF-8\"" );
+        case ResponseTypeCSS    : return( "text/css; charset=\"UTF-8\"" );
+        case ResponseTypeJS     : return( "application/javascript" );
+        case ResponseTypeText   : return( "text/plain; charset=\"UTF-8\"" );
+        case ResponseTypeSVG    : return( "image/svg+xml" );
         default: break;
     }
 

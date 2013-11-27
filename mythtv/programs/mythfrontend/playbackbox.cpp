@@ -4588,7 +4588,7 @@ void PlaybackBox::fillRecGroupPasswordCache(void)
     m_recGroupPwCache.clear();
 
     MSqlQuery query(MSqlQuery::InitCon());
-    query.prepare("SELECT recgroup, password FROM recgrouppassword "
+    query.prepare("SELECT recgroup, password FROM recgroups "
                   "WHERE password IS NOT NULL AND password <> '';");
 
     if (query.exec())
@@ -4630,8 +4630,10 @@ void PlaybackBox::ShowRecGroupChanger(bool use_playlist)
 
     MSqlQuery query(MSqlQuery::InitCon());
     query.prepare(
-        "SELECT recgroup, COUNT(title) FROM recorded "
-        "WHERE deletepending = 0 GROUP BY recgroup ORDER BY recgroup");
+        "SELECT g.recgroup, COUNT(r.title) FROM recgroups g "
+        "LEFT JOIN recorded r ON g.recgroupid=r.recgroupid AND r.deletepending = 0 "
+        "WHERE g.recgroupid != 2 AND g.recgroupid != 3 "
+        "GROUP BY g.recgroupid ORDER BY g.recgroup");
 
     QStringList displayNames(tr("Add New"));
     QStringList groupNames("addnewgroup");
@@ -4971,26 +4973,14 @@ void PlaybackBox::SetRecGroupPassword(const QString &newPassword)
 {
     MSqlQuery query(MSqlQuery::InitCon());
 
-    query.prepare("DELETE FROM recgrouppassword "
-                        "WHERE recgroup = :RECGROUP ;");
+    query.prepare("UPDATE recgroups SET password = :PASSWD WHERE "
+                  "recgroup = :RECGROUP");
     query.bindValue(":RECGROUP", m_recGroup);
+    query.bindValue(":PASSWD", newPassword);
 
     if (!query.exec())
-        MythDB::DBError("PlaybackBox::SetRecGroupPassword -- delete",
+        MythDB::DBError("PlaybackBox::SetRecGroupPassword",
                         query);
-
-    if (!newPassword.isEmpty())
-    {
-        query.prepare("INSERT INTO recgrouppassword "
-                        "(recgroup, password) VALUES "
-                        "( :RECGROUP , :PASSWD )");
-        query.bindValue(":RECGROUP", m_recGroup);
-        query.bindValue(":PASSWD", newPassword);
-
-        if (!query.exec())
-            MythDB::DBError("PlaybackBox::SetRecGroupPassword -- insert",
-                            query);
-    }
 
     m_recGroupPwCache[m_recGroup] = newPassword;
 }
@@ -5182,6 +5172,8 @@ bool PasswordChange::Create()
 
     m_oldPasswordEdit->SetPassword(true);
     m_oldPasswordEdit->SetMaxLength(10);
+//     if (m_oldPassword.isEmpty())
+//         m_oldPasswordEdit->SetDisabled(true);
     m_newPasswordEdit->SetPassword(true);
     m_newPasswordEdit->SetMaxLength(10);
 

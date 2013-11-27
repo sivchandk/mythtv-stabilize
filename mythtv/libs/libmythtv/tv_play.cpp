@@ -318,7 +318,6 @@ bool TV::StartTV(ProgramInfo *tvrec, uint flags,
     }
 
     LOG(VB_PLAYBACK, LOG_INFO, LOC + "StartTV() -- begin");
-    bool startInGuide = flags & kStartTVInGuide;
     bool inPlaylist = flags & kStartTVInPlayList;
     bool initByNetworkCommand = flags & kStartTVByNetworkCommand;
     bool quitAll = false;
@@ -387,9 +386,6 @@ bool TV::StartTV(ProgramInfo *tvrec, uint flags,
                 startSysEventSent = true;
                 gCoreContext->SendSystemEvent("LIVETV_STARTED");
             }
-
-            if (!quitAll && (startInGuide || tv->StartLiveTVInGuide()))
-                tv->DoEditSchedule();
 
             LOG(VB_PLAYBACK, LOG_INFO, LOC + "tv->LiveTV() -- end");
         }
@@ -982,7 +978,7 @@ TV::TV(void)
       db_playback_exit_prompt(0),   db_autoexpire_default(0),
       db_auto_set_watched(false),   db_end_of_rec_exit_prompt(false),
       db_jump_prefer_osd(true),     db_use_gui_size_for_tv(false),
-      db_start_in_guide(false),     db_toggle_bookmark(false),
+      db_toggle_bookmark(false),
       db_run_jobs_on_remote(false), db_continue_embedded(false),
       db_use_fixed_size(true),      db_browse_always(false),
       db_browse_all_tuners(false),
@@ -1088,7 +1084,6 @@ void TV::InitFromDB(void)
     kv["EndOfRecordingExitPrompt"] = "0";
     kv["JumpToProgramOSD"]         = "1";
     kv["GuiSizeForTV"]             = "0";
-    kv["WatchTVGuide"]             = "0";
     kv["AltClearSavedPosition"]    = "1";
     kv["JobsRunOnRecordHost"]      = "0";
     kv["ContinueEmbeddedTVPlay"]   = "0";
@@ -1132,7 +1127,6 @@ void TV::InitFromDB(void)
     db_end_of_rec_exit_prompt = kv["EndOfRecordingExitPrompt"].toInt();
     db_jump_prefer_osd     = kv["JumpToProgramOSD"].toInt();
     db_use_gui_size_for_tv = kv["GuiSizeForTV"].toInt();
-    db_start_in_guide      = kv["WatchTVGuide"].toInt();
     db_toggle_bookmark     = kv["AltClearSavedPosition"].toInt();
     db_run_jobs_on_remote  = kv["JobsRunOnRecordHost"].toInt();
     db_continue_embedded   = kv["ContinueEmbeddedTVPlay"].toInt();
@@ -3732,6 +3726,34 @@ static bool has_action(QString action, const QStringList &actions)
     return false;
 }
 
+// Make a special check for global system-related events.
+//
+// This check needs to be done early in the keypress event processing,
+// because FF/REW processing causes unknown events to stop FF/REW, and
+// manual zoom mode processing consumes all but a few event types.
+// Ideally, we would just call MythScreenType::keyPressEvent()
+// unconditionally, but we only want certain keypresses handled by
+// that method.
+//
+// As a result, some of the MythScreenType::keyPressEvent() string
+// compare logic is copied here.
+static bool SysEventHandleAction(QKeyEvent *e, const QStringList &actions)
+{
+    QStringList::const_iterator it;
+    for (it = actions.begin(); it != actions.end(); ++it)
+    {
+        if ((*it).startsWith("SYSEVENT") ||
+            *it == ACTION_SCREENSHOT ||
+            *it == ACTION_TVPOWERON ||
+            *it == ACTION_TVPOWEROFF)
+        {
+            return GetMythMainWindow()->GetMainStack()->GetTopScreen()->
+                keyPressEvent(e);
+        }
+    }
+    return false;
+}
+
 bool TV::ProcessKeypress(PlayerContext *actx, QKeyEvent *e)
 {
     bool ignoreKeys = actx->IsPlayerChangingBuffers();
@@ -3894,6 +3916,7 @@ bool TV::ProcessKeypress(PlayerContext *actx, QKeyEvent *e)
     bool isDVD = actx->buffer && actx->buffer->IsDVD();
     bool isMenuOrStill = actx->buffer && actx->buffer->IsInDiscMenuOrStillFrame();
 
+    handled = handled || SysEventHandleAction(e, actions);
     handled = handled || BrowseHandleAction(actx, actions);
     handled = handled || ManualZoomHandleAction(actx, actions);
     handled = handled || PictureAttributeHandleAction(actx, actions);
@@ -8327,7 +8350,12 @@ void TV::ShowLCDDVDInfo(const PlayerContext *ctx)
 
 bool TV::IsTunable(const PlayerContext *ctx, uint chanid, bool use_cache)
 {
-    return !IsTunableOn(ctx,chanid,use_cache,true).empty();
+    return !IsTunableOn(this, ctx,chanid,use_cache,true).empty();
+}
+
+bool TV::IsTunable(uint chanid)
+{
+    return !IsTunableOn(NULL, NULL, chanid, false, true).empty();
 }
 
 static QString toCommaList(const QSet<uint> &list)
@@ -8345,7 +8373,16 @@ static QString toCommaList(const QSet<uint> &list)
 QSet<uint> TV::IsTunableOn(
     const PlayerContext *ctx, uint chanid, bool use_cache, bool early_exit)
 {
+    return IsTunableOn(this, ctx, chanid, use_cache, early_exit);
+}
+
+QSet<uint> TV::IsTunableOn(TV *tv,
+    const PlayerContext *ctx, uint chanid, bool use_cache, bool early_exit)
+{
     QSet<uint> tunable_cards;
+
+    if (tv == NULL)
+        use_cache = false;
 
     if (!chanid)
     {
@@ -8359,7 +8396,7 @@ QSet<uint> TV::IsTunableOn(
     mplexid = (32767 == mplexid) ? 0 : mplexid;
 
     vector<uint> excluded_cards;
-    if (ctx->recorder && ctx->pseudoLiveTVState == kPseudoNormalLiveTV)
+    if (ctx && ctx->recorder && ctx->pseudoLiveTVState == kPseudoNormalLiveTV)
         excluded_cards.push_back(ctx->GetCardID());
 
     uint sourceid = ChannelUtil::GetSourceIDForChannel(chanid);
@@ -8396,10 +8433,10 @@ QSet<uint> TV::IsTunableOn(
         bool used_cache = false;
         if (use_cache)
         {
-            QMutexLocker locker(&is_tunable_cache_lock);
-            if (is_tunable_cache_inputs.contains(cardids[i]))
+            QMutexLocker locker(&tv->is_tunable_cache_lock);
+            if (tv->is_tunable_cache_inputs.contains(cardids[i]))
             {
-                inputs = is_tunable_cache_inputs[cardids[i]];
+                inputs = tv->is_tunable_cache_inputs[cardids[i]];
                 used_cache = true;
             }
         }
@@ -8407,8 +8444,11 @@ QSet<uint> TV::IsTunableOn(
         if (!used_cache)
         {
             inputs = RemoteRequestFreeInputList(cardids[i], excluded_cards);
-            QMutexLocker locker(&is_tunable_cache_lock);
-            is_tunable_cache_inputs[cardids[i]] = inputs;
+            if (tv)
+            {
+                QMutexLocker locker(&tv->is_tunable_cache_lock);
+                tv->is_tunable_cache_inputs[cardids[i]] = inputs;
+            }
         }
 
 #if 0
@@ -11645,7 +11685,7 @@ bool TV::MenuItemDisplayPlayback(const MenuItemContext &c)
     {
         if (ctx->recorder)
         {
-            vector<uint> cardids = CardUtil::GetCardList();
+            vector<uint> cardids = CardUtil::GetLiveTVCardList();
             uint cardid  = ctx->GetCardID();
             vector<uint> excluded_cardids;
             stable_sort(cardids.begin(), cardids.end());
@@ -11695,7 +11735,7 @@ bool TV::MenuItemDisplayPlayback(const MenuItemContext &c)
             uint cardid = 0;
             vector<uint> excluded_cardids;
             uint sourceid = 0;
-            cardids = CardUtil::GetCardList();
+            cardids = CardUtil::GetLiveTVCardList();
             cardid  = ctx->GetCardID();
             excluded_cardids.push_back(cardid);
             InfoMap info;

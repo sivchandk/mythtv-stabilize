@@ -114,7 +114,6 @@ typedef enum
 
 enum {
     kStartTVNoFlags          = 0x00,
-    kStartTVInGuide          = 0x01,
     kStartTVInPlayList       = 0x02,
     kStartTVByNetworkCommand = 0x04,
     kStartTVIgnoreBookmark   = 0x08,
@@ -327,6 +326,7 @@ class MTV_PUBLIC TV : public QObject, public MenuItemDisplayer
     static void ReloadKeys(void);
     static void SetFuncPtr(const char *, void *);
     static int  ConfiguredTunerCards(void);
+    static bool IsTunable(uint chanid);
 
     /// \brief Helper class for Sleep Timer code.
     class SleepTimerInfo
@@ -368,7 +368,6 @@ class MTV_PUBLIC TV : public QObject, public MenuItemDisplayer
 
     // Top level playback methods
     bool LiveTV(bool showDialogs, const ChannelInfoList &selection);
-    bool StartLiveTVInGuide(void) { return db_start_in_guide; }
     int  Playback(const ProgramInfo &rcinfo);
     void PlaybackLoop(void);
 
@@ -418,9 +417,12 @@ class MTV_PUBLIC TV : public QObject, public MenuItemDisplayer
                       int editType = kScheduleProgramGuide);
     bool StartEmbedding(const QRect&);
     void StopEmbedding(void);
-    bool IsTunable(const PlayerContext*, uint chanid, bool use_cache = false);
+    bool IsTunable(const PlayerContext*, uint chanid,
+                   bool use_cache = false);
     QSet<uint> IsTunableOn(const PlayerContext*, uint chanid,
                            bool use_cache, bool early_exit);
+    static QSet<uint> IsTunableOn(TV *tv, const PlayerContext*, uint chanid,
+                                  bool use_cache, bool early_exit);
     void ClearTunableCache(void);
     void ChangeChannel(const PlayerContext*, const ChannelInfoList &options);
     void DrawUnusedRects(void);

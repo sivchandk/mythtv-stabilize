@@ -1,8 +1,8 @@
 
 function recordProgram(chanID, startTime, type)
 {
-    hideMenu("recMenu");
-    var url = "/tv/qjs/dvr_util.qjs?action=simpleRecord&chanID=" + chanID + "&startTime=" + startTime + "&type=" + type;
+    hideMenu("optMenu");
+    var url = "/tv/ajax_backends/dvr_util.qsp?action=simpleRecord&chanID=" + chanID + "&startTime=" + startTime + "&type=" + type;
     var ajaxRequest = $.ajax( url )
                             .done(function()
                             {
@@ -11,9 +11,10 @@ function recordProgram(chanID, startTime, type)
                             });
 }
 
+// Override the one in common.js for now
 function checkRecordingStatus(chanID, startTime)
 {
-    var url = "/tv/qjs/dvr_util.qjs?action=checkRecStatus&chanID=" + chanID + "&startTime=" + startTime;
+    var url = "/tv/ajax_backends/dvr_util.qsp?action=checkRecStatus&chanID=" + chanID + "&startTime=" + startTime;
     var ajaxRequest = $.ajax( url ).done(function()
                             {
                                 var response = ajaxRequest.responseText.split("#");
@@ -30,69 +31,87 @@ function checkRecordingStatus(chanID, startTime)
                             });
 }
 
-function recRuleChanged(chandID, startTime)
-{
-    var layer = document.getElementById(chanID + "_" + startTime);
-    toggleClass(layer, "programScheduling");
-    var popup = document.getElementById(chanID + "_" + startTime + "_schedpopup");
-    toggleVisibility(popup);
-
-    setTimeout(function(){checkRecordingStatus(chanID, startTime)}, 2500);
-}
-
-function loadGuideContent(url, transition)
-{
-    currentContentURL = url;   // currentContentURL is defined in util.qjs
-    if (!transition)
-        transition = "dissolve";
-
-    $("#busyPopup").show();
-
-    var guideDivID = "guideGrid";
-    var guideDiv = document.getElementById(guideDivID);
-    var newDiv = document.createElement('div');
-    newDiv.style = "left: 100%";
-    document.getElementById("content").insertBefore(newDiv, null);
-
-    var html = $.ajax({
-      url: url,
-        async: false
-     }).responseText;
-
-    newDiv.innerHTML = html;
-    newDiv.className = "guideGrid";
-
-    // Need to assign the id to the new div
-    newDiv.id = guideDivID;
-    guideDiv.id = "old" + guideDivID;
-    switch (transition)
-    {
-        case 'left':
-            leftSlideTransition(guideDiv.id, newDiv.id);
-            break;
-        case 'right':
-            rightSlideTransition(guideDiv.id, newDiv.id);
-            break;
-        case 'dissolve':
-            dissolveTransition(guideDiv.id, newDiv.id);
-            break;
-    }
-    newDiv.id = "guideGrid";
-
-    $("#busyPopup").hide();
-}
-
 function reloadGuideContent()
 {
-    var url = currentContentURL;
-    // HACK: This is a hacky approach and will be changed soon
-    if (currentContentURL.indexOf("GuideOnly") === -1)
-    {
-        if (currentContentURL.indexOf("?") !== -1)
-            url += "&amp;GuideOnly=1";
-        else
-            url += "?GuideOnly=1";
-    }
-    loadGuideContent(url, "dissolve");  // currentContentURL is defined in util.qjs
+    loadTVContent(currentContentURL, "guideGrid", "dissolve", {"GuideOnly": "1"});  // currentContentURL is defined in util.qjs
 }
 
+function pageLeft()
+{
+    changePage("left");
+}
+
+function pageRight()
+{
+    changePage("right");
+}
+
+function changePage(direction)
+{
+    var INTERVAL = 4; // 2 Hours, 30 Minute time periods
+    var timeSelect = document.getElementById("guideStartTime");
+    var timeIndex = timeSelect.selectedIndex;
+    timeSelect.setAttribute('data-oldIndex', timeIndex);
+    var dateSelect = document.getElementById("guideStartDate");
+    var dateIndex = dateSelect.selectedIndex;
+    dateSelect.setAttribute('data-oldIndex', dateIndex);
+
+    if (direction == "left")
+    {
+        if ((timeIndex - INTERVAL) < 0)
+        {
+            timeIndex = (timeIndex - INTERVAL) + timeSelect.length;
+            dateIndex = dateIndex - 1;
+
+            if (dateIndex < 0)
+            {
+                timeIndex = 0;
+                dateIndex = 0;
+            }
+        }
+        else
+            timeIndex = (timeIndex - INTERVAL);
+    }
+    else if (direction == "right")
+    {
+        if ((timeIndex + INTERVAL) >= timeSelect.length)
+        {
+            timeIndex = (timeIndex + INTERVAL) - timeSelect.length;
+            dateIndex = dateIndex + 1;
+
+            if (dateIndex >= dateSelect.length)
+            {
+                timeIndex = (timeSelect.length - 1);
+                dateIndex = (dateSelect.length - 1);
+            }
+        }
+        else
+            timeIndex = timeIndex + INTERVAL;
+    }
+
+    dateSelect.selectedIndex = dateIndex;
+    timeSelect.selectedIndex = timeIndex;
+    // If the date has changed, then use the dateSelect onChange handler
+    // instead
+    if (dateSelect.getAttribute('data-oldIndex') != dateSelect.selectedIndex)
+        dateSelect.onchange();
+    else
+        timeSelect.onchange();
+}
+
+function changeGuideStartTime(selectBox)
+{
+    var oldIndex = selectBox.getAttribute('data-oldIndex');
+
+    if (typeof oldIndex === "undefined")
+        oldIndex = selectBox.defaultIndex;
+
+    var transition = (selectBox.selectedIndex > oldIndex) ? 'left' : 'right'
+
+    submitForm(selectBox.form, 'guideGrid', transition);
+}
+
+function scrollCallback()
+{
+    $("#NumPages").val(Number($("#NumPages").val())+1);
+}

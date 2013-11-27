@@ -27,6 +27,7 @@ using namespace std;
 #include "remoteutil.h"
 #include "channelutil.h"
 #include "cardutil.h"
+#include "tvremoteutil.h"
 #include "mythuibuttonlist.h"
 #include "mythuiguidegrid.h"
 #include "mythdialogbox.h"
@@ -207,6 +208,7 @@ class GuideUpdaterBase
 {
 public:
     GuideUpdaterBase(GuideGrid *guide) : m_guide(guide) {}
+    virtual ~GuideUpdaterBase() {}
 
     // Execute the initial non-UI part (in a separate thread).  Return
     // true if ExecuteUI() should be run later, or false if the work
@@ -249,6 +251,7 @@ public:
             for (int j = 0; j < MAX_DISPLAY_TIMES; ++j)
                 m_programInfos[i][j] = NULL;
     }
+    virtual ~GuideUpdateProgramRow() {}
     virtual bool ExecuteNonUI(void)
     {
         // Don't bother to do any work if the starting coordinates of
@@ -439,9 +442,28 @@ void GuideGrid::RunProgramGuide(uint chanid, const QString &channum,
         return;
     }
 
+    // If chanid/channum are unset, find the channel that would
+    // naturally be selected when Live TV is started.  This depends on
+    // the available tuners, their cardinput.livetvorder values, and
+    // their cardinput.startchan values.
+    QString actualChannum = channum;
+    if (chanid == 0 && actualChannum.isEmpty())
+    {
+        uint defaultChanid = gCoreContext->GetNumSetting("DefaultChanid", 0);
+        if (defaultChanid && TV::IsTunable(defaultChanid))
+            chanid = defaultChanid;
+    }
+    if (chanid == 0 && actualChannum.isEmpty())
+    {
+        vector<uint> excluded_cardids;
+        vector<uint> inputIDs = RemoteRequestFreeInputList(excluded_cardids);
+        if (!inputIDs.empty())
+            actualChannum = CardUtil::GetStartingChannel(inputIDs[0]);
+    }
+
     MythScreenStack *mainStack = GetMythMainWindow()->GetMainStack();
     GuideGrid *gg = new GuideGrid(mainStack,
-                                  chanid, channum, startTime,
+                                  chanid, actualChannum, startTime,
                                   player, embedVideo, allowFinder,
                                   changrpid);
 
@@ -834,6 +856,16 @@ bool GuideGrid::keyPressEvent(QKeyEvent *event)
     return handled;
 }
 
+static bool SelectionIsTunable(const ChannelInfoList &selection)
+{
+    for (uint i = 0; i < selection.size(); ++i)
+    {
+        if (TV::IsTunable(selection[i].chanid))
+            return true;
+    }
+    return false;
+}
+
 void GuideGrid::ShowMenu(void)
 {
     QString label = tr("Guide Options");
@@ -848,8 +880,7 @@ void GuideGrid::ShowMenu(void)
 
         if (m_player && (m_player->GetState(-1) == kState_WatchingLiveTV))
             menuPopup->AddButton(tr("Change to Channel"));
-        else
-            // XXX Make sure this channel/program is watchable
+        else if (SelectionIsTunable(GetSelection()))
             menuPopup->AddButton(tr("Watch This Channel"));
 
         menuPopup->AddButton(tr("Record This"));
@@ -1668,8 +1699,9 @@ void GuideGrid::customEvent(QEvent *event)
             }
             else if (resulttext == tr("Watch This Channel"))
             {
-                // XXX Do another check that this channel/program is watchable
-                TV::StartTV(NULL, kStartTVNoFlags, GetSelection());
+                ChannelInfoList selection = GetSelection();
+                if (SelectionIsTunable(selection))
+                    TV::StartTV(NULL, kStartTVNoFlags, selection);
             }
             else if (resulttext == tr("Program Details"))
             {
