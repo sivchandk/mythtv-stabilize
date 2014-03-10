@@ -1,4 +1,4 @@
-mythtv (0.27-20131128-53fac02) UNRELEASED; urgency=low
+mythtv (0.27-20140310-cf148a0) UNRELEASED; urgency=low
 
   * New checkout since last package origin/fixes/0.26 / b237aff
   * Upstream changes since last package 80fe2a9
@@ -146,8 +146,135 @@ mythtv (0.27-20131128-53fac02) UNRELEASED; urgency=low
     08b2525642ef1defa1390a4dbf35d5a3d2993147)
   * [06a8889] Added the missing libxml-xpath-perl dependency for mythtv-
     common
+  * Upstream changes since last package 53fac02
+  * [cf148a0] Merge MythTV fixes/0.27
+  * [13c64f2] Merge remote-tracking branch 'origin/fixes/0.27' into
+    fixes/0.27
+  * [cb3b784] Change verbosity for some network messages (cherry picked
+    from commit e6245ca330bc7dcc4d358819a299b28f02f5b5a5)
+  * [384858c] Bump API binary number following round of changes in
+    ringbuffers
+  * [57c32ea] Never attempt to read more than in 512kB blocks
+  * [366ba7d] Allow seeking within the entire liveTV chain of
+    recordings.
+  * [d356505] Fix typo
+  * [ca275af] Prevent playback to exit early should backend's writes be
+    delayed
+  * [22936eb] Have backend advertise which files are currently being
+    written to
+  * [0b9470c] Fix fileringbuffer locking up on read()
+  * [28b768a] Enable compilation of a couple of files that were disabled
+    on Qt5 because they are apparently not compatible. They build, so
+    let them.
+  * [784c236] Fix mythnetvision.pro for Qt5
+  * [4fd068e] Remove check_cxxflags which doesn't work
+  * [83ddcc8] Resolve X11/Xlib.h define of Bool and Qt5 (5.2)
+  * [0a8ffeb] Rewrite qmake detection to better support Qt5 - plugins
+  * [0a8d441] Rewrite qmake detection to better support Qt5
+  * [e77d597] Some HLS tweaks to make recording more robust when faced
+    with unreliable feeds.
+  * [65668cd] Allow tmdb3.py to use $MYTHCONFDIR as a cache location.
+  * [ab18cb1] detect cropped HD (720p) content
+  * [147dec5] Always show programs that are still recording in
+    ViewScheduled.
+  * [9bf1070] MythMusic: fix the goom visualizer
+  * [75e71d3] Add housekeeper startup delay.
+  * [d48bbd8] Only force a refresh of the metadata rather than
+    invalidating the cache as that causes a crash if file system
+    browsing is enabled.
+  * [f5e6180] Fixes for FreeBSD 10.0 + clang
+  * [de615b3] Invalidate the cache after deleting a video file to ensure
+    the free'd entry is removed.
+  * [6b37da2] let Smolt search for the country as global and local
+    setting
+  * [b485800] let Smolt search for the langauge as global and local
+    setting
+  * [5c1cdb0] Explicitly set the audio capabilities of the DVD VM to
+    indicate all audio types are supported.  This makes DVDs that check
+    this VM register play properly. (cherry picked from commit
+    501de627233cdffc1032932fd0611fd2e32abca4)
+  * [1b7404d] Use proper string conversion for DailyArtworkUpdates
+    setting.
+  * [eaafcb4] Make "DailyArtworkUpdates" a global option
+  * [4ee21a4] Fix segfault in MythUIButtonList::GetItemCurrent(). Fixes
+    #12040 (cherry picked from commit
+    4211abf7d62b9e15a61731bd1ae19400302c92ff)
+  * [6b35362] Merge commit '1d9d46beff7a7591ebbfa6e13c080617e660e52d'
+    into fixes/0.27
+  * [b249ad4] Bind to multicast address instead of ANY
+  * [1d9d46b] Correct mispelling in cache_file.py
+  * [f1e620c] Add mplexid to dummy entries when scheduling around live
+    TV.
+  * [5a5e1cd] Update record.last_record/deleted to UTC.
+  * [99f5464] missed variable rename in Smolt data collection in
+    ba8a1608cf
+  * [8307dd4] In [50e5f4501] I failed to account for a possible path
+    through TuningFrequency(), and removed a necessary call to
+    SetChannelByString().
+  * [4c12503] MythMusic: Fix detection of compilations using special
+    MusicBrainz Artist ID
+  * [fac84fa] MythMusic: avoid storing a pointer to the current playlist
+    in the music player
+  * [bd74a28] MythMusic: make sure we null check the returned tagger
+    after 47217ca10a
+  * [70cc07f] Bump the ABI version after f359a4ebd3c
+  * [f359a4e] MetaIO: validate the files extension before creating a
+    tagger
+  * [f984e29] MetaIOAVFComment: don't call av_estimate_timings() in
+    getTrackLength()
+  * [7f548de] MythMusic: fix playback of some radio stations
+  * [d965061] Update binary version after
+    525ac31dd2215e5ce46fc3b70f7ba883d99b736a.
+  * [525ac31] Be less aggressive about clearing the bookmark on exit.
+  * [9d4b5e2] extend IPTV hack to handle PAT with two entries but only
+    one program
+  * [39171be] Icon Downloader: Check that the existing icon is actually
+    a valid image.
+  * [65c0eb2] Metadata Lookup: We want to use the first (best) result,
+    not the last.
+  * [5dc9d15] Fix display for progress dialog in Icon Importer (cherry
+    picked from commit 243420f6c1e043530fbe919ec85ae9f41af56323)
+  * [8f7c8aa] Make the check for an existing icon more robust. (cherry
+    picked from commit 8b1d8159331e85569d78f5637df49366e5198f40)
+  * [fa5599d] Icon Downloader: Fix 'Re-scan for missing' to check the
+    Channel Icon storage group (cherry picked from commit
+    19f6b618045e9ac9bb7657e90f915e09dc63ba14)
+  * [866d1fe] Fix segfault in Schedule Editor. Not all recording rules
+    are associated with a program and this pointer therefore needs to be
+    checked first
+  * [f785255] Fix python bindings to store updates to video markup data.
+    (cherry picked from commit 13ae25f5c86bd29a4e854cd5d438436f26d7345e)
+  * [26052f4] Use category type as a hint in the Schedule Editor
+    Metadata/Artwork searches
+  * [1519991] Fix ordering of Artwork in selection dialogs. Best matches
+    should now appear first, not last. (cherry picked from commit
+    d95a237d6cf7e79b4b5f807600fd635f37337e2f)
+  * [ba15be9] Reduce logging level for GetKeyframePositions and
+    GetKeyframeDurations. (cherry picked from commit
+    3c90e595d998e563c7a97a39f9541c157762755e)
+  * [aea561a] Prevent MythWelcome blocking input devices when calling
+    mythshutdown to avoid resetting the idle timer (see [cac1413]) when
+    trying to determine whether the backend is idle, thereby preventing
+    shutdown. (cherry picked from commit
+    1431eecd20c020b9c0ad826993015bc8957e82d6)
+  * [339d1ce] Only jump back in a menu to the nearest previous block
+    with subpictures if a seek operation is already in progress.
+  * [cb744f8] Correct issue where TMDB returns less results than
+    claimed. (cherry picked from commit
+    24bcf67da973e4eee738eca68fb5cea36e7c1306)
+  * [29922d1] Merge branch 'master' of github.com:wagnerrp/pytmdb3
+  * [e3d4c07] Updates for television data.
+  * [db412de] Updated changelog
+  * [e3802e5] Merge pull request #32 from Toilal/master
+  * [6a5050f] Add support for the new tv api
+  * [70a9dc8] Registered and uploaded on PyPI. Fix #31
+  * [4965933] Merge pull request #30 from Toilal/master
+  * [e47fd39] Fixed version in setup.py
+  * [053778c] PEP8 code style updates.
+  * [abae25a] Enable --debug flag in test application.
+  * [0d91e6f] Have pager return Nones if the server returns null.
 
- -- Digital Nirvana <sysadmin@digital-nirvana.com>  Thu, 28 Nov 2013 00:10:39 +0530
+ -- Digital Nirvana <sysadmin@digital-nirvana.com>  Mon, 10 Mar 2014 14:57:37 +0000
 
 mythtv (0.27-20131029-80fe2a9) UNRELEASED; urgency=low
 
