@@ -77,6 +77,8 @@ DTVRecorder::DTVRecorder(TVRec *rec) :
     _input_pat(NULL),
     _input_pmt(NULL),
     _has_no_av(false),
+    // record 'raw' mpts?
+    _record_mpts(false),
     // statistics
     _use_pts(false),
     _packet_count(0),
@@ -93,7 +95,7 @@ DTVRecorder::DTVRecorder(TVRec *rec) :
     memset(_continuity_counter, 0xff, sizeof(_continuity_counter));
 }
 
-DTVRecorder::~DTVRecorder()
+DTVRecorder::~DTVRecorder(void)
 {
     StopRecording();
 
@@ -130,6 +132,8 @@ void DTVRecorder::SetOption(const QString &name, int value)
 {
     if (name == "wait_for_seqstart")
         _wait_for_keyframe_option = (value == 1);
+    else if (name == "recordmpts")
+        _record_mpts = (value == 1);
     else
         RecorderBase::SetOption(name, value);
 }
@@ -141,6 +145,7 @@ void DTVRecorder::SetOptionsFromProfile(RecordingProfile *profile,
     SetOption("videodevice", videodev);
     DTVRecorder::SetOption("tvformat", gCoreContext->GetSetting("TVFormat"));
     SetStrOption(profile, "recordingtype");
+    SetIntOption(profile, "recordmpts");
 }
 
 /** \fn DTVRecorder::FinishRecording(void)

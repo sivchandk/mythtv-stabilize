@@ -1,6 +1,6 @@
-CREATE DATABASE IF NOT EXISTS mythconverg;
-GRANT ALL ON mythconverg.* TO mythtv@localhost IDENTIFIED BY "mythtv";
+CREATE DATABASE IF NOT EXISTS mythconvergdn26;
+GRANT ALL ON mythconvergdn26.* TO dn26@localhost IDENTIFIED BY "mythtv";
 FLUSH PRIVILEGES;
-GRANT CREATE TEMPORARY TABLES ON mythconverg.* TO mythtv@localhost IDENTIFIED BY "mythtv";
+GRANT CREATE TEMPORARY TABLES ON mythconvergdn26.* TO dn26@localhost IDENTIFIED BY "mythtv";
 FLUSH PRIVILEGES;
-ALTER DATABASE mythconverg DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;
+ALTER DATABASE mythconvergdn26 DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;
