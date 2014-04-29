@@ -7,6 +7,8 @@
  *
  */
 
+#include <unistd.h>
+
 #include "mythuiwebbrowser.h"
 
 // qt

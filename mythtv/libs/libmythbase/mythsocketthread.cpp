@@ -12,6 +12,7 @@
 #include <sys/select.h> // for select
 #endif
 #include <sys/types.h>  // for fnctl
+#include <unistd.h>
 #include <fcntl.h>      // for fnctl
 #include <errno.h>      // for checking errno
 

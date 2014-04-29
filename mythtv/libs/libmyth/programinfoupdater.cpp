@@ -1,3 +1,5 @@
+#include <unistd.h>
+
 // MythTV headers
 #include "programinfoupdater.h"
 #include "mthreadpool.h"

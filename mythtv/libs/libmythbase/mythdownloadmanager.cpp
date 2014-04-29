@@ -7,7 +7,8 @@
 #include <QDir>
 #include <QNetworkCookieJar>
 
-#include "stdlib.h"
+#include <stdlib.h>
+#include <unistd.h>
 
 // libmythbase
 #include "compat.h"

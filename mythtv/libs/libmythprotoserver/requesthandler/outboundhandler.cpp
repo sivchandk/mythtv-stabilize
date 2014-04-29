@@ -1,4 +1,4 @@
-
+#include <unistd.h>
 using namespace std;
 
 #include <QTimer>

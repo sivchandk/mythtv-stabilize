@@ -1,3 +1,5 @@
+#include <unistd.h>
+
 #include "dvdringbuffer.h"
 #include "DetectLetterbox.h"
 #include "audiooutput.h"

@@ -41,9 +41,9 @@ using namespace std;
 #include "mythlogging.h"
 
 #ifdef USING_MINGW
-#include <unistd.h>
 #include "compat.h"
 #endif
+#include <unistd.h>
 
 #define LOC      QString("MythContext: ")
 

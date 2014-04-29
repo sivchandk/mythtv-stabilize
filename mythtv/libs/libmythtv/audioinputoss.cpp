@@ -29,6 +29,7 @@
 
 #include "audioinputoss.h"
 #include "mythlogging.h"
+#include <unistd.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 

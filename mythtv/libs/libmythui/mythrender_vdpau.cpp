@@ -1,3 +1,4 @@
+#include <unistd.h>
 #include "math.h"
 
 #include <QSize>

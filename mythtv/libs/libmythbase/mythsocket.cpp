@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <cassert>
 #include <cerrno>
+#include <unistd.h> // for usleep (and socket code on Q_OS_WIN)
 
 #include "compat.h"
 

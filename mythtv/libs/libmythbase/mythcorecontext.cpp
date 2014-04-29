@@ -16,10 +16,10 @@ using namespace std;
 
 #ifdef USING_MINGW
 #include <winsock2.h>
-#include <unistd.h>
 #else
 #include <locale.h>
 #endif
+#include <unistd.h> // for usleep (and socket code on Q_OS_WIN)
 
 #include "compat.h"
 #include "mythconfig.h"       // for CONFIG_DARWIN

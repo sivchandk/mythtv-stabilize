@@ -1,3 +1,5 @@
+#include <unistd.h>
+
 #include <QApplication>
 #include <QList>
 #include <QUrl>

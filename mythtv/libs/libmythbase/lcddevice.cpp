@@ -12,6 +12,7 @@
 #include <cmath>
 #include <fcntl.h>
 #include <errno.h>
+#include <unistd.h> // for usleep (and socket code on Q_OS_WIN)
 
 // Qt headers
 #include <QApplication>

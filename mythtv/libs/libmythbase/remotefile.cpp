@@ -1,4 +1,5 @@
 #include <iostream>
+#include <unistd.h> // for usleep (and socket code on Q_OS_WIN)
 using namespace std;
 
 #include <QUrl>

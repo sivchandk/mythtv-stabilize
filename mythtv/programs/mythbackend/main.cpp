@@ -1,3 +1,5 @@
+#include <unistd.h>
+
 #ifndef _WIN32
 #include <QCoreApplication>
 #else

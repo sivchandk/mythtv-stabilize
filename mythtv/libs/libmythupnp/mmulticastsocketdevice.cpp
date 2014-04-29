@@ -33,6 +33,7 @@
 # include <arpa/inet.h>
 # define GET_SOCKET_ERROR    errno
 #endif
+#include <unistd.h>
 
 // Qt headers
 #include <QStringList>
