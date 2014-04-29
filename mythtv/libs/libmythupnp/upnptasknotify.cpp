@@ -3,10 +3,10 @@
 // Created     : Oct. 24, 2005
 //
 // Purpose     : UPnp Task to send Notification messages
-//                                                                            
+//
 // Copyright (c) 2005 David Blain <mythtv@theblains.net>
-//                                          
-// This library is free software; you can redistribute it and/or 
+//
+// This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
 // License as published by the Free Software Foundation; either
 // version 2.1 of the License, or at your option any later version of the LGPL.
@@ -26,7 +26,7 @@
 
 // Qt headers
 #include <QStringList>
-#include <QUuid> 
+#include <QUuid>
 #include <QFile>
 
 // MythTV headers
@@ -48,20 +48,20 @@
 //
 /////////////////////////////////////////////////////////////////////////////
 
-UPnpNotifyTask::UPnpNotifyTask( int nServicePort ) 
+UPnpNotifyTask::UPnpNotifyTask( int nServicePort )
 {
     m_nServicePort = nServicePort;
     m_eNTS         = NTS_alive;
 
     m_nMaxAge      = UPnp::GetConfiguration()->GetValue( "UPnP/SSDP/MaxAge" , 3600 );
-} 
+}
 
 /////////////////////////////////////////////////////////////////////////////
 //
 /////////////////////////////////////////////////////////////////////////////
 
-UPnpNotifyTask::~UPnpNotifyTask()  
-{ 
+UPnpNotifyTask::~UPnpNotifyTask()
+{
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -105,9 +105,9 @@ void UPnpNotifyTask::SendNotifyMsg( MSocketDevice *pSocket,
 
     QStringList addressList = UPnp::g_IPAddrList;
 
-    for ( QStringList::Iterator it  = addressList.begin(); 
-                                it != addressList.end(); 
-                              ++it ) 
+    for ( QStringList::Iterator it  = addressList.begin();
+                                it != addressList.end();
+                              ++it )
     {
         if ((*it).isEmpty())
         {
@@ -123,7 +123,7 @@ void UPnpNotifyTask::SendNotifyMsg( MSocketDevice *pSocket,
             ipaddress = "[" + ipaddress + "]";
 
         QString sHeader = QString("NOTIFY * HTTP/1.1\r\n"
-                                  "HOST: %1:%2\r\n"    
+                                  "HOST: %1:%2\r\n"
                                   "LOCATION: http://%3:%4/getDeviceDesc\r\n")
                     .arg(pSocket->address().toString()) .arg(pSocket->port())
                     .arg(ipaddress) .arg(m_nServicePort);
@@ -176,7 +176,7 @@ void UPnpNotifyTask::Execute( TaskQueue *pQueue )
 
     m_mutex.lock();
 
-    if (m_eNTS == NTS_alive) 
+    if (m_eNTS == NTS_alive)
         pQueue->AddTask( (m_nMaxAge / 2) * 1000, (Task *)this  );
 
     m_mutex.unlock();
@@ -193,13 +193,13 @@ void UPnpNotifyTask::ProcessDevice(
     // ----------------------------------------------------------------------
     // Loop for each device and send the 2 required messages
     //
-    // -=>TODO: Need to add support to only notify 
+    // -=>TODO: Need to add support to only notify
     //          Version 1 of a service.
     // ----------------------------------------------------------------------
 
     SendNotifyMsg( pSocket, pDevice->GetUDN(), "" );
     SendNotifyMsg( pSocket, pDevice->m_sDeviceType, pDevice->GetUDN() );
-        
+
     // ------------------------------------------------------------------
     // Loop for each service in this device and send the 1 required message
     // ------------------------------------------------------------------

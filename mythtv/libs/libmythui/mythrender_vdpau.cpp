@@ -520,7 +520,7 @@ bool MythRenderVDPAU::GetScreenShot(int width, int height, QString filename)
         if (height <= 0)
             height = img.height();
 
-        img = img.scaled(width, height, Qt::KeepAspectRatio, 
+        img = img.scaled(width, height, Qt::KeepAspectRatio,
                          Qt::SmoothTransformation);
         success = window->SaveScreenShot(img, filename);
     }

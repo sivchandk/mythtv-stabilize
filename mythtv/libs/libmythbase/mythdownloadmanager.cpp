@@ -58,7 +58,7 @@ class MythDownloadInfo
     {
         m_url.detach();
         m_outFile.detach();
-    }       
+    }
 
     QString          m_url;
     QUrl             m_redirectedTo;
@@ -575,7 +575,7 @@ void MythDownloadManager::downloadQNetworkRequest(MythDownloadInfo *dlInfo)
     static const char dateFormat[] = "ddd, dd MMM yyyy hh:mm:ss 'GMT'";
     QUrl qurl(dlInfo->m_url);
     QNetworkRequest request;
-    
+
     if (dlInfo->m_request)
     {
         request = *dlInfo->m_request;
@@ -632,7 +632,7 @@ void MythDownloadManager::downloadQNetworkRequest(MythDownloadInfo *dlInfo)
     connect(dlInfo->m_reply, SIGNAL(error(QNetworkReply::NetworkError)), this,
             SLOT(downloadError(QNetworkReply::NetworkError)));
     connect(dlInfo->m_reply, SIGNAL(downloadProgress(qint64, qint64)),
-            this, SLOT(downloadProgress(qint64, qint64))); 
+            this, SLOT(downloadProgress(qint64, qint64)));
 }
 
 /** \fn MythDownloadManager::downloadNow(MythDownloadInfo *dlInfo,
@@ -873,7 +873,7 @@ void MythDownloadManager::downloadFinished(MythDownloadInfo *dlInfo)
         connect(dlInfo->m_reply, SIGNAL(error(QNetworkReply::NetworkError)), this,
                 SLOT(downloadError(QNetworkReply::NetworkError)));
         connect(dlInfo->m_reply, SIGNAL(downloadProgress(qint64, qint64)),
-                this, SLOT(downloadProgress(qint64, qint64))); 
+                this, SLOT(downloadProgress(qint64, qint64)));
 
         m_downloadReplies.remove(reply);
         reply->deleteLater();
@@ -987,7 +987,7 @@ void MythDownloadManager::downloadProgress(qint64 bytesReceived, qint64 bytesTot
 
     dlInfo->m_lastStat = QDateTime::currentDateTime();
 
-    LOG(VB_FILE, LOG_DEBUG, LOC + 
+    LOG(VB_FILE, LOG_DEBUG, LOC +
         QString("downloadProgress: %1 to %2 is at %3 of %4 bytes downloaded")
             .arg(dlInfo->m_url).arg(dlInfo->m_outFile)
             .arg(bytesReceived).arg(bytesTotal));
@@ -1151,4 +1151,3 @@ QDateTime MythDownloadManager::GetLastModified(const QString &url)
 }
 
 /* vim: set expandtab tabstop=4 shiftwidth=4: */
-

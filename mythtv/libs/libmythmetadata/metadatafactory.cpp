@@ -654,4 +654,3 @@ LookupType GuessLookupType(RecordingRule *recrule)
 
     return ret;
 }
-

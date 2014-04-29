@@ -157,7 +157,7 @@ void MythSocketThread::ReadyToBeRead(MythSocket *sock)
 {
     LOG(VB_SOCKET, LOG_DEBUG, SLOC(sock) + "socket is readable");
     int bytesAvail = sock->bytesAvailable();
-    
+
     if (bytesAvail == 0 && sock->closedByRemote())
     {
         LOG(VB_SOCKET, LOG_INFO, SLOC(sock) + "socket closed");
@@ -319,7 +319,7 @@ void MythSocketThread::run(void)
             m_readyread_wait.wait(&m_readyread_lock, kShortWait);
             continue;
         }
-        
+
         // ReadyToBeRead allows calls back into the socket so we need
         // to release the lock for a little while.
         // since only this loop updates m_readyread_list this is safe.
@@ -353,7 +353,7 @@ void MythSocketThread::run(void)
         {
             if (!(*it)->TryLock(false))
                 continue;
-            
+
             int socket = (*it)->socket();
 
             if (socket >= 0 &&

@@ -1298,4 +1298,3 @@ int Transcode::TranscodeFile(const QString &inputname,
 }
 
 /* vim: set expandtab tabstop=4 shiftwidth=4: */
-

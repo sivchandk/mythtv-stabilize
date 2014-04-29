@@ -203,7 +203,7 @@ static void eject_cb(void)
 MythContextPrivate::MythContextPrivate(MythContext *lparent)
     : parent(lparent),
       m_gui(false),
-      m_pConfig(NULL), 
+      m_pConfig(NULL),
       disableeventpopup(false),
       disablelibrarypopup(false),
       pluginmanager(NULL),
@@ -1017,7 +1017,7 @@ MythContext::MythContext(const QString &binversion)
     if (!WSAStarted) {
         WSADATA wsadata;
         int res = WSAStartup(MAKEWORD(2, 0), &wsadata);
-        LOG(VB_SOCKET, LOG_INFO, 
+        LOG(VB_SOCKET, LOG_INFO,
                  QString("WSAStartup returned %1").arg(res));
     }
 #endif
@@ -1046,7 +1046,7 @@ bool MythContext::Init(const bool gui,
 
     if (app_binary_version != MYTH_BINARY_VERSION)
     {
-        LOG(VB_GENERAL, LOG_EMERG, 
+        LOG(VB_GENERAL, LOG_EMERG,
                  QString("Application binary version (%1) does not "
                          "match libraries (%2)")
                      .arg(app_binary_version) .arg(MYTH_BINARY_VERSION));
@@ -1138,7 +1138,7 @@ bool MythContext::TestPopupVersion(const QString &name,
         "Plugin %1 is not compatible with the installed MythTV "
         "libraries.");
 
-    LOG(VB_GENERAL, LOG_EMERG, 
+    LOG(VB_GENERAL, LOG_EMERG,
              QString("Plugin %1 (%2) binary version does not "
                      "match libraries (%3)")
                  .arg(name).arg(pluginversion).arg(libversion));

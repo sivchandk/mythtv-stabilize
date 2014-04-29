@@ -75,7 +75,7 @@ void BackendConnectionManager::customEvent(QEvent *event)
             m_reconnecting = NULL;
             if (m_first_time && !checkTimeZone())
             {
-                // Check for different time zones, 
+                // Check for different time zones,
                 // different offsets, different times
                 LOG(VB_GENERAL, LOG_ERR,
                     "The time and/or time zone settings on this "
@@ -94,7 +94,7 @@ void BackendConnectionManager::customEvent(QEvent *event)
                                                     popupStack, message, false);
                 if (error->Create())
                 {
-                    QObject::connect(error, SIGNAL(haveResult(bool)), 
+                    QObject::connect(error, SIGNAL(haveResult(bool)),
                                      qApp, SLOT(quit()));
                     popupStack->AddScreen(error);
                 }

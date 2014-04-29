@@ -3,10 +3,10 @@
 // Created     : Oct. 24, 2005
 //
 // Purpose     : UPnp Task to handle Discovery Responses
-//                                                                            
+//
 // Copyright (c) 2005 David Blain <mythtv@theblains.net>
-//                                          
-// This library is free software; you can redistribute it and/or 
+//
+// This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
 // License as published by the Free Software Foundation; either
 // version 2.1 of the License, or at your option any later version of the LGPL.
@@ -45,10 +45,10 @@
 //
 /////////////////////////////////////////////////////////////////////////////
 
-UPnpSearchTask::UPnpSearchTask( int          nServicePort, 
+UPnpSearchTask::UPnpSearchTask( int          nServicePort,
                                 QHostAddress peerAddress,
-                                int          nPeerPort,  
-                                QString      sST, 
+                                int          nPeerPort,
+                                QString      sST,
                                 QString      sUDN )
 {
     m_PeerAddress = peerAddress;
@@ -58,14 +58,14 @@ UPnpSearchTask::UPnpSearchTask( int          nServicePort,
     m_nServicePort= nServicePort;
     m_nMaxAge     = UPnp::GetConfiguration()->GetValue( "UPnP/SSDP/MaxAge" , 3600 );
 
-} 
+}
 
 /////////////////////////////////////////////////////////////////////////////
 //
 /////////////////////////////////////////////////////////////////////////////
 
-UPnpSearchTask::~UPnpSearchTask()  
-{ 
+UPnpSearchTask::~UPnpSearchTask()
+{
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -83,7 +83,7 @@ void UPnpSearchTask::SendMsg( MSocketDevice  *pSocket,
     else
         sUSN = sST;
 
-    QString sDate = QDateTime::currentDateTime().toString( "d MMM yyyy hh:mm:ss" );  
+    QString sDate = QDateTime::currentDateTime().toString( "d MMM yyyy hh:mm:ss" );
 
     QString sData = QString ( "CACHE-CONTROL: max-age=%1\r\n"
                               "DATE: %2\r\n"
@@ -108,9 +108,9 @@ void UPnpSearchTask::SendMsg( MSocketDevice  *pSocket,
                         .arg(m_PeerAddress.toString()) .arg(m_nPeerPort));
 #endif
 
-    for ( QStringList::Iterator it  = m_addressList.begin(); 
-                                it != m_addressList.end(); 
-                              ++it ) 
+    for ( QStringList::Iterator it  = m_addressList.begin();
+                                it != m_addressList.end();
+                              ++it )
     {
         QString ipaddress = *it;
 
@@ -189,13 +189,13 @@ void UPnpSearchTask::ProcessDevice(
     // ----------------------------------------------------------------------
     // Loop for each device and send the 2 required messages
     //
-    // -=>TODO: We need to add support to only notify 
+    // -=>TODO: We need to add support to only notify
     //          Version 1 of a service.
     // ----------------------------------------------------------------------
 
     SendMsg( pSocket, pDevice->GetUDN(), "" );
     SendMsg( pSocket, pDevice->m_sDeviceType, pDevice->GetUDN() );
-        
+
     // ------------------------------------------------------------------
     // Loop for each service in this device and send the 1 required message
     // ------------------------------------------------------------------
@@ -212,4 +212,3 @@ void UPnpSearchTask::ProcessDevice(
     for (; dit != pDevice->m_listDevices.end(); ++dit)
         ProcessDevice( pSocket, *dit);
 }
-
