@@ -172,6 +172,7 @@ class MTV_PUBLIC MythCCExtractorPlayer : public MythPlayer
 
     /// Keeps track for decoding time to make timestamps for subtitles.
     double  m_curTime;
+    double  m_curTimeShift;
     uint64_t m_myFramesPlayed;
     bool    m_showProgress;
     QString m_fileName;
