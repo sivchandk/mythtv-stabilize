@@ -89,7 +89,7 @@ Description: Personal video recorder application (database).
 
 Package: mythtv-backend
 Architecture: any
-Depends: mythtv-common (>= ${source:Version}), ${shlibs:Depends}, cron, wget, mythtv-transcode, libjs-jquery, mythlogserver, ${misc:Depends}
+Depends: mythtv-common (>= ${source:Version}), ${shlibs:Depends}, cron, wget, mythtv-transcode, libjs-jquery, mythlogserver, ${misc:Depends}, python-pycurl, python-mythtv (>= ${source:Version})
 Conflicts: mythtv (<< 0.8-1)
 Replaces: mythtv (<< 0.8-1), mythtv-frontend (<= 0.20-0.4)
 Recommends: mythtv-database, logrotate, xmltv-util
@@ -148,7 +148,7 @@ Architecture: any
 Section: libs
 Depends: ${shlibs:Depends}, ${misc:Depends}, libqt4-sql-mysql, procps, iputils-ping, udisks
 Conflicts: mythtv (<< 0.7-5), libmyth-0.21
-Replaces: mythtv (<< 0.7-5), libmyth-0.21
+Replaces: mythtv (<< 0.7-5), libmyth-0.21, libmyth-0.26-0
 Description: Common library code for MythTV and add-on modules (runtime).
  MythTV provides a unified graphical interface for recording and viewing
  television programs. Refer to the mythtv package for more information.
