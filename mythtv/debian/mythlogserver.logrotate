@@ -6,7 +6,9 @@
 	sharedscripts
 	compress
 	postrotate
-		pkill -HUP mythlogserver
+        if [ -n "pidof mythlogserver" ]; then
+    		pkill -HUP mythlogserver
+        fi
 	endscript
 	su mythtv mythtv
 }

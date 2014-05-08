@@ -17,15 +17,19 @@ case "$1" in
 
 	db_get mythtv/mysql_host
 	hostname="$RET"
+	export hostname
 
 	db_get mythtv/mysql_mythtv_dbname
 	database="$RET"
+	export database
 
 	db_get mythtv/mysql_mythtv_user
 	mythtv_username="$RET"
+	export mythtv_username
 
 	db_get mythtv/mysql_mythtv_password
 	mythtv_password="$RET"
+	export mythtv_password
 
 	if [ -z "$mythtv_password" ]; then
 	    mythtv_password="$(pwgen -s 8)"
@@ -45,10 +49,6 @@ case "$1" in
 
        cat $INPUT > $NEW
        
-       export hostname
-       export mythtv_username
-       export mythtv_password
-       export database
        perl -pi -e 's/(<Host>).*?(<\/Host>)/$1$ENV{'hostname'}$2/;' $NEW
        perl -pi -e 's/(<UserName>).*?(<\/UserName>)/$1$ENV{'mythtv_username'}$2/;' $NEW
        perl -pi -e 's/(<Password>).*?(<\/Password>)/$1$ENV{'mythtv_password'}$2/;' $NEW

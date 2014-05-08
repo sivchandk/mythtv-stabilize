@@ -1,6 +1,5 @@
 usr/share/mythtv/themes
 usr/share/mythtv/locales
-usr/share/mythtv/internetcontent
 usr/share/mythtv/i18n
 usr/share/mythtv/hardwareprofile
 usr/share/mythtv/metadata/Movie/tmdb3.py

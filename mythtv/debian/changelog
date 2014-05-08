@@ -1,4 +1,4 @@
-mythtv (0.27-20140310-cf148a0) UNRELEASED; urgency=low
+mythtv (0.27-20140508-83d5148) UNRELEASED; urgency=low
 
   * New checkout since last package origin/fixes/0.26 / b237aff
   * Upstream changes since last package 80fe2a9
@@ -273,8 +273,83 @@ mythtv (0.27-20140310-cf148a0) UNRELEASED; urgency=low
   * [053778c] PEP8 code style updates.
   * [abae25a] Enable --debug flag in test application.
   * [0d91e6f] Have pager return Nones if the server returns null.
+  * Upstream changes since last package cf148a0
+  * [83d5148] mythccextractor needs to generate zero-origin timestamps.
+  * [f250302] Merge branch 'fixes/0.27' of topaz:mythtv into fixes/0.27
+  * [583f448] Remove old entries from in-memory EIT cache
+  * [e2acf0d] Always force program type to series if it has an onscreen
+    episode number (cherry picked from commit
+    cda7494f7931ebfaacc328c66782e4536489e714)
+  * [aa603f1] consider the last segment when determining the aspect
+    ratio
+  * [3dfc6fa] consider all aspect ratio changes when looking for the
+    next change
+  * [0728884] let mythwikiscripts find the categories again when
+    scraping script
+  * [e50af7d] make parameter names consistently lowercase
+  * [55e7ed5] Make metadata title matching more permissive
+  * [5268cd1] let mythtranscode --help hint at the optional cutlist
+    (cherry picked from commit 24be3436d75f5947ef6e7d444daee50666832ac6)
+  * [27668b7] Protect pbs with proper (aka locked) refcounting.
+  * [46a146c] Fix null dereference
+  * [b93fb14] Remove file check for pytmdb3.cache
+  * [ad2f1ff] Fix crashes when pressing menu key during channel change
+  * [d17c906] Should first Apple Remote listening fail, don’t attempt to
+    use apple remote.
+  * [cfa3260] Fixes Video Playback Profile Editor.
+  * [cba1663] Fix linking issues.
+  * [1b68d62] My analysis for the problem in
+    96ecd539de8e76a880f0013b4b8854da216e17b1 was wrong. The actual issue
+    is that QPalette inheritance appears broken on a mac; if you set the
+    palette to the top widget container, it doesn’t do anything on its
+    children. However, setting the palette to the main application
+    itself does.
+  * [0ba4d68] Revert "Fix settings display on macs"
+  * [39686c6] Fix old Qt setting screens preventing them from accepting
+    keyboard inputs
+  * [829a098] Fix settings display on macs
+  * [5bc3ba4] Revert "Fix settings display on macs"
+  * [74033e7] Revert "Bump API version"
+  * [b10d885] Fix MythVideo general settings page not working
+  * [fadcd73] Make python bindings work on mac
+  * [a745119] Fix AppleRemote thread not being killed when exiting the
+    application
+  * [c54c898] Bump API version
+  * [dca8f92] Fix settings display on macs
+  * [3ca3f6d] Improve AirPlay photosharing
+  * [d723f0f] No need to add randomisation to bonjour first registration
+  * [152e5b7] Make AirPlay photo sharing works with iOS 7.1
+  * [8ee257c] Fix AirPlay occasionally only showing as an audio device
+    on iOS 7.x
+  * [63a3ce6] Bump API version following
+    00739e7019e4a14b320022279595da1bc214f4c2
+  * [00739e7] Add BonjourRegister::ReAnnounceService()
+  * [fe66cf3] Advertise RAOP service before AirPlay service.
+  * [583395f] Fixes #12098 Only dynamically load the libGLESv2 library
+    if OpenGL ES is enabled.
+  * [036a336] MythMusic: fix mixed up smart playlist "starts with" and
+    "ends with" criteria
+  * [30d86b1] MythMusic: fix the playlist editor adding duplicate tracks
+    to the playlist
+  * [480589a] Revert 7abf18a16
+  * [7abf18a] DTVRecorder::FindH264Keyframes: Only account for
+    Adaptation Field Control Offset if payloadStart is set.
+  * [642c558] H264Parser::decode_Header: pic_order_present_flag is not
+    required, so don't insist on it.
+  * [7b8fa4f] Updated changelog
+  * [0b21664] MythCenter-wide: fix some clipping on the playlist editor
+    screen
+  * [2d9a3d5] MythCenter-wide: fix some clipping on the music playlist
+    editor
+  * [e0bbc83] MythCenter-wide: fix some clipping on the music playlist
+    editor
+  * [3bfe496] MythMusic: missed a git add in [385011e307c]
+  * [2ffd9fb] MythMusic: add a 'First' resume mode and make 'Off' never
+    resume
+  * [6b14852] Apply preroll on virtual tuners when the same multiplex is
+    in use.
 
- -- Digital Nirvana <sysadmin@digital-nirvana.com>  Mon, 10 Mar 2014 14:57:37 +0000
+ -- Digital Nirvana <sysadmin@digital-nirvana.com>  Thu, 08 May 2014 18:16:47 +0530
 
 mythtv (0.27-20131029-80fe2a9) UNRELEASED; urgency=low
 

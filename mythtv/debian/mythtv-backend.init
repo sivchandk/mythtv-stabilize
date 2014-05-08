@@ -22,6 +22,7 @@ DESC="MythTV server"
 
 test -x $DAEMON || exit 0
 
+. /lib/lsb/init-functions
 set -e
 
 USER=mythtv
