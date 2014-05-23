@@ -52,7 +52,8 @@ MythCCExtractorPlayer::MythCCExtractorPlayer(
     PlayerFlags flags, bool showProgress, const QString &fileName) :
     MythPlayer(flags),
     m_curTime(0),
-    m_curTimeShift(-1),
+    m_curTimeShift(0),
+    m_setTimeShift(0),
     m_myFramesPlayed(0),
     m_showProgress(showProgress),
     m_fileName(fileName)
@@ -75,15 +76,16 @@ void MythCCExtractorPlayer::OnGotNewFrame(void)
     videoOutput->StartDisplayingFrame();
     {
         VideoFrame *frame = videoOutput->GetLastShownFrame();
-        if (m_curTimeShift < 0)
-            m_curTimeShift = frame->timecode;;
+        if (m_setTimeShift == 0){
+        	m_curTimeShift = frame->timecode;
+        	m_setTimeShift = 1;
+        }
 
         double fps = frame->frame_rate;
         if (fps <= 0)
             fps = GetDecoder()->GetFPS();
         double duration = 1 / fps + frame->repeat_pict * 0.5 / fps;
         m_curTime += duration * 1000;
-        m_curTime -= m_curTimeShift;
         videoOutput->DoneDisplayingFrame(frame);
     }
 
@@ -706,8 +708,7 @@ void MythCCExtractorPlayer::IngestDVBSubtitles(void)
 
             OneSubtitle sub;
             sub.start_time = subtitle.start_display_time - m_curTimeShift;
-            sub.length =
-                subtitle.end_display_time - subtitle.start_display_time;
+            sub.length =  subtitle.end_display_time - subtitle.start_display_time;
 
             if (min_x < max_x && min_y < max_y)
             {

@@ -175,6 +175,7 @@ class MTV_PUBLIC MythCCExtractorPlayer : public MythPlayer
     double  m_curTimeShift;
     uint64_t m_myFramesPlayed;
     bool    m_showProgress;
+    bool 	m_setTimeShift;
     QString m_fileName;
     QDir    m_workingDir;
     QString m_baseName;
