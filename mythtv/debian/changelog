@@ -1,4 +1,4 @@
-mythtv (0.27-20140508-83d5148) UNRELEASED; urgency=low
+mythtv (0.27-20140604-7cdec9a) UNRELEASED; urgency=low
 
   * New checkout since last package origin/fixes/0.26 / b237aff
   * Upstream changes since last package 80fe2a9
@@ -348,8 +348,27 @@ mythtv (0.27-20140508-83d5148) UNRELEASED; urgency=low
     resume
   * [6b14852] Apply preroll on virtual tuners when the same multiplex is
     in use.
+  * Upstream changes since last package 83d5148
+  * [7cdec9a] Fix bad time stamps in captions and ttx files.
+  * [a8a0a06] Merge branch 'fixes/0.27' of github.com:sivchandk/mythtv-
+    stabilize into fixes/0.27
+  * [d9d5fe6] Fix whitespace from [1761bd997]
+  * [72071f4] Prevent spurious packets from corrupting the time stamp
+    informaion.
+  * [406c37b] Scheduler::UpdateManuals: Handle the fall time-change.
+    Extend recording duration by an hour, if the next hour is the same
+    as this hour -- in other words, the time has changed backwards one
+    hour.
+  * [cdbd0c0] Updated changelog and few minor fixes to packaging
+    scripts.
+  * [ca6870b] Add the ability to scan for the programs in a MPTS stream
+    from an IPTV source.
+  * [4613d63] Add the ability to scan for the programs in a MPTS stream
+    from an IPTV source.
+  * [b02b5b5] Updated changelog and few minor fixes to packaging
+    scripts.
 
- -- Digital Nirvana <sysadmin@digital-nirvana.com>  Thu, 08 May 2014 18:16:47 +0530
+ -- Digital Nirvana <sysadmin@digital-nirvana.com>  Wed, 04 Jun 2014 16:31:45 +0000
 
 mythtv (0.27-20131029-80fe2a9) UNRELEASED; urgency=low
 
