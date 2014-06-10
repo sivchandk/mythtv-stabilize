@@ -18,6 +18,7 @@ using_frontend {
 using_backend {
     SUBDIRS += mythbackend mythfilldatabase mythtv-setup scripts
     SUBDIRS += mythmetadatalookup
+    !mingw:!win32-msvc*: SUBDIRS += mythfilerecorder
 }
 
 using_mythtranscode: SUBDIRS += mythtranscode

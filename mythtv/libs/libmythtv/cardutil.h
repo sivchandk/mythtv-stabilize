@@ -66,6 +66,7 @@ class MTV_PUBLIC CardUtil
         DEMO      = 15,
         ASI       = 16,
         CETON     = 17,
+        EXTERNAL  = 18,
     };
 
     static enum CARD_TYPES toCardType(const QString &name)
@@ -106,6 +107,8 @@ class MTV_PUBLIC CardUtil
             return ASI;
         if ("CETON" == name)
             return CETON;
+        if ("EXTERNAL" == name)
+            return EXTERNAL;
         return ERROR_UNKNOWN;
     }
 
@@ -152,7 +155,8 @@ class MTV_PUBLIC CardUtil
     {
         return
             (rawtype == "DVB")       || (rawtype == "HDHOMERUN") ||
-            (rawtype == "ASI")       || (rawtype == "FREEBOX");
+            (rawtype == "ASI")       || (rawtype == "FREEBOX")   ||
+            (rawtype == "EXTERNAL");
     }
 
     static bool         IsTunerShared(uint cardidA, uint cardidB);
@@ -161,7 +165,8 @@ class MTV_PUBLIC CardUtil
     {
         return
             (rawtype == "DVB")       || (rawtype == "HDHOMERUN") ||
-            (rawtype == "ASI")       || (rawtype == "CETON");
+            (rawtype == "ASI")       || (rawtype == "CETON")     ||
+            (rawtype == "EXTERNAL");
     }
 
     static bool         IsTuningAnalog(const QString &rawtype)
@@ -173,7 +178,8 @@ class MTV_PUBLIC CardUtil
     static bool         IsTuningVirtual(const QString &rawtype)
     {
         return
-            (rawtype == "FIREWIRE")  || (rawtype == "HDPVR");
+            (rawtype == "FIREWIRE")  || (rawtype == "HDPVR") ||
+            (rawtype == "EXTERNAL");
     }
 
     static bool         IsSingleInputCard(const QString &rawtype)
@@ -182,7 +188,7 @@ class MTV_PUBLIC CardUtil
             (rawtype == "FIREWIRE")  || (rawtype == "HDHOMERUN") ||
             (rawtype == "FREEBOX")   || (rawtype == "ASI")       ||
             (rawtype == "IMPORT")    || (rawtype == "DEMO")      ||
-            (rawtype == "CETON");
+            (rawtype == "CETON")     || (rawtype == "EXTERNAL");
     }
 
     static bool         IsChannelReusable(const QString &rawtype)

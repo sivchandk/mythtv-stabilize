@@ -41,6 +41,7 @@ using namespace std;
 #include "asichannel.h"
 #include "dvbchannel.h"
 #include "v4lchannel.h"
+#include "ExternalChannel.h"
 #include "iptvchannel.h"
 #include "cardutil.h"
 
