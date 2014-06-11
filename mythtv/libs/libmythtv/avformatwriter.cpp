@@ -27,7 +27,7 @@
 
 extern "C" {
 #if HAVE_BIGENDIAN
-#include "byteswap.h"
+#include "bswap.h"
 #endif
 #include "libavutil/opt.h"
 #include "libavutil/samplefmt.h"
@@ -45,7 +45,7 @@ AVFormatWriter::AVFormatWriter()
       m_ctx(NULL),
       m_videoStream(NULL),   m_avVideoCodec(NULL),
       m_audioStream(NULL),   m_avAudioCodec(NULL),
-      m_picture(NULL),       m_tmpPicture(NULL),
+      m_picture(NULL),
       m_audPicture(NULL),
       m_audioInBuf(NULL),    m_audioInPBuf(NULL)
 {
@@ -78,6 +78,8 @@ AVFormatWriter::~AVFormatWriter()
         avcodec_free_frame(&m_audPicture);
 
     Cleanup();
+
+    av_frame_free(&m_picture);
 }
 
 bool AVFormatWriter::Init(void)
@@ -244,6 +246,7 @@ int AVFormatWriter::WriteVideoFrame(VideoFrame *frame)
     planes[2] = planes[1] + (frame->width * frame->height) /
         4; // (pictureFormat == PIX_FMT_YUV422P ? 2 : 4);
 
+    av_frame_unref(m_picture);
     m_picture->data[0] = planes[0];
     m_picture->data[1] = planes[1];
     m_picture->data[2] = planes[2];
@@ -506,15 +509,24 @@ AVStream* AVFormatWriter::AddVideoStream(void)
     else if (c->codec_id == AV_CODEC_ID_H264)
     {
 
-        if ((c->width > 480) ||
-            (c->bit_rate > 600000))
+        // Try to provide the widest software/device support by automatically using
+        // the Baseline profile where the given bitrate and resolution permits
+
+        if ((c->height > 720) || // Approximate highest resolution supported by Baseline 3.1
+            (c->bit_rate > 1000000)) // 14,000 Kbps aka 14Mbps maximum permissable rate for Baseline 3.1
+        {
+            c->level = 40;
+            av_opt_set(c->priv_data, "profile", "main", 0);
+        }
+        else if ((c->height > 576) || // Approximate highest resolution supported by Baseline 3.0
+            (c->bit_rate > 1000000))  // 10,000 Kbps aka 10Mbps maximum permissable rate for Baseline 3.0
         {
             c->level = 31;
-            av_opt_set(c->priv_data, "profile", "main", 0);
+            av_opt_set(c->priv_data, "profile", "baseline", 0);
         }
         else
         {
-            c->level = 30;
+            c->level = 30; // Baseline 3.0 is the most widely supported, but it's limited to SD
             av_opt_set(c->priv_data, "profile", "baseline", 0);
         }
 
@@ -545,6 +557,11 @@ AVStream* AVFormatWriter::AddVideoStream(void)
         av_opt_set_int(c, "mixed-refs", 1, 0);
         av_opt_set_int(c, "8x8dct", 0, 0);
         av_opt_set_int(c, "weightb", 0, 0);
+
+        const char* preset = m_encodingPreset.toStdString().c_str();
+        av_opt_set(c->priv_data, "preset", preset, 0);
+        const char* tune = m_encodingTune.toStdString().c_str();
+        av_opt_set(c->priv_data, "tune", tune, 0);
     }
 
     if(m_ctx->oformat->flags & AVFMT_GLOBALHEADER)
@@ -569,24 +586,19 @@ bool AVFormatWriter::OpenVideo(void)
         return false;
     }
 
-    m_picture = AllocPicture(c->pix_fmt);
     if (!m_picture)
     {
-        LOG(VB_RECORD, LOG_ERR,
-            LOC + "OpenVideo(): AllocPicture() failed");
-        return false;
-    }
-
-    m_tmpPicture = NULL;
-    if (c->pix_fmt != PIX_FMT_YUV420P)
-    {
-        m_tmpPicture = AllocPicture(PIX_FMT_YUV420P);
-        if (!m_tmpPicture)
+        m_picture = AllocPicture(c->pix_fmt);
+        if (!m_picture)
         {
             LOG(VB_RECORD, LOG_ERR,
-                LOC + "OpenVideo(): m_tmpPicture AllocPicture() failed");
+                LOC + "OpenVideo(): AllocPicture() failed");
             return false;
         }
+    }
+    else
+    {
+        av_frame_unref(m_picture);
     }
 
     return true;

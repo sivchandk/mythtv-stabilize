@@ -2,7 +2,10 @@ include ( ../../mythconfig.mak )
 include ( ../../settings.pro )
 include ( ../../programs-libs.pro )
 
-QT += network sql xml
+QT += network sql xml 
+contains(QT_VERSION, ^5\\.[0-9]\\..*) {
+QT += widgets
+}
 
 TEMPLATE = lib
 CONFIG += plugin thread warn_on debug
@@ -29,10 +32,10 @@ INSTALLS += installdiricons installtopicicons installfilmicons installmusicicons
 
 # Input
 HEADERS += rsseditor.h searcheditor.h netcommon.h
-HEADERS += netsearch.h treeeditor.h nettree.h
+HEADERS += neteditorbase.h netsearch.h treeeditor.h nettree.h netbase.h
 
 SOURCES += rsseditor.cpp netsearch.cpp searcheditor.cpp netcommon.cpp
-SOURCES += treeeditor.cpp nettree.cpp main.cpp
+SOURCES += neteditorbase.cpp treeeditor.cpp nettree.cpp main.cpp netbase.cpp
 
 DEFINES += MPLUGIN_API
 

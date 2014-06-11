@@ -631,7 +631,8 @@ bool V4LChannel::SwitchToInput(int inputnum, bool setstarting)
             .arg(setstarting ? channum : QString("")));
 
     uint mplexid_restriction;
-    if (!IsInputAvailable(inputnum, mplexid_restriction))
+    uint chanid_restriction;
+    if (!IsInputAvailable(inputnum, mplexid_restriction, chanid_restriction))
         return false;
 
     QString newFmt = mode_to_format((*it)->videoModeV4L2);
@@ -689,7 +690,7 @@ static int get_v4l2_attribute(const QString &db_col_name)
     return -1;
 }
 
-bool V4LChannel::InitPictureAttribute(const QString db_col_name)
+bool V4LChannel::InitPictureAttribute(const QString &db_col_name)
 {
     if (!m_pParent)
         return false;

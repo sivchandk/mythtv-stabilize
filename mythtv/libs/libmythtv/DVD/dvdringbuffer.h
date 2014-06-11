@@ -67,6 +67,7 @@ class MythDVDPlayer;
 
 class MTV_PUBLIC DVDInfo
 {
+    friend class DVDRingBuffer;
     Q_DECLARE_TR_FUNCTIONS(DVDInfo)
 
   public:
@@ -77,9 +78,16 @@ class MTV_PUBLIC DVDInfo
     QString GetLastError(void) const { return m_lastError; }
 
   protected:
+    static void GetNameAndSerialNum(dvdnav_t* nav,
+                                    QString &name,
+                                    QString &serialnum,
+                                    const QString &filename,
+                                    const QString &logPrefix);
+
+  protected:
     dvdnav_t   *m_nav;
-    const char *m_name;
-    const char *m_serialnumber;
+    QString     m_name;
+    QString     m_serialnumber;
     QString     m_lastError;
 };
 
@@ -165,8 +173,6 @@ class MTV_PUBLIC DVDRingBuffer : public RingBuffer
     bool playTrack(int track);
     bool nextTrack(void);
     void prevTrack(void);
-    virtual int safe_read(void *data, uint sz);
-    virtual long long Seek(long long pos, int whence, bool has_lock);
     long long NormalSeek(long long time);
     bool SectorSeek(uint64_t sector);
     void SkipStillFrame(void);
@@ -174,7 +180,7 @@ class MTV_PUBLIC DVDRingBuffer : public RingBuffer
     void SkipDVDWaitingForPlayer(void)    { m_playerWait = false;           }
     void UnblockReading(void)             { m_processState = PROCESS_REPROCESS; }
     bool IsReadingBlocked(void)           { return (m_processState == PROCESS_WAIT); }
-    bool GoToMenu(const QString str);
+    bool GoToMenu(const QString &str);
     void GoToNextProgram(void);
     void GoToPreviousProgram(void);
     bool GoBack(void);
@@ -193,6 +199,8 @@ class MTV_PUBLIC DVDRingBuffer : public RingBuffer
     void SetParent(MythDVDPlayer *p) { m_parent = p; }
 
   protected:
+    virtual int safe_read(void *data, uint sz);
+    virtual long long SeekInternal(long long pos, int whence);
 
     typedef enum
     {
@@ -246,8 +254,8 @@ class MTV_PUBLIC DVDRingBuffer : public RingBuffer
     int            m_curAudioTrack;
     int8_t         m_curSubtitleTrack;
     bool           m_autoselectsubtitle;
-    const char    *m_dvdname;
-    const char    *m_serialnumber;
+    QString        m_dvdname;
+    QString        m_serialnumber;
     bool           m_seeking;
     int64_t        m_seektime;
     int64_t        m_currentTime;

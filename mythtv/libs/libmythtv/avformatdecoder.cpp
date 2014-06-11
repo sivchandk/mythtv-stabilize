@@ -37,6 +37,7 @@ using namespace std;
 #include "mythuihelper.h"
 #include "DVD/dvdringbuffer.h"
 #include "Bluray/bdringbuffer.h"
+#include "mythavutil.h"
 
 #include "lcddevice.h"
 
@@ -155,27 +156,103 @@ static float get_aspect(H264Parser &p)
 }
 
 
-int  get_avf_buffer(struct AVCodecContext *c, AVFrame *pic);
-void release_avf_buffer(struct AVCodecContext *c, AVFrame *pic);
-int  get_avf_buffer_vdpau(struct AVCodecContext *c, AVFrame *pic);
-void release_avf_buffer_vdpau(struct AVCodecContext *c, AVFrame *pic);
-void render_slice_vdpau(struct AVCodecContext *s, const AVFrame *src,
-                        int offset[4], int y, int type, int height);
-int  get_avf_buffer_dxva2(struct AVCodecContext *c, AVFrame *pic);
-int  get_avf_buffer_vaapi(struct AVCodecContext *c, AVFrame *pic);
+int  get_avf_buffer(struct AVCodecContext *c, AVFrame *pic, int flase);
+void release_avf_buffer(void *opaque, uint8_t *data);
+#ifdef USING_VDPAU
+int  get_avf_buffer_vdpau(struct AVCodecContext *c, AVFrame *pic, int flags);
+void release_avf_buffer_vdpau(void *opaque, uint8_t *data);
+int render_wrapper_vdpau(struct AVCodecContext *s, AVFrame *src,
+                         const VdpPictureInfo *info,
+                         uint32_t count,
+                         const VdpBitstreamBuffer *buffers);
+#endif
+#ifdef USING_DXVA2
+int  get_avf_buffer_dxva2(struct AVCodecContext *c, AVFrame *pic, int flags);
+#endif
+#ifdef USING_VAAPI
+int  get_avf_buffer_vaapi(struct AVCodecContext *c, AVFrame *pic, int flags);
+#endif
 
-static AVCodec *find_vdpau_decoder(AVCodec *c, enum CodecID id)
+static int determinable_frame_size(struct AVCodecContext *avctx)
 {
-    AVCodec *codec = c;
-    while (codec)
-    {
-        if (codec->id == id && CODEC_IS_VDPAU(codec))
-            return codec;
+    if (/*avctx->codec_id == AV_CODEC_ID_AAC ||*/
+        avctx->codec_id == AV_CODEC_ID_MP1 ||
+        avctx->codec_id == AV_CODEC_ID_MP2 ||
+        avctx->codec_id == AV_CODEC_ID_MP3/* ||
+        avctx->codec_id == AV_CODEC_ID_CELT*/)
+        return 1;
+    return 0;
+}
 
-        codec = codec->next;
+static int has_codec_parameters(AVStream *st)
+{
+    AVCodecContext *avctx = st->codec;
+
+#define FAIL(errmsg) do {                                     \
+    LOG(VB_PLAYBACK, LOG_DEBUG, LOC + errmsg);                \
+    return 0;                                                 \
+} while (0)
+
+    switch (avctx->codec_type)
+    {
+        case AVMEDIA_TYPE_AUDIO:
+            if (!avctx->frame_size && determinable_frame_size(avctx))
+                FAIL("unspecified frame size");
+            if (avctx->sample_fmt == AV_SAMPLE_FMT_NONE)
+                FAIL("unspecified sample format");
+            if (!avctx->sample_rate)
+                FAIL("unspecified sample rate");
+            if (!avctx->channels)
+                FAIL("unspecified number of channels");
+            if (!st->nb_decoded_frames && avctx->codec_id == AV_CODEC_ID_DTS)
+                FAIL("no decodable DTS frames");
+            break;
+        case AVMEDIA_TYPE_VIDEO:
+            if (!avctx->width)
+                FAIL("unspecified size");
+            if (avctx->pix_fmt == AV_PIX_FMT_NONE)
+                FAIL("unspecified pixel format");
+            if (st->codec->codec_id == AV_CODEC_ID_RV30 || st->codec->codec_id == AV_CODEC_ID_RV40)
+                if (!st->sample_aspect_ratio.num && !st->codec->sample_aspect_ratio.num && !st->codec_info_nb_frames)
+                    FAIL("no frame in rv30/40 and no sar");
+            break;
+        case AVMEDIA_TYPE_SUBTITLE:
+            if (avctx->codec_id == AV_CODEC_ID_HDMV_PGS_SUBTITLE && !avctx->width)
+                FAIL("unspecified size");
+            break;
+        case AVMEDIA_TYPE_DATA:
+            if(avctx->codec_id == AV_CODEC_ID_NONE) return 1;
+        default:
+            break;
     }
 
-    return c;
+    if (avctx->codec_id == AV_CODEC_ID_NONE)
+        FAIL("unknown codec");
+    return 1;
+}
+
+static bool force_sw_decode(AVCodecContext *avctx)
+{
+    switch (avctx->codec_id)
+    {
+        case AV_CODEC_ID_H264:
+            switch (avctx->profile)
+            {
+                case FF_PROFILE_H264_HIGH_10:
+                case FF_PROFILE_H264_HIGH_10_INTRA:
+                case FF_PROFILE_H264_HIGH_422:
+                case FF_PROFILE_H264_HIGH_422_INTRA:
+                case FF_PROFILE_H264_HIGH_444_PREDICTIVE:
+                case FF_PROFILE_H264_HIGH_444_INTRA:
+                case FF_PROFILE_H264_CAVLC_444:
+                    return true;
+                default:
+                    break;
+            }
+        default:
+            break;
+    }
+    return false;
 }
 
 static void myth_av_log(void *ptr, int level, const char* fmt, va_list vl)
@@ -341,8 +418,7 @@ AvFormatDecoder::AvFormatDecoder(MythPlayer *parent,
     memset(ccX08_in_pmt, 0, sizeof(ccX08_in_pmt));
     memset(ccX08_in_tracks, 0, sizeof(ccX08_in_tracks));
 
-    audioSamples = (uint8_t *)av_mallocz(AVCODEC_MAX_AUDIO_FRAME_SIZE *
-                                         sizeof(int32_t));
+    audioSamples = (uint8_t *)av_mallocz(AudioOutput::MAX_SIZE_BUFFER);
     ccd608->SetIgnoreTimecode(true);
 
     bool debug = VERBOSE_LEVEL_CHECK(VB_LIBAV, LOG_ANY);
@@ -378,7 +454,7 @@ AvFormatDecoder::~AvFormatDecoder()
 
     sws_freeContext(sws_ctx);
 
-    av_free(audioSamples);
+    av_freep(&audioSamples);
 
     if (avfRingBuffer)
         delete avfRingBuffer;
@@ -839,7 +915,7 @@ bool AvFormatDecoder::CanHandle(char testbuf[kDecoderProbeBufferSize],
     return false;
 }
 
-void AvFormatDecoder::InitByteContext(void)
+void AvFormatDecoder::InitByteContext(bool forceseek)
 {
     int buf_size                = ringBuffer->BestBufferSize();
     int streamed                = ringBuffer->IsStreamed();
@@ -855,9 +931,10 @@ void AvFormatDecoder::InitByteContext(void)
                                                      AVFRingBuffer::AVF_Write_Packet,
                                                      AVFRingBuffer::AVF_Seek_Packet);
 
-    ic->pb->seekable            = !streamed;
-    LOG(VB_PLAYBACK, LOG_INFO, LOC + QString("Buffer size: %1, streamed %2")
-        .arg(buf_size).arg(streamed));
+    // We can always seek during LiveTV
+    ic->pb->seekable            = !streamed || forceseek;
+    LOG(VB_PLAYBACK, LOG_INFO, LOC + QString("Buffer size: %1 streamed %2 seekable %3")
+        .arg(buf_size).arg(streamed).arg(ic->pb->seekable));
 }
 
 extern "C" void HandleStreamChange(void *data)
@@ -912,10 +989,8 @@ int AvFormatDecoder::FindStreamInfo(void)
     // Suppress ffmpeg logging unless "-v libav --loglevel debug"
     if (!VERBOSE_LEVEL_CHECK(VB_LIBAV, LOG_DEBUG))
         silence_ffmpeg_logging = true;
-    avfRingBuffer->SetInInit(ringBuffer->IsStreamed());
     int retval = avformat_find_stream_info(ic, NULL);
     silence_ffmpeg_logging = false;
-    avfRingBuffer->SetInInit(false);
     return retval;
 }
 
@@ -961,6 +1036,8 @@ int AvFormatDecoder::OpenFile(RingBuffer *rbuffer, bool novideo,
     else
         probe.buf_size = kDecoderProbeBufferSize - AVPROBE_PADDING_SIZE;
 
+    LOG(VB_PLAYBACK, LOG_DEBUG, LOC + "OpenFile -- begin");
+
     fmt = av_probe_input_format(&probe, true);
     if (!fmt)
     {
@@ -980,8 +1057,85 @@ int AvFormatDecoder::OpenFile(RingBuffer *rbuffer, bool novideo,
         }
     }
 
-    int err;
-    while (true)
+    int err = 0;
+    bool found = false;
+    bool scanned = false;
+
+    if (livetv)
+    {
+        // We try to open the file for up to 1.5 second using only buffer in memory
+        MythTimer timer; timer.start();
+
+        avfRingBuffer->SetInInit(true);
+
+        while (!found && timer.elapsed() < 1500)
+        {
+            ic = avformat_alloc_context();
+            if (!ic)
+            {
+                LOG(VB_GENERAL, LOG_ERR, LOC + "Could not allocate format context.");
+                return -1;
+            }
+
+            InitByteContext(true);
+
+            err = avformat_open_input(&ic, filename, fmt, NULL);
+            if (err < 0)
+            {
+                LOG(VB_PLAYBACK, LOG_DEBUG, LOC +
+                    QString("avformat_open_input failed for in ram data after %1ms, retrying in 50ms")
+                    .arg(timer.elapsed()));
+                usleep(50 * 1000);  // wait 50ms
+                continue;
+            }
+
+            // Test if we can find all streams details in what has been found so far
+            if (FindStreamInfo() < 0)
+            {
+                avformat_close_input(&ic);
+                LOG(VB_PLAYBACK, LOG_DEBUG, LOC +
+                    QString("FindStreamInfo failed for in ram data after %1ms, retrying in 50ms")
+                    .arg(timer.elapsed()));
+                usleep(50 * 1000);  // wait 50ms
+                continue;
+            }
+
+            found = true;
+
+            for (uint i = 0; i < ic->nb_streams; i++)
+            {
+                if (!has_codec_parameters(ic->streams[i]))
+                {
+                    avformat_close_input(&ic);
+                    found = false;
+                    LOG(VB_PLAYBACK, LOG_DEBUG, LOC +
+                        QString("Invalid streams found in ram data after %1ms, retrying in 50ms")
+                        .arg(timer.elapsed()));
+                    usleep(50 * 1000);  // wait 50ms
+                    break;
+                }
+            }
+        }
+
+        avfRingBuffer->SetInInit(false);
+
+        if (found)
+        {
+            LOG(VB_PLAYBACK, LOG_INFO, LOC +
+                QString("File successfully opened after %1ms")
+                .arg(timer.elapsed()));
+        }
+        else
+        {
+            LOG(VB_PLAYBACK, LOG_WARNING, LOC +
+                QString("No streams found in ram data after %1ms, defaulting to in-file")
+                .arg(timer.elapsed()));
+        }
+        scanned = found;
+    }
+
+    // If we haven't opened the file so far, revert to old method
+    while (!found)
     {
         ic = avformat_alloc_context();
         if (!ic)
@@ -1010,24 +1164,29 @@ int AvFormatDecoder::OpenFile(RingBuffer *rbuffer, bool novideo,
                 break;
             }
         }
-        break;
+        found = true;
     }
     if (err < 0)
     {
         LOG(VB_GENERAL, LOG_ERR, LOC +
             QString("avformat err(%1) on avformat_open_input call.").arg(err));
-        return -1;
-    }
-
-    int ret = FindStreamInfo();
-    if (ret < 0)
-    {
-        LOG(VB_GENERAL, LOG_ERR, LOC + "Could not find codec parameters. " +
-                QString("file was \"%1\".").arg(filename));
-        avformat_close_input(&ic);
         ic = NULL;
         return -1;
     }
+
+    if (!scanned)
+    {
+        int ret = FindStreamInfo();
+        if (ret < 0)
+        {
+            LOG(VB_GENERAL, LOG_ERR, LOC + "Could not find codec parameters. " +
+                    QString("file was \"%1\".").arg(filename));
+            avformat_close_input(&ic);
+            ic = NULL;
+            return -1;
+        }
+    }
+
     ic->streams_changed = HandleStreamChange;
     if (ringBuffer->IsDVD())
         ic->streams_changed = HandleDVDStreamChange;
@@ -1046,7 +1205,7 @@ int AvFormatDecoder::OpenFile(RingBuffer *rbuffer, bool novideo,
     }
 
     // Scan for the initial A/V streams
-    ret = ScanStreams(novideo);
+    int ret = ScanStreams(novideo);
     if (-1 == ret)
         return ret;
 
@@ -1251,30 +1410,16 @@ float AvFormatDecoder::normalized_fps(AVStream *stream, AVCodecContext *enc)
     return fps;
 }
 
-static bool IS_VDPAU_PIX_FMT(enum PixelFormat fmt)
-{
-    return
-        fmt == PIX_FMT_VDPAU_H264  ||
-        fmt == PIX_FMT_VDPAU_MPEG1 ||
-        fmt == PIX_FMT_VDPAU_MPEG2 ||
-        fmt == PIX_FMT_VDPAU_MPEG4 ||
-        fmt == PIX_FMT_VDPAU_WMV3  ||
-        fmt == PIX_FMT_VDPAU_VC1;
-}
-
+#ifdef USING_VDPAU
 static enum PixelFormat get_format_vdpau(struct AVCodecContext *avctx,
                                          const enum PixelFormat *fmt)
 {
-    int i = 0;
-
-    for(i=0; fmt[i]!=PIX_FMT_NONE; i++)
-        if (IS_VDPAU_PIX_FMT(fmt[i]))
-            break;
-
-    return fmt[i];
+    return AV_PIX_FMT_VDPAU;
 }
+#endif
 
-// Declared seperately to allow attribute
+#ifdef USING_DXVA2
+// Declared separately to allow attribute
 static enum PixelFormat get_format_dxva2(struct AVCodecContext *,
                                          const enum PixelFormat *) MUNUSED;
 
@@ -1289,7 +1434,9 @@ enum PixelFormat get_format_dxva2(struct AVCodecContext *avctx,
             break;
     return fmt[i];
 }
+#endif
 
+#ifdef USING_VAAPI
 static bool IS_VAAPI_PIX_FMT(enum PixelFormat fmt)
 {
     return fmt == PIX_FMT_VAAPI_MOCO ||
@@ -1297,7 +1444,7 @@ static bool IS_VAAPI_PIX_FMT(enum PixelFormat fmt)
            fmt == PIX_FMT_VAAPI_VLD;
 }
 
-// Declared seperately to allow attribute
+// Declared separately to allow attribute
 static enum PixelFormat get_format_vaapi(struct AVCodecContext *,
                                          const enum PixelFormat *) MUNUSED;
 
@@ -1312,6 +1459,7 @@ enum PixelFormat get_format_vaapi(struct AVCodecContext *avctx,
             break;
     return fmt[i];
 }
+#endif
 
 static bool IS_DR1_PIX_FMT(const enum PixelFormat fmt)
 {
@@ -1338,9 +1486,7 @@ void AvFormatDecoder::InitVideoCodec(AVStream *stream, AVCodecContext *enc,
         directrendering = false;
 
     enc->opaque = (void *)this;
-    enc->get_buffer = get_avf_buffer;
-    enc->release_buffer = release_avf_buffer;
-    enc->draw_horiz_band = NULL;
+    enc->get_buffer2 = get_avf_buffer;
     enc->slice_flags = 0;
 
     enc->err_recognition = AV_EF_COMPLIANT;
@@ -1351,15 +1497,12 @@ void AvFormatDecoder::InitVideoCodec(AVStream *stream, AVCodecContext *enc,
     enc->error_rate = 0;
 
     AVCodec *codec = avcodec_find_decoder(enc->codec_id);
-    // look for a vdpau capable codec
-    if (codec_is_vdpau(video_codec_id) && !CODEC_IS_VDPAU(codec))
-        codec = find_vdpau_decoder(codec, enc->codec_id);
 
     if (selectedStream)
     {
         directrendering = true;
         if (!gCoreContext->GetNumSetting("DecodeExtraAudio", 0) &&
-            !CODEC_IS_HWACCEL(codec, enc))
+            !(CODEC_IS_HWACCEL(codec, enc) || codec_is_vdpau(video_codec_id)))
         {
             SetLowBuffers(false);
         }
@@ -1370,28 +1513,33 @@ void AvFormatDecoder::InitVideoCodec(AVStream *stream, AVCodecContext *enc,
     if (metatag && metatag->value && QString("180") == metatag->value)
         video_inverted = true;
 
-    if (CODEC_IS_VDPAU(codec))
+#ifdef USING_VDPAU
+    if (codec_is_vdpau(video_codec_id))
     {
-        enc->get_buffer      = get_avf_buffer_vdpau;
+        enc->get_buffer2     = get_avf_buffer_vdpau;
         enc->get_format      = get_format_vdpau;
-        enc->release_buffer  = release_avf_buffer_vdpau;
-        enc->draw_horiz_band = render_slice_vdpau;
         enc->slice_flags     = SLICE_FLAG_CODED_ORDER | SLICE_FLAG_ALLOW_FIELD;
     }
-    else if (CODEC_IS_DXVA2(codec, enc))
+    else
+#endif
+#ifdef USING_DXVA2
+    if (CODEC_IS_DXVA2(codec, enc))
     {
-        enc->get_buffer      = get_avf_buffer_dxva2;
+        enc->get_buffer2     = get_avf_buffer_dxva2;
         enc->get_format      = get_format_dxva2;
-        enc->release_buffer  = release_avf_buffer;
     }
-    else if (CODEC_IS_VAAPI(codec, enc))
+    else
+#endif
+#ifdef USING_VAAPI
+    if (CODEC_IS_VAAPI(codec, enc))
     {
-        enc->get_buffer      = get_avf_buffer_vaapi;
+        enc->get_buffer2     = get_avf_buffer_vaapi;
         enc->get_format      = get_format_vaapi;
-        enc->release_buffer  = release_avf_buffer;
         enc->slice_flags     = SLICE_FLAG_CODED_ORDER | SLICE_FLAG_ALLOW_FIELD;
     }
-    else if (codec && codec->capabilities & CODEC_CAP_DR1)
+    else
+#endif
+    if (codec && codec->capabilities & CODEC_CAP_DR1)
     {
         enc->flags          |= CODEC_FLAG_EMU_EDGE;
     }
@@ -2162,69 +2310,75 @@ int AvFormatDecoder::ScanStreams(bool novideo)
             if (version)
                 video_codec_id = (MythCodecID)(kCodec_MPEG1 + version - 1);
 
-            if (version)
+                // Check it's a codec we can decode using GPU
+            if (force_sw_decode(enc))
             {
-#if defined(USING_VDPAU)
-                // HACK -- begin
-                // Force MPEG2 decoder on MPEG1 streams.
-                // Needed for broken transmitters which mark
-                // MPEG2 streams as MPEG1 streams, and should
-                // be harmless for unbroken ones.
-                if (enc->codec_id == AV_CODEC_ID_MPEG1VIDEO)
-                    enc->codec_id = AV_CODEC_ID_MPEG2VIDEO;
-                // HACK -- end
-#endif // USING_VDPAU
+                dec = "ffmpeg";
+                if (FlagIsSet(kDecodeAllowGPU))
+                {
+                    LOG(VB_PLAYBACK, LOG_WARNING, LOC +
+                        QString("Unsupported Video Profile, "
+                                "forcing software decode"));
+                }
+            }
+
+            if (version && FlagIsSet(kDecodeAllowGPU))
+            {
+                bool foundgpudecoder = false;
+
 #ifdef USING_VDPAU
                 MythCodecID vdpau_mcid;
                 vdpau_mcid =
                     VideoOutputVDPAU::GetBestSupportedCodec(width, height, dec,
                                                             mpeg_version(enc->codec_id),
-                                                            !FlagIsSet(kDecodeAllowGPU));
+                                                            false);
 
-                if (vdpau_mcid >= video_codec_id)
+                if (codec_is_vdpau(vdpau_mcid))
                 {
-                    enc->codec_id = (CodecID) myth2av_codecid(vdpau_mcid);
                     video_codec_id = vdpau_mcid;
+                    foundgpudecoder = true;
                 }
 #endif // USING_VDPAU
 #ifdef USING_GLVAAPI
-                MythCodecID vaapi_mcid;
-                PixelFormat pix_fmt = PIX_FMT_YUV420P;
-                vaapi_mcid =
-                    VideoOutputOpenGLVAAPI::GetBestSupportedCodec(width, height, dec,
-                                                                  mpeg_version(enc->codec_id),
-                                                                  !FlagIsSet(kDecodeAllowGPU),
-                                                                  pix_fmt);
-
-                if (vaapi_mcid >= video_codec_id)
+                if (!foundgpudecoder)
                 {
-                    enc->codec_id = (CodecID)myth2av_codecid(vaapi_mcid);
-                    video_codec_id = vaapi_mcid;
-                    if (FlagIsSet(kDecodeAllowGPU) &&
-                        codec_is_vaapi(video_codec_id))
+                    MythCodecID vaapi_mcid;
+                    PixelFormat pix_fmt = PIX_FMT_YUV420P;
+                    vaapi_mcid =
+                        VideoOutputOpenGLVAAPI::GetBestSupportedCodec(width, height, dec,
+                                                                      mpeg_version(enc->codec_id),
+                                                                      false,
+                                                                      pix_fmt);
+
+                    if (codec_is_vaapi(vaapi_mcid))
                     {
+                        video_codec_id = vaapi_mcid;
                         enc->pix_fmt = pix_fmt;
+                        foundgpudecoder = true;
                     }
                 }
 #endif // USING_GLVAAPI
 #ifdef USING_DXVA2
-                MythCodecID dxva2_mcid;
-                PixelFormat pix_fmt = PIX_FMT_YUV420P;
-                dxva2_mcid = VideoOutputD3D::GetBestSupportedCodec(
-                                                                   width, height, dec, mpeg_version(enc->codec_id),
-                                                                   !FlagIsSet(kDecodeAllowGPU), pix_fmt);
-
-                if (dxva2_mcid >= video_codec_id)
+                if (!foundgpudecode)
                 {
-                    enc->codec_id = (CodecID)myth2av_codecid(dxva2_mcid);
-                    video_codec_id = dxva2_mcid;
-                    if (FlagIsSet(kDecodeAllowGPU) &&
-                        codec_is_dxva2(video_codec_id))
+                    MythCodecID dxva2_mcid;
+                    PixelFormat pix_fmt = PIX_FMT_YUV420P;
+                    dxva2_mcid = VideoOutputD3D::GetBestSupportedCodec(
+                        width, height, dec, mpeg_version(enc->codec_id),
+                        false, pix_fmt);
+
+                    if (codec_is_dxva2(dxva2_mcid))
                     {
+                        video_codec_id = dxva2_mcid;
                         enc->pix_fmt = pix_fmt;
+                        foundgpudecoder = true;
                     }
                 }
 #endif // USING_DXVA2
+                if (foundgpudecoder)
+                {
+                    enc->codec_id = (AVCodecID) myth2av_codecid(video_codec_id);
+                }
             }
 
             // default to mpeg2
@@ -2272,11 +2426,6 @@ int AvFormatDecoder::ScanStreams(bool novideo)
             LOG(VB_PLAYBACK, LOG_INFO, LOC +
                 QString("Using %1 for video decoding")
                 .arg(GetCodecDecoderName()));
-
-            if (codec_is_vdpau(video_codec_id) && !CODEC_IS_VDPAU(codec))
-            {
-                codec = find_vdpau_decoder(codec, enc->codec_id);
-            }
 
             if (!enc->codec)
             {
@@ -2559,36 +2708,6 @@ void AvFormatDecoder::SetupAudioStreamSubIndexes(int streamIndex)
     tracks[kTrackTypeAudio].erase(next);
 }
 
-int get_avf_buffer(struct AVCodecContext *c, AVFrame *pic)
-{
-    AvFormatDecoder *nd = (AvFormatDecoder *)(c->opaque);
-
-    if (!IS_DR1_PIX_FMT(c->pix_fmt))
-    {
-        nd->directrendering = false;
-        return avcodec_default_get_buffer(c, pic);
-    }
-    nd->directrendering = true;
-
-    VideoFrame *frame = nd->GetPlayer()->GetNextVideoFrame();
-
-    if (!frame)
-        return -1;
-
-    for (int i = 0; i < 3; i++)
-    {
-        pic->data[i]     = frame->buf + frame->offsets[i];
-        pic->linesize[i] = frame->pitches[i];
-    }
-
-    pic->opaque = frame;
-    pic->type = FF_BUFFER_TYPE_USER;
-
-    pic->reordered_opaque = c->reordered_opaque;
-
-    return 0;
-}
-
 /** \brief remove audio streams from the context
  * used by dvd code during title transitions to remove
  * stale audio streams
@@ -2612,111 +2731,143 @@ void AvFormatDecoder::RemoveAudioStreams()
     }
 }
 
-void release_avf_buffer(struct AVCodecContext *c, AVFrame *pic)
+int get_avf_buffer(struct AVCodecContext *c, AVFrame *pic, int flags)
 {
-    (void)c;
+    AvFormatDecoder *nd = (AvFormatDecoder *)(c->opaque);
 
-    if (pic->type == FF_BUFFER_TYPE_INTERNAL)
+    if (!IS_DR1_PIX_FMT(c->pix_fmt))
     {
-        avcodec_default_release_buffer(c, pic);
-        return;
+        nd->directrendering = false;
+        return avcodec_default_get_buffer2(c, pic, flags);
     }
+    nd->directrendering = true;
 
-    AvFormatDecoder *nd = (AvFormatDecoder *)(c->opaque);
-    if (nd && nd->GetPlayer())
-        nd->GetPlayer()->DeLimboFrame((VideoFrame*)pic->opaque);
-
-    assert(pic->type == FF_BUFFER_TYPE_USER);
-
-    for (uint i = 0; i < 4; i++)
-        pic->data[i] = NULL;
-}
-
-int get_avf_buffer_vdpau(struct AVCodecContext *c, AVFrame *pic)
-{
-    AvFormatDecoder *nd = (AvFormatDecoder *)(c->opaque);
     VideoFrame *frame = nd->GetPlayer()->GetNextVideoFrame();
 
-    pic->data[0] = frame->buf;
-    pic->data[1] = frame->priv[0];
-    pic->data[2] = frame->priv[1];
+    if (!frame)
+        return -1;
 
-    pic->linesize[0] = 0;
-    pic->linesize[1] = 0;
-    pic->linesize[2] = 0;
+    for (int i = 0; i < 3; i++)
+    {
+        pic->data[i]     = frame->buf + frame->offsets[i];
+        pic->linesize[i] = frame->pitches[i];
+    }
 
     pic->opaque = frame;
-    pic->type = FF_BUFFER_TYPE_USER;
-
-    frame->pix_fmt = c->pix_fmt;
-
-#ifdef USING_VDPAU
-    struct vdpau_render_state *render = (struct vdpau_render_state *)frame->buf;
-    render->state |= FF_VDPAU_STATE_USED_FOR_REFERENCE;
-#endif
-
     pic->reordered_opaque = c->reordered_opaque;
+
+    // Set release method
+    AVBufferRef *buffer =
+        av_buffer_create((uint8_t*)frame, 0, release_avf_buffer, nd, 0);
+    pic->buf[0] = buffer;
 
     return 0;
 }
 
-void release_avf_buffer_vdpau(struct AVCodecContext *c, AVFrame *pic)
+void release_avf_buffer(void *opaque, uint8_t *data)
 {
-    assert(pic->type == FF_BUFFER_TYPE_USER);
+    AvFormatDecoder *nd = (AvFormatDecoder *)opaque;
+    VideoFrame *frame   = (VideoFrame*)data;
+
+    if (nd && nd->GetPlayer())
+        nd->GetPlayer()->DeLimboFrame(frame);
+}
 
 #ifdef USING_VDPAU
-    struct vdpau_render_state *render = (struct vdpau_render_state *)pic->data[0];
-    render->state &= ~FF_VDPAU_STATE_USED_FOR_REFERENCE;
-#endif
-
-    AvFormatDecoder *nd = (AvFormatDecoder *)(c->opaque);
-    if (nd && nd->GetPlayer())
-        nd->GetPlayer()->DeLimboFrame((VideoFrame*)pic->opaque);
-
-    for (uint i = 0; i < 4; i++)
-        pic->data[i] = NULL;
-}
-
-void render_slice_vdpau(struct AVCodecContext *s, const AVFrame *src,
-                        int offset[4], int y, int type, int height)
-{
-    if (!src)
-        return;
-
-    (void)offset;
-    (void)type;
-
-    if (s && src && s->opaque && src->opaque)
-    {
-        AvFormatDecoder *nd = (AvFormatDecoder *)(s->opaque);
-
-        int width = s->width;
-
-        VideoFrame *frame = (VideoFrame *)src->opaque;
-        nd->GetPlayer()->DrawSlice(frame, 0, y, width, height);
-    }
-    else
-    {
-        LOG(VB_GENERAL, LOG_ERR, LOC +
-            "render_slice_vdpau called with bad avctx or src");
-    }
-}
-
-int get_avf_buffer_dxva2(struct AVCodecContext *c, AVFrame *pic)
+int get_avf_buffer_vdpau(struct AVCodecContext *c, AVFrame *pic, int flags)
 {
     AvFormatDecoder *nd = (AvFormatDecoder *)(c->opaque);
-    VideoFrame *frame = nd->GetPlayer()->GetNextVideoFrame();
+    VideoFrame *frame   = nd->GetPlayer()->GetNextVideoFrame();
+
+    struct vdpau_render_state *render = (struct vdpau_render_state *)frame->buf;
+    render->state |= FF_VDPAU_STATE_USED_FOR_REFERENCE;
+
     for (int i = 0; i < 4; i++)
     {
         pic->data[i]     = NULL;
         pic->linesize[i] = 0;
     }
+    pic->opaque     = frame;
+    pic->data[3]    = (uint8_t*)(uintptr_t)render->surface;
+    frame->pix_fmt  = c->pix_fmt;
     pic->reordered_opaque = c->reordered_opaque;
-    pic->opaque      = frame;
-    pic->type        = FF_BUFFER_TYPE_USER;
-    frame->pix_fmt   = c->pix_fmt;
+
+    static uint8_t *dummy[1] = { 0 };
+    if (nd->GetPlayer())
+    {
+        c->hwaccel_context = nd->GetPlayer()->GetDecoderContext(NULL, dummy[0]);
+        ((AVVDPAUContext*)(c->hwaccel_context))->render2 = render_wrapper_vdpau;
+    }
+
+    // Set release method
+    AVBufferRef *buffer =
+        av_buffer_create((uint8_t*)frame, 0, release_avf_buffer_vdpau, nd, 0);
+    pic->buf[0] = buffer;
+
+    return 0;
+}
+
+void release_avf_buffer_vdpau(void *opaque, uint8_t *data)
+{
+    AvFormatDecoder *nd = (AvFormatDecoder *)opaque;
+    VideoFrame *frame   = (VideoFrame*)data;
+
+    struct vdpau_render_state *render = (struct vdpau_render_state *)frame->buf;
+    render->state &= ~FF_VDPAU_STATE_USED_FOR_REFERENCE;
+
+    if (nd && nd->GetPlayer())
+        nd->GetPlayer()->DeLimboFrame(frame);
+}
+
+int render_wrapper_vdpau(struct AVCodecContext *s, AVFrame *src,
+                         const VdpPictureInfo *info,
+                         uint32_t count,
+                         const VdpBitstreamBuffer *buffers)
+{
+    if (!src)
+        return -1;
+
+    if (s && src && s->opaque && src->opaque)
+    {
+        AvFormatDecoder *nd = (AvFormatDecoder *)(s->opaque);
+        VideoFrame *frame = (VideoFrame *)src->opaque;
+        struct vdpau_render_state data;
+
+        data.surface = (VdpVideoSurface)(uintptr_t)src->data[3];
+        data.bitstream_buffers_used = count;
+        data.bitstream_buffers = (VdpBitstreamBuffer*)buffers;
+
+        // Store information we will require in DrawSlice()
+        frame->priv[0] = (unsigned char*)&data;
+        frame->priv[1] = (unsigned char*)info;
+
+        nd->GetPlayer()->DrawSlice(frame, 0, 0, 0, 0);
+    }
+    else
+    {
+        LOG(VB_GENERAL, LOG_ERR, LOC +
+            "render_wrapper_vdpau called with bad avctx or src");
+    }
+
+    return 0;
+}
+#endif // USING_VDPAU
 
 #ifdef USING_DXVA2
+int get_avf_buffer_dxva2(struct AVCodecContext *c, AVFrame *pic, int flags)
+{
+    AvFormatDecoder *nd = (AvFormatDecoder *)(c->opaque);
+    VideoFrame *frame = nd->GetPlayer()->GetNextVideoFrame();
+
+    for (int i = 0; i < 4; i++)
+    {
+        pic->data[i]     = NULL;
+        pic->linesize[i] = 0;
+    }
+    pic->opaque      = frame;
+    frame->pix_fmt   = c->pix_fmt;
+    pic->reordered_opaque = c->reordered_opaque;
+
     if (nd->GetPlayer())
     {
         static uint8_t *dummy[1] = { 0 };
@@ -2725,35 +2876,44 @@ int get_avf_buffer_dxva2(struct AVCodecContext *c, AVFrame *pic)
         pic->data[0] = (uint8_t*)frame->buf;
         pic->data[3] = (uint8_t*)frame->buf;
     }
-#endif
+
+    // Set release method
+    AVBufferRef *buffer =
+        av_buffer_create((uint8_t*)frame, 0, release_avf_buffer, nd, 0);
+    pic->buf[0] = buffer;
 
     return 0;
 }
+#endif
 
-int get_avf_buffer_vaapi(struct AVCodecContext *c, AVFrame *pic)
+#ifdef USING_VAAPI
+int get_avf_buffer_vaapi(struct AVCodecContext *c, AVFrame *pic, int flags)
 {
     AvFormatDecoder *nd = (AvFormatDecoder *)(c->opaque);
     VideoFrame *frame = nd->GetPlayer()->GetNextVideoFrame();
 
-    pic->data[0]     = frame->buf;
-    pic->data[1]     = NULL;
-    pic->data[2]     = NULL;
-    pic->data[3]     = NULL;
-    pic->linesize[0] = 0;
-    pic->linesize[1] = 0;
-    pic->linesize[2] = 0;
-    pic->linesize[3] = 0;
+    for (int i = 0; i < 4; i++)
+    {
+        pic->data[i]     = NULL;
+        pic->linesize[i] = 0;
+    }
     pic->opaque      = frame;
-    pic->type        = FF_BUFFER_TYPE_USER;
     frame->pix_fmt   = c->pix_fmt;
 
-#ifdef USING_VAAPI
     if (nd->GetPlayer())
-        c->hwaccel_context = (vaapi_context*)nd->GetPlayer()->GetDecoderContext(frame->buf, pic->data[3]);
-#endif
+    {
+        c->hwaccel_context =
+            (vaapi_context*)nd->GetPlayer()->GetDecoderContext(frame->buf, pic->data[3]);
+    }
+
+    // Set release method
+    AVBufferRef *buffer =
+        av_buffer_create((uint8_t*)frame, 0, release_avf_buffer, nd, 0);
+    pic->buf[0] = buffer;
 
     return 0;
 }
+#endif
 
 void AvFormatDecoder::DecodeDTVCC(const uint8_t *buf, uint len, bool scte)
 {
@@ -3037,7 +3197,7 @@ void AvFormatDecoder::MpegPreProcessPkt(AVStream *stream, AVPacket *pkt)
 
     while (bufptr < bufend)
     {
-        bufptr = avpriv_mpv_find_start_code(bufptr, bufend, &start_code_state);
+        bufptr = avpriv_find_start_code(bufptr, bufend, &start_code_state);
 
         float aspect_override = -1.0f;
         if (ringBuffer->IsDVD())
@@ -3315,9 +3475,12 @@ bool AvFormatDecoder::ProcessVideoPacket(AVStream *curstream, AVPacket *pkt)
     int ret = 0, gotpicture = 0;
     int64_t pts = 0;
     AVCodecContext *context = curstream->codec;
-    AVFrame mpa_pic;
-    avcodec_get_frame_defaults(&mpa_pic);
-    mpa_pic.reordered_opaque = AV_NOPTS_VALUE;
+    MythAVFrame mpa_pic;
+    if (!mpa_pic)
+    {
+        return false;
+    }
+    mpa_pic->reordered_opaque = AV_NOPTS_VALUE;
 
     if (pkt->pts != (int64_t)AV_NOPTS_VALUE)
         pts_detected = true;
@@ -3330,12 +3493,12 @@ bool AvFormatDecoder::ProcessVideoPacket(AVStream *curstream, AVPacket *pkt)
         // TODO disallow private decoders for dvd playback
         // N.B. we do not reparse the frame as it breaks playback for
         // everything but libmpeg2
-        ret = private_dec->GetFrame(curstream, &mpa_pic, &gotpicture, pkt);
+        ret = private_dec->GetFrame(curstream, mpa_pic, &gotpicture, pkt);
     }
     else
     {
         context->reordered_opaque = pkt->pts;
-        ret = avcodec_decode_video2(context, &mpa_pic, &gotpicture, pkt);
+        ret = avcodec_decode_video2(context, mpa_pic, &gotpicture, pkt);
     }
     avcodeclock->unlock();
 
@@ -3356,10 +3519,10 @@ bool AvFormatDecoder::ProcessVideoPacket(AVStream *curstream, AVPacket *pkt)
         faulty_dts += (pkt->dts <= last_dts_for_fault_detection);
         last_dts_for_fault_detection = pkt->dts;
     }
-    if (mpa_pic.reordered_opaque != (int64_t)AV_NOPTS_VALUE)
+    if (mpa_pic->reordered_opaque != (int64_t)AV_NOPTS_VALUE)
     {
-        faulty_pts += (mpa_pic.reordered_opaque <= last_pts_for_fault_detection);
-        last_pts_for_fault_detection = mpa_pic.reordered_opaque;
+        faulty_pts += (mpa_pic->reordered_opaque <= last_pts_for_fault_detection);
+        last_pts_for_fault_detection = mpa_pic->reordered_opaque;
         reordered_pts_detected = true;
     }
 
@@ -3382,15 +3545,15 @@ bool AvFormatDecoder::ProcessVideoPacket(AVStream *curstream, AVPacket *pkt)
         pts_selected = false;
     }
     else if (private_dec && private_dec->NeedsReorderedPTS() &&
-             mpa_pic.reordered_opaque != (int64_t)AV_NOPTS_VALUE)
+             mpa_pic->reordered_opaque != (int64_t)AV_NOPTS_VALUE)
     {
-        pts = mpa_pic.reordered_opaque;
+        pts = mpa_pic->reordered_opaque;
         pts_selected = true;
     }
     else if (faulty_pts <= faulty_dts && reordered_pts_detected)
     {
-        if (mpa_pic.reordered_opaque != (int64_t)AV_NOPTS_VALUE)
-            pts = mpa_pic.reordered_opaque;
+        if (mpa_pic->reordered_opaque != (int64_t)AV_NOPTS_VALUE)
+            pts = mpa_pic->reordered_opaque;
         pts_selected = true;
     }
     else if (pkt->dts != (int64_t)AV_NOPTS_VALUE)
@@ -3401,13 +3564,13 @@ bool AvFormatDecoder::ProcessVideoPacket(AVStream *curstream, AVPacket *pkt)
 
     LOG(VB_PLAYBACK | VB_TIMESTAMP, LOG_DEBUG, LOC +
         QString("video packet timestamps reordered %1 pts %2 dts %3 (%4)")
-            .arg(mpa_pic.reordered_opaque).arg(pkt->pts).arg(pkt->dts)
+            .arg(mpa_pic->reordered_opaque).arg(pkt->pts).arg(pkt->dts)
             .arg((force_dts_timestamps) ? "dts forced" :
                  (pts_selected) ? "reordered" : "dts"));
 
-    mpa_pic.reordered_opaque = pts;
+    mpa_pic->reordered_opaque = pts;
 
-    ProcessVideoFrame(curstream, &mpa_pic);
+    ProcessVideoFrame(curstream, mpa_pic);
 
     return true;
 }
@@ -3519,10 +3682,9 @@ bool AvFormatDecoder::ProcessVideoFrame(AVStream *stream, AVFrame *mpa_pic)
     picframe->frameNumber      = framesPlayed;
     picframe->aspect           = current_aspect;
     picframe->dummy            = 0;
+    picframe->directrendering  = directrendering ? 1 : 0;
 
     m_parent->ReleaseNextVideoFrame(picframe, temppts);
-    if (private_dec)
-        context->release_buffer(context, mpa_pic);
 
     decoded_video_frame = picframe;
     gotVideoFrame = 1;
@@ -3790,7 +3952,7 @@ bool AvFormatDecoder::ProcessRawTextPacket(AVPacket *pkt)
 bool AvFormatDecoder::ProcessDataPacket(AVStream *curstream, AVPacket *pkt,
                                         DecodeType decodetype)
 {
-    enum CodecID codec_id = curstream->codec->codec_id;
+    enum AVCodecID codec_id = curstream->codec->codec_id;
 
     switch (codec_id)
     {
@@ -4016,7 +4178,7 @@ static vector<int> filter_type(const sinfo_vec_t &tracks, AudioTrackType type)
 int AvFormatDecoder::filter_max_ch(const AVFormatContext *ic,
                                    const sinfo_vec_t     &tracks,
                                    const vector<int>     &fs,
-                                   enum CodecID           codecId,
+                                   enum AVCodecID         codecId,
                                    int                    profile)
 {
     int selectedTrack = -1, max_seen = -1;
@@ -4580,14 +4742,18 @@ bool AvFormatDecoder::GetFrame(DecodeType decodetype)
     if (private_dec && private_dec->HasBufferedFrames() &&
        (selectedTrack[kTrackTypeVideo].av_stream_index > -1))
     {
+        int got_picture  = 0;
         AVStream *stream = ic->streams[selectedTrack[kTrackTypeVideo]
                                  .av_stream_index];
-        AVFrame mpa_pic;
-        avcodec_get_frame_defaults(&mpa_pic);
-        int got_picture = 0;
-        private_dec->GetFrame(stream, &mpa_pic, &got_picture, NULL);
+        MythAVFrame mpa_pic;
+        if (!mpa_pic)
+        {
+            return false;
+        }
+
+        private_dec->GetFrame(stream, mpa_pic, &got_picture, NULL);
         if (got_picture)
-            ProcessVideoFrame(stream, &mpa_pic);
+            ProcessVideoFrame(stream, mpa_pic);
     }
 
     while (!allowedquit)

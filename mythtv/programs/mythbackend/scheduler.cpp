@@ -627,7 +627,7 @@ void Scheduler::UpdateRecStatus(RecordingInfo *pginfo)
     for (; dreciter != reclist.end(); ++dreciter)
     {
         RecordingInfo *p = *dreciter;
-        if (p->IsSameProgramTimeslot(*pginfo))
+        if (p->IsSameTitleTimeslotAndChannel(*pginfo))
         {
             // FIXME!  If we are passed an rsUnknown recstatus, an
             // in-progress recording might be being stopped.  Try
@@ -775,7 +775,7 @@ bool Scheduler::ChangeRecordingEnd(RecordingInfo *oldp, RecordingInfo *newp)
         for (; i != reclist.end(); ++i)
         {
             RecordingInfo *recp = *i;
-            if (recp->IsSameTimeslot(*oldp))
+            if (recp->IsSameTitleStartTimeAndChannel(*oldp))
             {
                 *recp = *oldp;
                 break;
@@ -953,7 +953,7 @@ void Scheduler::PruneOverlaps(void)
     {
         RecordingInfo *p = *dreciter;
         if (!lastp || lastp->GetRecordingRuleID() == p->GetRecordingRuleID() ||
-            !lastp->IsSameTimeslot(*p))
+            !lastp->IsSameTitleStartTimeAndChannel(*p))
         {
             lastp = p;
             ++dreciter;
@@ -1024,7 +1024,7 @@ bool Scheduler::IsSameProgram(
     if (it != cache_is_same_program.end())
         return *it;
 
-    return cache_is_same_program[X] = a->IsSameProgram(*b);
+    return cache_is_same_program[X] = a->IsDuplicateProgram(*b);
 }
 
 bool Scheduler::FindNextConflict(
@@ -1092,7 +1092,8 @@ bool Scheduler::FindNextConflict(
         // unless the programs are on the same multiplex.
         if (p->GetCardID() != q->GetCardID())
         {
-            if (p->mplexid && (p->mplexid == q->mplexid))
+            if ((p->mplexid && p->mplexid == q->mplexid) ||
+                (!p->mplexid && p->GetChanID() == q->GetChanID()))
                 continue;
         }
 
@@ -1154,7 +1155,7 @@ void Scheduler::MarkShowingsList(RecList &showinglist, RecordingInfo *p)
             q->GetRecordingStatus() != rsEarlierShowing &&
             q->GetRecordingStatus() != rsLaterShowing)
             continue;
-        if (q->IsSameTimeslot(*p))
+        if (q->IsSameTitleStartTimeAndChannel(*p))
             q->SetRecordingStatus(rsLaterShowing);
         else if (q->GetRecordingRuleType() != kSingleRecord &&
                  q->GetRecordingRuleType() != kOverrideRecord &&
@@ -1224,7 +1225,7 @@ bool Scheduler::TryAnotherShowing(RecordingInfo *p, bool samePriority,
             continue;
         }
 
-        if (!p->IsSameTimeslot(*q))
+        if (!p->IsSameTitleStartTimeAndChannel(*q))
         {
             if (!IsSameProgram(p,q))
                 continue;
@@ -1465,7 +1466,7 @@ void Scheduler::PruneRedundants(void)
 
         // Check for redundant against last non-deleted
         if (!lastp || lastp->GetRecordingRuleID() != p->GetRecordingRuleID() ||
-            !lastp->IsSameTimeslot(*p))
+            !lastp->IsSameTitleStartTimeAndChannel(*p))
         {
             lastp = p;
             lastrecpri2 = lastp->GetRecordingPriority2();
@@ -1652,11 +1653,12 @@ void Scheduler::GetAllPending(QStringList &strList) const
 }
 
 /// Returns all scheduled programs serialized into a QStringList
-void Scheduler::GetAllScheduled(QStringList &strList)
+void Scheduler::GetAllScheduled(QStringList &strList, SchedSortColumn sortBy,
+                                bool ascending)
 {
     RecList schedlist;
 
-    GetAllScheduled(schedlist);
+    GetAllScheduled(schedlist, sortBy, ascending);
 
     strList << QString::number(schedlist.size());
 
@@ -1687,7 +1689,7 @@ void Scheduler::AddRecording(const RecordingInfo &pi)
     {
         RecordingInfo *p = *it;
         if (p->GetRecordingStatus() == rsRecording &&
-            p->IsSameProgramTimeslot(pi))
+            p->IsSameTitleTimeslotAndChannel(pi))
         {
             LOG(VB_GENERAL, LOG_INFO, LOC + "Not adding recording, " +
                 QString("'%1' is already in reclist.")
@@ -1736,7 +1738,7 @@ bool Scheduler::IsBusyRecording(const RecordingInfo *rcinfo)
         return true;
 
     // now check other cards in the same input group as the recording.
-    TunedInputInfo busy_input;
+    InputInfo busy_input;
     uint inputid = rcinfo->GetInputID();
     vector<uint> cardids = CardUtil::GetConflictingCards(
         inputid, rcinfo->GetCardID());
@@ -1754,6 +1756,11 @@ bool Scheduler::IsBusyRecording(const RecordingInfo *rcinfo)
 
         rctv = (*m_tvList)[cardids[i]];
         if (rctv->IsBusy(&busy_input, -1) &&
+            (busy_input.mplexid == 0 ||
+             busy_input.mplexid == 32767 ||
+             busy_input.mplexid != rcinfo->mplexid) &&
+            (busy_input.chanid == 0 ||
+             busy_input.chanid != rcinfo->GetChanID()) &&
             igrp.GetSharedInputGroup(busy_input.inputid, inputid))
         {
             return true;
@@ -2608,6 +2615,8 @@ bool Scheduler::HandleRecording(
             schedLock.unlock();
             recStatus = nexttv->StartRecording(&tempri);
             schedLock.lock();
+            ri.SetRecordingID(tempri.GetRecordingID());
+            ri.SetRecordingStartTime(tempri.GetRecordingStartTime());
 
             // activate auto expirer
             if (m_expirer)
@@ -3484,7 +3493,7 @@ static QString progfindid = QString(
         .arg(kOverrideRecord);
 
 void Scheduler::UpdateMatches(uint recordid, uint sourceid, uint mplexid,
-                              const QDateTime maxstarttime)
+                              const QDateTime &maxstarttime)
 {
     struct timeval dbstart, dbend;
 
@@ -4137,7 +4146,7 @@ void Scheduler::AddNewRecords(void)
         for ( ; rec != worklist.end(); ++rec)
         {
             RecordingInfo *r = *rec;
-            if (p->IsSameTimeslot(*r))
+            if (p->IsSameTitleStartTimeAndChannel(*r))
             {
                 if (r->GetInputID() == p->GetInputID() &&
                     r->GetRecordingEndTime() != p->GetRecordingEndTime() &&
@@ -4352,8 +4361,42 @@ void Scheduler::AddNotListed(void) {
  *
  *  \note Caller is responsible for deleting the RecordingInfo's returned.
  */
-void Scheduler::GetAllScheduled(RecList &proglist)
+void Scheduler::GetAllScheduled(RecList &proglist, SchedSortColumn sortBy,
+                                bool ascending)
 {
+    QString sortColumn = "title";
+    // Q: Why don't we use a string containing the column name instead?
+    // A: It's too fragile, we'll refuse to compile if an invalid enum name is
+    //    used but not if an invalid column is specified. It also means that if
+    //    the column names change we only need to update one place not several
+    switch (sortBy)
+    {
+        case kSortTitle:
+            sortColumn = "record.title";
+            break;
+        case kSortPriority:
+            sortColumn = "record.recpriority";
+            break;
+        case kSortLastRecorded:
+            sortColumn = "record.last_record";
+            break;
+        case kSortNextRecording:
+            // We want to shift the rules which have no upcoming recordings to
+            // the back of the pack, most of the time the user won't be interested
+            // in rules that aren't matching recordings at the present time.
+            // We still want them available in the list however since vanishing rules
+            // violates the principle of least surprise
+            sortColumn = "record.next_record = '0000-00-00 00:00:00', record.next_record";
+            break;
+        case kSortType:
+            sortColumn = "record.type";
+            break;
+    }
+
+    QString order = "ASC";
+    if (!ascending)
+        order = "DESC";
+
     QString query = QString(
         "SELECT record.title,       record.subtitle,    " //  0,1
         "       record.description, record.season,      " //  2,3
@@ -4372,7 +4415,9 @@ void Scheduler::GetAllScheduled(RecList &proglist)
         "FROM record "
         "LEFT JOIN channel ON channel.callsign = record.station "
         "GROUP BY recordid "
-        "ORDER BY title ASC");
+        "ORDER BY %1 %2");
+
+    query = query.arg(sortColumn).arg(order);
 
     MSqlQuery result(MSqlQuery::InitCon());
     result.prepare(query);
@@ -5077,7 +5122,7 @@ void Scheduler::SchedLiveTV(void)
         if (kState_WatchingLiveTV != enc->GetState())
             continue;
 
-        TunedInputInfo in;
+        InputInfo in;
         enc->IsBusy(&in);
 
         if (!in.inputid)
@@ -5093,6 +5138,7 @@ void Scheduler::SchedLiveTV(void)
             dummy->SetRecordingEndTime(schedTime.addSecs(1800));
         dummy->SetCardID(enc->GetCardID());
         dummy->SetInputID(in.inputid);
+        dummy->mplexid = dummy->QueryMplexID();
         dummy->SetRecordingStatus(rsUnknown);
 
         retrylist.push_front(dummy);

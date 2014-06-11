@@ -1078,10 +1078,14 @@ void PlaybackProfileConfig::pressed(QString cmd)
         PlaybackProfileItemConfig itemcfg(items[i]);
 
         if (itemcfg.exec() != kDialogCodeAccepted)
+        {
             LOG(VB_GENERAL, LOG_ERR, QString("edit #%1").arg(i) + " rejected");
-
-        InitLabel(i);
-        needs_save = true;
+        }
+        else
+        {
+            InitLabel(i);
+            needs_save = true;
+        }
     }
     else if (cmd.startsWith("del"))
     {
@@ -1098,11 +1102,15 @@ void PlaybackProfileConfig::pressed(QString cmd)
         PlaybackProfileItemConfig itemcfg(item);
 
         if (itemcfg.exec() != kDialogCodeAccepted)
+        {
             LOG(VB_GENERAL, LOG_ERR, "addentry rejected");
-
-        items.push_back(item);
-        InitUI();
-        needs_save = true;
+        }
+        else
+        {
+            items.push_back(item);
+            InitUI();
+            needs_save = true;
+        }
     }
 
     repaint();
@@ -1334,6 +1342,10 @@ void PlaybackProfileConfigs::btnPress(QString cmd)
             removeTarget(name);
             VideoDisplayProfile::DeleteProfileGroup(
                 name, gCoreContext->GetHostName());
+            // This would be better done in TriggeredConfigurationGroup::removeTarget
+            // however, as removeTarget is used elsewhere, limit the changes to this
+            // case only
+            grouptrigger->setValue(grouptrigger->getSelectionLabel());
         }
     }
 
@@ -2416,7 +2428,6 @@ static HostCheckBox *RunInWindow()
 
 static HostCheckBox *UseFixedWindowSize()
 {
-{
     HostCheckBox *gc = new HostCheckBox("UseFixedWindowSize");
 
     gc->setLabel(AppearanceSettings::tr("Use fixed window size"));
@@ -2427,6 +2438,18 @@ static HostCheckBox *UseFixedWindowSize()
                                            "window can be resized"));
     return gc;
 }
+
+static HostCheckBox *AlwaysOnTop()
+{
+    HostCheckBox *gc = new HostCheckBox("AlwaysOnTop");
+
+    gc->setLabel(AppearanceSettings::tr("Always On Top"));
+
+    gc->setValue(false);
+
+    gc->setHelpText(AppearanceSettings::tr("If enabled, MythTV will always be "
+                                           "on top"));
+    return gc;
 }
 
 static HostComboBox *MythDateFormatCB()
@@ -2517,6 +2540,8 @@ static HostComboBox *MythShortDateFormat()
     gc->addSelection(locale.toString(sampdate, "d ddd"), "d ddd");
     gc->addSelection(locale.toString(sampdate, "ddd M/d"), "ddd M/d");
     gc->addSelection(locale.toString(sampdate, "ddd d/M"), "ddd d/M");
+    gc->addSelection(locale.toString(sampdate, "ddd d.M"), "ddd d.M");
+    gc->addSelection(locale.toString(sampdate, "ddd dd.MM"), "ddd dd.MM");
     gc->addSelection(locale.toString(sampdate, "M/d ddd"), "M/d ddd");
     gc->addSelection(locale.toString(sampdate, "d/M ddd"), "d/M ddd");
 
@@ -2570,8 +2595,6 @@ static HostComboBox *ThemePainter()
 #ifdef USING_OPENGL
     gc->addSelection(QCoreApplication::translate("(Common)", "OpenGL 1"),
                      OPENGL_PAINTER);
-    gc->addSelection(QCoreApplication::translate("(Common)", "OpenGL 2"),
-                     OPENGL2_PAINTER);
 #endif
 #ifdef _WIN32
     gc->addSelection(QCoreApplication::translate("(Common)", "Direct3D"),
@@ -4187,6 +4210,7 @@ AppearanceSettings::AppearanceSettings()
     column2->addChild(HideMouseCursor());
     column2->addChild(RunInWindow());
     column2->addChild(UseFixedWindowSize());
+    column2->addChild(AlwaysOnTop());
 #ifdef USING_AIRPLAY
     column2->addChild(AirPlayFullScreen());
 #endif

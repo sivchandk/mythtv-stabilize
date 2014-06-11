@@ -15,17 +15,19 @@ class HLSRecSegment
     HLSRecSegment(int seq, int duration, const QString& title,
 		  const QString& uri);
     HLSRecSegment(int seq, int duration, const QString& title,
-	       const QString& uri, const QString current_key_path);
+	       const QString& uri, const QString& current_key_path);
     ~HLSRecSegment();
 
     HLSRecSegment& operator=(const HLSRecSegment& rhs);
 
     bool Download(QByteArray & buffer);
 
-    int64_t Sequence(void) const       { return m_sequence; }
-    QString Title(void) const { return m_title; }
-    QString Url(void) const  { return m_url; }
-    int Duration(void) const { return m_duration; }
+    int64_t Sequence(void) const { return m_sequence; }
+    QString Title(void)    const { return m_title; }
+    QString Url(void)      const { return m_url; }
+    int     Duration(void) const { return m_duration; }
+
+    QString toString(void) const;
 
 #ifdef USING_LIBCRYPTO
     bool DownloadKey(void);
@@ -36,7 +38,7 @@ class HLSRecSegment
 #endif
 
   protected:
-    int64_t    m_sequence;   // unique sequence number
+    int64_t     m_sequence;  // unique sequence number
     int         m_duration;  // segment duration (seconds)
     uint64_t    m_bitrate;   // bitrate of segment's content (bits per second)
     QString     m_title;     // human-readable informative title of

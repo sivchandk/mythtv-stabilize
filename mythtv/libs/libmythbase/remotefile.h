@@ -8,6 +8,7 @@
 #include <QMutex>
 
 #include "mythbaseexp.h"
+#include "mythtimer.h"
 
 class MythSocket;
 class QFile;
@@ -32,6 +33,9 @@ class MBASE_PUBLIC RemoteFile
     static bool Exists(const QString &url);
     static QString GetFileHash(const QString &url);
     static QDateTime LastModified(const QString &url);
+    QDateTime LastModified(void) const;
+    static QString FindFile(const QString &filename, const QString &host, const QString &storageGroup);
+    static bool CopyFile(const QString &src, const QString &dest);
 
     int Write(const void *data, int size);
     int Read(void *data, int size);
@@ -46,13 +50,19 @@ class MBASE_PUBLIC RemoteFile
     static bool isLocal(const QString &path);
     bool isLocal(void) const;
     long long GetFileSize(void) const;
+    long long GetRealFileSize(void);
 
     QStringList GetAuxiliaryFiles(void) const
         { return auxfiles; }
 
   private:
-    bool Open();
-    void Close(void);
+    bool Open(void);
+    bool OpenInternal(void);
+    void Close(bool haslock = false);
+    bool CheckConnection(bool repos = true);
+    bool IsConnected(void);
+    bool Resume(bool repos = true);
+    long long SeekInternal(long long pos, int whence, long long curpos = -1);
 
     MythSocket     *openSocket(bool control);
 
@@ -62,6 +72,8 @@ class MBASE_PUBLIC RemoteFile
     long long       filesize;
     bool            timeoutisfast;
     long long       readposition;
+    long long       lastposition;
+    bool            canresume;
     int             recordernum;
 
     mutable QMutex  lock;
@@ -70,6 +82,8 @@ class MBASE_PUBLIC RemoteFile
     QString         query;
 
     bool            writemode;
+    bool            completed;
+    MythTimer       lastSizeCheck;
 
     QStringList     possibleauxfiles;
     QStringList     auxfiles;

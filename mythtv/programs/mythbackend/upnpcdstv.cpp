@@ -309,10 +309,10 @@ void UPnpCDSTv::AddItem( const UPnpCDSRequest    *pRequest,
     // ----------------------------------------------------------------------
 
     if (!m_mapBackendIp.contains( sHostName ))
-        m_mapBackendIp[ sHostName ] = gCoreContext->GetSettingOnHost( "BackendServerIp", sHostName);
+        m_mapBackendIp[ sHostName ] = gCoreContext->GetBackendServerIP4(sHostName);
 
     if (!m_mapBackendPort.contains( sHostName ))
-        m_mapBackendPort[ sHostName ] = gCoreContext->GetSettingOnHost("BackendStatusPort", sHostName);
+        m_mapBackendPort[ sHostName ] = gCoreContext->GetBackendStatusPort(sHostName);
 
     // ----------------------------------------------------------------------
     // Build Support Strings
@@ -469,7 +469,7 @@ void UPnpCDSTv::AddItem( const UPnpCDSRequest    *pRequest,
 
     // TODO: Must be JPG for minimal compliance
     sProtocol = QString( "http-get:*:image/png:DLNA.ORG_PN=PNG_TN");
-    pRes = pItem->AddResource( sProtocol, sURI );
+    pItem->AddResource( sProtocol, sURI );
 
     // ----------------------------------------------------------------------
     // Add Artwork URI as albumArt

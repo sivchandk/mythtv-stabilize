@@ -10,7 +10,7 @@
 
 MetadataResultsDialog::MetadataResultsDialog(
     MythScreenStack *lparent,
-    const MetadataLookupList results) :
+    const MetadataLookupList &results) :
 
     MythScreenType(lparent, "metadataresultspopup"),
     m_results(results),
@@ -100,7 +100,7 @@ bool MetadataResultsDialog::Create()
 
 void MetadataResultsDialog::cleanCacheDir()
 {
-    QString cache = QString("%1/thumbcache")
+    QString cache = QString("%1/cache/metadata-thumbcache")
                        .arg(GetConfDir());
     QDir cacheDir(cache);
     QStringList thumbs = cacheDir.entryList(QDir::Files);

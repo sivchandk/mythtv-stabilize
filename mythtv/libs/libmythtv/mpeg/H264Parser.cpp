@@ -107,6 +107,7 @@ void H264Parser::Reset(void)
     state_changed = false;
     seen_sps = false;
     is_keyframe = false;
+    SPS_offset = 0;
 
     sync_accumulator = 0xffffffff;
     AU_pending = false;
@@ -412,7 +413,7 @@ uint32_t H264Parser::addBytes(const uint8_t  *bytes,
 
     while (startP < bytes + byte_count && !on_frame)
     {
-        endP = avpriv_mpv_find_start_code(startP,
+        endP = avpriv_find_start_code(startP,
                                   bytes + byte_count, &sync_accumulator);
 
         found_start_code = ((sync_accumulator & 0xffffff00) == 0x00000100);
@@ -616,9 +617,9 @@ bool H264Parser::decode_Header(GetBitContext *gb)
 {
     is_keyframe = false;
 
-    if (log2_max_frame_num == 0 || pic_order_present_flag == -1)
+    if (log2_max_frame_num == 0)
     {
-        /* SPS or PPS has not been parsed yet */
+        /* SPS has not been parsed yet */
         return false;
     }
 

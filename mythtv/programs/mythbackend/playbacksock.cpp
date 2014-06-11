@@ -10,6 +10,7 @@ using namespace std;
 #include "mythcorecontext.h"
 #include "mythdate.h"
 #include "inputinfo.h"
+#include "referencecounter.h"
 
 #define LOC QString("PlaybackSock: ")
 #define LOC_ERR QString("PlaybackSock, Error: ")
@@ -69,6 +70,20 @@ bool PlaybackSock::wantsOnlySystemEvents(void) const
 PlaybackSockEventsMode PlaybackSock::eventsMode(void) const
 {
     return m_eventsMode;
+}
+
+bool PlaybackSock::ReadStringList(QStringList &list)
+{
+    sock->IncrRef();
+    ReferenceLocker rlocker(sock);
+    QMutexLocker locker(&sockLock);
+    if (!sock->IsDataAvailable())
+    {
+        LOG(VB_GENERAL, LOG_DEBUG,
+            "PlaybackSock::ReadStringList(): Data vanished !!!");
+        return false;
+    }
+    return sock->ReadStringList(list);
 }
 
 bool PlaybackSock::SendReceiveStringList(
@@ -418,14 +433,19 @@ bool PlaybackSock::EncoderIsRecording(int capturecardnum,
 }
 
 RecStatusType PlaybackSock::StartRecording(int capturecardnum,
-                                           const ProgramInfo *pginfo)
+                                           ProgramInfo *pginfo)
 {
     QStringList strlist(QString("QUERY_REMOTEENCODER %1").arg(capturecardnum));
     strlist << "START_RECORDING";
     pginfo->ToStringList(strlist);
 
-    if (SendReceiveStringList(strlist, 1))
+    if (SendReceiveStringList(strlist, 3))
+    {
+        pginfo->SetRecordingID(strlist[1].toUInt());
+        pginfo->SetRecordingStartTime(
+            MythDate::fromTime_t(strlist[2].toUInt()));
         return RecStatusType(strlist[0].toInt());
+    }
 
     return rsUnknown;
 }

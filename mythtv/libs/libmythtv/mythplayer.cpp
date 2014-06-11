@@ -929,13 +929,13 @@ int MythPlayer::OpenFile(uint retries)
     int testreadsize = 2048;
 
     MythTimer bigTimer; bigTimer.start();
-    int timeout = (retries + 1) * 500;
+    int timeout = (retries + 1) * 600;
     while (testreadsize <= kDecoderProbeBufferSize)
     {
         MythTimer peekTimer; peekTimer.start();
         while (player_ctx->buffer->Peek(testbuf, testreadsize) != testreadsize)
         {
-            if (peekTimer.elapsed() > 1000 || bigTimer.elapsed() > timeout)
+            if (peekTimer.elapsed() > 1500 || bigTimer.elapsed() > timeout)
             {
                 LOG(VB_GENERAL, LOG_ERR, LOC +
                     QString("OpenFile(): Could not read first %1 bytes of '%2'")
@@ -1019,11 +1019,14 @@ int MythPlayer::OpenFile(uint retries)
     {
         gCoreContext->SaveSetting(
             "DefaultChanid", player_ctx->playingInfo->GetChanID());
-        int cardid = player_ctx->recorder->GetRecorderNumber();
-        QString channum = player_ctx->playingInfo->GetChanNum();
-        QString inputname;
-        int cardinputid = CardUtil::GetCardInputID(cardid, channum, inputname);
-        CardUtil::SetStartChannel(cardinputid, channum);
+        if (player_ctx->recorder && player_ctx->recorder->IsValidRecorder())
+        {
+            int cardid = player_ctx->recorder->GetRecorderNumber();
+            QString channum = player_ctx->playingInfo->GetChanNum();
+            QString inputname;
+            int cardinputid = CardUtil::GetCardInputID(cardid, channum, inputname);
+            CardUtil::SetStartChannel(cardinputid, channum);
+        }
     }
 
     return IsErrored() ? -1 : 0;
@@ -2442,8 +2445,18 @@ bool MythPlayer::FastForward(float seconds)
 
     if (fftime <= 0)
     {
-        float current = ComputeSecs(framesPlayed, true);
-        float dest = current + seconds;
+        float current   = ComputeSecs(framesPlayed, true);
+        float dest      = current + seconds;
+        float length    = ComputeSecs(totalFrames, true);
+
+        if (dest > length)
+        {
+            int64_t pos = TranslatePositionMsToFrame(seconds * 1000, false);
+            if (CalcMaxFFTime(pos) < 0)
+                return true;
+            // Reach end of recording, go to 1 or 3s before the end
+            dest = (livetv || IsWatchingInprogress()) ? -3.0 : -1.0;
+        }
         uint64_t target = FindFrame(dest, true);
         fftime = target - framesPlayed;
     }
@@ -2461,7 +2474,8 @@ bool MythPlayer::Rewind(float seconds)
         float dest = current - seconds;
         if (dest < 0)
         {
-            if (CalcRWTime(framesPlayed + 1) < 0)
+            int64_t pos = TranslatePositionMsToFrame(seconds * 1000, false);
+            if (CalcRWTime(pos) < 0)
                 return true;
             dest = 0;
         }
@@ -2755,10 +2769,28 @@ void MythPlayer::JumpToProgram(void)
     Play();
     ChangeSpeed();
 
-    if (nextpos < 0)
-        nextpos += totalFrames;
-    if (nextpos < 0)
-        nextpos = 0;
+    // check that we aren't too close to the end of program.
+    // and if so set it to 10s from the end if completed recordings
+    // or 3s if live
+    long long duration = player_ctx->tvchain->GetLengthAtCurPos();
+    int maxpos = player_ctx->tvchain->HasNext() ? 10 : 3;
+
+    if (nextpos > (duration - maxpos))
+    {
+        nextpos = duration - maxpos;
+        if (nextpos < 0)
+        {
+            nextpos = 0;
+        }
+    }
+    else if (nextpos < 0)
+    {
+        // it's a relative position to the end
+        nextpos += duration;
+    }
+
+    // nextpos is the new position to use in seconds
+    nextpos = TranslatePositionMsToFrame(nextpos * 1000, true);
 
     if (nextpos > 10)
         DoJumpToFrame(nextpos, kInaccuracyNone);
@@ -2888,7 +2920,7 @@ void MythPlayer::EventLoop(void)
     if (isDummy && player_ctx->tvchain && player_ctx->tvchain->HasNext())
     {
         // Switch from the dummy recorder to the tuned program in livetv
-        player_ctx->tvchain->JumpToNext(true, 1);
+        player_ctx->tvchain->JumpToNext(true, 0);
         JumpToProgram();
     }
     else if ((!allpaused || GetEof() != kEofStateNone) &&
@@ -2924,7 +2956,8 @@ void MythPlayer::EventLoop(void)
     }
 
     // Disable rewind if we are too close to the beginning of the buffer
-    if (CalcRWTime(-ffrew_skip) > 0 && (framesPlayed <= keyframedist))
+    if (ffrew_skip < 0 && CalcRWTime(-ffrew_skip) >= 0 &&
+        (framesPlayed <= keyframedist))
     {
         LOG(VB_PLAYBACK, LOG_INFO, LOC + "Near start, stopping rewind.");
         float stretch = (ffrew_skip > 0) ? 1.0f : audio.GetStretchFactor();
@@ -2951,6 +2984,13 @@ void MythPlayer::EventLoop(void)
         return;
     }
 
+    // Check if we got a communication error, and if so pause playback
+    if (player_ctx->buffer->GetCommsError())
+    {
+        Pause();
+        player_ctx->buffer->ResetCommsError();
+    }
+
     // Handle end of file
     EofState eof = GetEof();
     if (HasReachedEof())
@@ -2965,7 +3005,7 @@ void MythPlayer::EventLoop(void)
         if (player_ctx->tvchain && player_ctx->tvchain->HasNext())
         {
             LOG(VB_GENERAL, LOG_NOTICE, LOC + "LiveTV forcing JumpTo 1");
-            player_ctx->tvchain->JumpToNext(true, 1);
+            player_ctx->tvchain->JumpToNext(true, 0);
             return;
         }
 
@@ -3049,7 +3089,8 @@ void MythPlayer::EventLoop(void)
     // Handle automatic commercial skipping
     uint64_t jumpto = 0;
     if (deleteMap.IsEmpty() && (ffrew_skip == 1) &&
-       (kCommSkipOff != commBreakMap.GetAutoCommercialSkip()))
+       (kCommSkipOff != commBreakMap.GetAutoCommercialSkip()) &&
+        commBreakMap.HasMap())
     {
         QString msg;
         uint64_t frameCount = GetCurrentFrameCount();
@@ -3665,18 +3706,30 @@ bool MythPlayer::DoRewindSecs(float secs, double inaccuracy, bool use_cutlist)
     return DoRewind(framesPlayed - targetFrame, inaccuracy);
 }
 
+/**
+ * CalcRWTime(rw): rewind rw frames back.
+ * Handle liveTV transitions if necessary
+ *
+ */
 long long MythPlayer::CalcRWTime(long long rw) const
 {
     bool hasliveprev = (livetv && player_ctx->tvchain &&
                         player_ctx->tvchain->HasPrev());
 
-    if (!hasliveprev || ((int64_t)framesPlayed > (rw - 1)))
+    if (!hasliveprev || ((int64_t)framesPlayed >= rw))
+    {
         return rw;
+    }
 
-    player_ctx->tvchain->JumpToNext(false, (int)(-15.0 * video_frame_rate)); // XXX use seconds instead of assumed framerate
+    player_ctx->tvchain->JumpToNext(false, ((int64_t)framesPlayed - rw) / video_frame_rate);
+
     return -1;
 }
 
+/**
+ * CalcMaxFFTime(ffframes): forward ffframes forward.
+ * Handle liveTV transitions if necessay
+ */
 long long MythPlayer::CalcMaxFFTime(long long ffframes, bool setjump) const
 {
     float maxtime = 1.0;
@@ -3686,29 +3739,34 @@ long long MythPlayer::CalcMaxFFTime(long long ffframes, bool setjump) const
     if (livetv || IsWatchingInprogress())
         maxtime = 3.0;
 
-    long long ret = ffframes;
-    float ff = ComputeSecs(ffframes, true);
-    float secsPlayed = ComputeSecs(framesPlayed, true);
+    long long ret       = ffframes;
+    float ff            = ComputeSecs(ffframes, true);
+    float secsPlayed    = ComputeSecs(framesPlayed, true);
+    float secsWritten   = ComputeSecs(totalFrames, true);
 
     limitKeyRepeat = false;
 
     if (livetv && !islivetvcur && player_ctx->tvchain)
     {
-        if (totalFrames > 0)
+        // recording has completed, totalFrames will always be up to date
+        if ((ffframes + framesPlayed > totalFrames) && setjump)
         {
-            float behind = ComputeSecs(totalFrames, true) - secsPlayed;
-            if (behind < maxtime || behind - ff <= maxtime * 2)
-            {
-                ret = -1;
-                if (setjump)
-                    player_ctx->tvchain->JumpToNext(true, 1);
-            }
+            ret = -1;
+            // Number of frames to be skipped is from the end of the current segment
+            player_ctx->tvchain->JumpToNext(true, ((int64_t)totalFrames - (int64_t)framesPlayed - ffframes) / video_frame_rate);
         }
     }
     else if (islivetvcur || IsWatchingInprogress())
     {
-        float secsWritten =
-            ComputeSecs(player_ctx->recorder->GetFramesWritten(), true);
+        if ((ff + secsPlayed) > secsWritten)
+        {
+            // If we attempt to seek past the last known duration,
+            // check for up to date data
+            long long framesWritten = player_ctx->recorder->GetFramesWritten();
+
+            secsWritten = ComputeSecs(framesWritten, true);
+        }
+
         float behind = secsWritten - secsPlayed;
 
         if (behind < maxtime) // if we're close, do nothing
@@ -3724,13 +3782,12 @@ long long MythPlayer::CalcMaxFFTime(long long ffframes, bool setjump) const
     {
         if (totalFrames > 0)
         {
-            float behind = ComputeSecs(totalFrames, true) - secsPlayed;
+            float behind = secsWritten - secsPlayed;
             if (behind < maxtime)
                 ret = 0;
             else if (behind - ff <= maxtime * 2)
             {
-                uint64_t ms = 1000 *
-                    (ComputeSecs(totalFrames, true) - maxtime * 2);
+                uint64_t ms = 1000 * (secsWritten - maxtime * 2);
                 ret = TranslatePositionMsToFrame(ms, true) - framesPlayed;
             }
         }
@@ -3875,13 +3932,13 @@ void MythPlayer::WaitForSeek(uint64_t frame, uint64_t seeksnap_wanted)
     bool need_clear = false;
     while (decoderSeek >= 0)
     {
-        usleep(1000);
+        usleep(50 * 1000);
 
         // provide some on screen feedback if seeking is slow
         count++;
-        if (!(count % 150) && !hasFullPositionMap)
+        if (!(count % 3) && !hasFullPositionMap)
         {
-            int num = (count / 150) % 4;
+            int num = count % 3;
             SetOSDMessage(tr("Searching") + QString().fill('.', num),
                           kOSDTimeout_Short);
             DisplayPauseFrame();
@@ -4503,7 +4560,7 @@ QString MythPlayer::GetEncodingType(void) const
 
 void MythPlayer::GetCodecDescription(InfoMap &infoMap)
 {
-    infoMap["audiocodec"]    = ff_codec_id_string((CodecID)audio.GetCodec());
+    infoMap["audiocodec"]    = ff_codec_id_string((AVCodecID)audio.GetCodec());
     infoMap["audiochannels"] = QString::number(audio.GetOrigChannels());
 
     int width  = video_disp_dim.width();
@@ -4521,7 +4578,7 @@ void MythPlayer::GetCodecDescription(InfoMap &infoMap)
     bool interlaced = is_interlaced(m_scan);
     if (width == 1920 || height == 1080 || height == 1088)
         infoMap["videodescrip"] = interlaced ? "HD_1080_I" : "HD_1080_P";
-    else if (height == 720 && !interlaced)
+    else if ((width == 1280 || height == 720) && !interlaced)
         infoMap["videodescrip"] = "HD_720_P";
     else if (height >= 720)
         infoMap["videodescrip"] = "HD";
@@ -4768,17 +4825,46 @@ uint64_t MythPlayer::GetCurrentFrameCount(void) const
 // result to within bounds of the video.
 uint64_t MythPlayer::FindFrame(float offset, bool use_cutlist) const
 {
-    uint64_t length_ms = TranslatePositionFrameToMs(totalFrames, use_cutlist);
+    bool islivetvcur    = (livetv && player_ctx->tvchain &&
+                        !player_ctx->tvchain->HasNext());
+    uint64_t length_ms  = TranslatePositionFrameToMs(totalFrames, use_cutlist);
     uint64_t position_ms;
+
     if (signbit(offset))
     {
+        // Always get an updated totalFrame value for in progress recordings
+        if (islivetvcur || IsWatchingInprogress())
+        {
+            long long framesWritten = player_ctx->recorder->GetFramesWritten();
+
+            if (totalFrames < framesWritten)
+            {
+                // Known duration is less than what the backend reported, use new value
+                length_ms =
+                    TranslatePositionFrameToMs(framesWritten, use_cutlist);
+            }
+        }
         uint64_t offset_ms = -offset * 1000 + 0.5;
         position_ms = (offset_ms > length_ms) ? 0 : length_ms - offset_ms;
     }
     else
     {
         position_ms = offset * 1000 + 0.5;
-        position_ms = min(position_ms, length_ms);
+
+        if (offset > length_ms)
+        {
+            // Make sure we have an updated totalFrames
+            if ((islivetvcur || IsWatchingInprogress()) &&
+                (length_ms < offset))
+            {
+                long long framesWritten =
+                    player_ctx->recorder->GetFramesWritten();
+
+                length_ms =
+                    TranslatePositionFrameToMs(framesWritten, use_cutlist);
+            }
+            position_ms = min(position_ms, length_ms);
+        }
     }
     return TranslatePositionMsToFrame(position_ms, use_cutlist);
 }
@@ -5108,8 +5194,8 @@ bool MythPlayer::SetStream(const QString &stream)
     {
         // Restore livetv
         SetEof(kEofStateDelayed);
-        player_ctx->tvchain->JumpToNext(false, 1);
-        player_ctx->tvchain->JumpToNext(true, 1);
+        player_ctx->tvchain->JumpToNext(false, 0);
+        player_ctx->tvchain->JumpToNext(true, 0);
     }
 
     return !stream.isEmpty();
@@ -5471,4 +5557,3 @@ static unsigned dbg_ident(const MythPlayer *player)
 }
 
 /* vim: set expandtab tabstop=4 shiftwidth=4: */
-

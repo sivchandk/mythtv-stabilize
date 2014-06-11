@@ -574,6 +574,8 @@ void TV::InitKeys(void)
             "Change Recording Group"), "");
     REG_KEY("TV Frontend", "CHANGEGROUPVIEW", QT_TRANSLATE_NOOP("MythControls",
             "Change Group View"), "");
+    REG_KEY("TV Frontend", ACTION_LISTRECORDEDEPISODES, QT_TRANSLATE_NOOP("MythControls",
+            "List recorded episodes"), "");
 
     REG_KEY("TV Playback", "BACK", QT_TRANSLATE_NOOP("MythControls",
             "Exit or return to DVD menu"), "Esc");
@@ -978,6 +980,7 @@ TV::TV(void)
       db_playback_exit_prompt(0),   db_autoexpire_default(0),
       db_auto_set_watched(false),   db_end_of_rec_exit_prompt(false),
       db_jump_prefer_osd(true),     db_use_gui_size_for_tv(false),
+      db_clear_saved_position(false),
       db_toggle_bookmark(false),
       db_run_jobs_on_remote(false), db_continue_embedded(false),
       db_use_fixed_size(true),      db_browse_always(false),
@@ -1084,6 +1087,7 @@ void TV::InitFromDB(void)
     kv["EndOfRecordingExitPrompt"] = "0";
     kv["JumpToProgramOSD"]         = "1";
     kv["GuiSizeForTV"]             = "0";
+    kv["ClearSavedPosition"]       = "1";
     kv["AltClearSavedPosition"]    = "1";
     kv["JobsRunOnRecordHost"]      = "0";
     kv["ContinueEmbeddedTVPlay"]   = "0";
@@ -1127,6 +1131,7 @@ void TV::InitFromDB(void)
     db_end_of_rec_exit_prompt = kv["EndOfRecordingExitPrompt"].toInt();
     db_jump_prefer_osd     = kv["JumpToProgramOSD"].toInt();
     db_use_gui_size_for_tv = kv["GuiSizeForTV"].toInt();
+    db_clear_saved_position= kv["ClearSavedPosition"].toInt();
     db_toggle_bookmark     = kv["AltClearSavedPosition"].toInt();
     db_run_jobs_on_remote  = kv["JobsRunOnRecordHost"].toInt();
     db_continue_embedded   = kv["ContinueEmbeddedTVPlay"].toInt();
@@ -1871,7 +1876,7 @@ void TV::ShowOSDAskAllow(PlayerContext *ctx)
         // get the currently used input on our card
         bool busy_input_grps_loaded = false;
         vector<uint> busy_input_grps;
-        TunedInputInfo busy_input;
+        InputInfo busy_input;
         RemoteIsBusy(cardid, busy_input);
 
         // check if current input can conflict
@@ -1916,8 +1921,10 @@ void TV::ShowOSDAskAllow(PlayerContext *ctx)
                 (*it).is_conflicting = true;
             else if (!CardUtil::IsTunerShared(cardid, (*it).info->GetCardID()))
                 (*it).is_conflicting = true;
-            else if ((busy_input.sourceid == (uint)(*it).info->GetSourceID()) &&
-                     (busy_input.mplexid  == (uint)(*it).info->QueryMplexID()))
+            else if ((busy_input.mplexid &&
+                      (busy_input.mplexid  == (*it).info->QueryMplexID())) ||
+                     (!busy_input.mplexid &&
+                      (busy_input.chanid == (*it).info->GetChanID())))
                 (*it).is_conflicting = false;
             else
                 (*it).is_conflicting = true;
@@ -2428,7 +2435,7 @@ void TV::HandleStateChange(PlayerContext *mctx, PlayerContext *ctx)
             {
                 ShowNotificationError(ctx->player->GetError(),
                                       TV::tr( "TV Player" ),
-                                      buffer->GetFilename());
+                                      playbackURL);
                 // We're going to display this error as notification
                 // no need to display it later as popup
                 ctx->player->ResetErrored();
@@ -3277,19 +3284,46 @@ void TV::PrepToSwitchToRecordedProgram(PlayerContext *ctx,
 
 void TV::PrepareToExitPlayer(PlayerContext *ctx, int line, BookmarkAction bookmark)
 {
-    bool bm_basic =
-        (bookmark == kBookmarkAlways ||
-         (bookmark == kBookmarkAuto && db_playback_exit_prompt == 2));
-    bool bookmark_it = bm_basic && IsBookmarkAllowed(ctx);
+    bool bm_allowed = IsBookmarkAllowed(ctx);
     ctx->LockDeletePlayer(__FILE__, line);
     if (ctx->player)
     {
-        if (bookmark_it)
-            SetBookmark(ctx,
-                        (ctx->player->IsNearEnd() || getEndOfRecording())
-                        && !StateIsRecording(GetState(ctx)));
+        if (bm_allowed)
+        {
+            // If we're exiting in the middle of the recording, we
+            // automatically save a bookmark when "Action on playback
+            // exit" is set to "Save position and exit".
+            bool allow_set_before_end =
+                (bookmark == kBookmarkAlways ||
+                 (bookmark == kBookmarkAuto &&
+                  db_playback_exit_prompt == 2));
+            // If we're exiting at the end of the recording, we
+            // automatically clear the bookmark when "Action on
+            // playback exit" is set to "Save position and exit" and
+            // "Clear bookmark on playback" is set to true.
+            bool allow_clear_at_end =
+                (bookmark == kBookmarkAlways ||
+                 (bookmark == kBookmarkAuto &&
+                  db_playback_exit_prompt == 2 &&
+                  db_clear_saved_position));
+            // Whether to set/clear a bookmark depends on whether we're
+            // exiting at the end of a recording.
+            bool at_end = (ctx->player->IsNearEnd() || getEndOfRecording());
+            // Don't consider ourselves at the end if the recording is
+            // in-progress.
+            at_end &= !StateIsRecording(GetState(ctx));
+            if (at_end && allow_clear_at_end)
+                SetBookmark(ctx, true);
+            if (!at_end && allow_set_before_end)
+                SetBookmark(ctx, false);
+        }
         if (db_auto_set_watched)
             ctx->player->SetWatched();
+
+        if (ctx->player->GetAudio()->ControlsVolume())
+        {
+            ctx->player->SaveVolume();
+        }
     }
     ctx->UnlockDeletePlayer(__FILE__, line);
 }
@@ -4597,7 +4631,7 @@ bool TV::FFRewHandleAction(PlayerContext *ctx, const QStringList &actions)
         if (!handled)
         {
             DoPlayerSeek(ctx, StopFFRew(ctx));
-            UpdateOSDSeekMessage(ctx, ctx->GetPlayMessage(), kOSDTimeout_Med);
+            UpdateOSDSeekMessage(ctx, ctx->GetPlayMessage(), kOSDTimeout_Short);
             handled = true;
         }
     }
@@ -4605,7 +4639,7 @@ bool TV::FFRewHandleAction(PlayerContext *ctx, const QStringList &actions)
     if (ctx->ff_rew_speed)
     {
         NormalSpeed(ctx);
-        UpdateOSDSeekMessage(ctx, ctx->GetPlayMessage(), kOSDTimeout_Med);
+        UpdateOSDSeekMessage(ctx, ctx->GetPlayMessage(), kOSDTimeout_Short);
         handled = true;
     }
 
@@ -6212,7 +6246,7 @@ void TV::DoTogglePauseFinish(PlayerContext *ctx, float time, bool showOSD)
     {
         DoPlayerSeek(ctx, time);
         if (showOSD)
-            UpdateOSDSeekMessage(ctx, ctx->GetPlayMessage(), kOSDTimeout_Med);
+            UpdateOSDSeekMessage(ctx, ctx->GetPlayMessage(), kOSDTimeout_Short);
         GetMythUI()->DisableScreensaver();
     }
 
@@ -6398,7 +6432,7 @@ bool TV::SeekHandleAction(PlayerContext *actx, const QStringList &actions,
                     actx->player->TranslatePositionRelToAbs(targetRel);
                 actx->UnlockDeletePlayer(__FILE__, __LINE__);
                 DoPlayerSeekToFrame(actx, targetAbs);
-                UpdateOSDSeekMessage(actx, message, kOSDTimeout_Med);
+                UpdateOSDSeekMessage(actx, message, kOSDTimeout_Short);
             }
         }
     }
@@ -7510,7 +7544,7 @@ void TV::ChangeChannel(PlayerContext *ctx, ChannelChangeDirection direction)
             if (channelGroupId > -1)
             {
                 uint chanid = ChannelUtil::GetNextChannel(
-                    channelGroupChannelList, old_chanid, 0, direction);
+                    channelGroupChannelList, old_chanid, 0, 0, direction);
                 if (chanid)
                     ChangeChannel(ctx, chanid, "");
                 return;
@@ -8462,11 +8496,12 @@ QSet<uint> TV::IsTunableOn(TV *tv,
 
         for (uint j = 0; j < inputs.size(); j++)
         {
-            if (inputs[j].sourceid != sourceid)
-                continue;
-
             if (inputs[j].mplexid &&
                 inputs[j].mplexid != mplexid)
+                continue;
+
+            if (!inputs[j].mplexid && inputs[j].chanid &&
+                inputs[j].chanid != chanid)
                 continue;
 
             tunable_cards.insert(cardids[i]);
@@ -8850,7 +8885,7 @@ void TV::ChangeTimeStretch(PlayerContext *ctx, int dir, bool allowEdit)
     {
         if (!allowEdit)
         {
-            UpdateOSDSeekMessage(ctx, ctx->GetPlayMessage(), kOSDTimeout_Med);
+            UpdateOSDSeekMessage(ctx, ctx->GetPlayMessage(), kOSDTimeout_Short);
         }
         else
         {
@@ -12229,7 +12264,7 @@ void TV::PlaybackMenuInit(const MenuBase &menu)
 
     ctx->LockDeletePlayer(__FILE__, __LINE__);
 
-    if (ctx->player)
+    if (ctx->player && ctx->player->GetVideoOutput())
     {
         for (int i = kTrackTypeUnknown ; i < kTrackTypeCount ; ++i)
         {
@@ -12412,8 +12447,8 @@ void TV::ShowOSDMenu(const PlayerContext *ctx, bool isCompact)
                          QDomNode());
 }
 
-void TV::FillOSDMenuJumpRec(PlayerContext* ctx, const QString category,
-                            int level, const QString selected)
+void TV::FillOSDMenuJumpRec(PlayerContext* ctx, const QString &category,
+                            int level, const QString &selected)
 {
     // bool in_recgroup = !category.isEmpty() && level > 0;
     if (level < 0 || level > 1)

@@ -282,15 +282,19 @@ void ViewScheduled::LoadList(bool useExistingData)
         ProgramInfo *pginfo = *pit;
         const RecStatusType recstatus = pginfo->GetRecordingStatus();
         if ((pginfo->GetRecordingEndTime() >= now ||
-             pginfo->GetScheduledEndTime() >= now) &&
+             pginfo->GetScheduledEndTime() >= now ||
+             recstatus == rsRecording ||
+             recstatus == rsTuning) &&
             (m_showAll ||
-             recstatus <= rsWillRecord ||
+             (recstatus >= rsTuning &&
+              recstatus <= rsWillRecord) ||
              recstatus == rsDontRecord ||
              (recstatus == rsTooManyRecordings &&
               ++toomanycounts[pginfo->GetRecordingRuleID()] <= 1) ||
              (recstatus > rsTooManyRecordings &&
               recstatus != rsRepeat &&
-              recstatus != rsNeverRecord)))
+              recstatus != rsNeverRecord &&
+              recstatus != rsOtherShowing)))
         {
             m_cardref[pginfo->GetCardID()]++;
             if (pginfo->GetCardID() > m_maxcard)

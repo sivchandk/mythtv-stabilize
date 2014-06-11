@@ -244,7 +244,8 @@ public:
           m_verticalLayout(gs.m_verticalLayout),
           m_firstTime(gs.m_firstTime),
           m_lastTime(gs.m_lastTime),
-          m_proglists(proglists)
+          m_proglists(proglists),
+          m_progPast(0)
     {
         for (unsigned int i = m_firstRow;
              i < m_firstRow + m_numRows; ++i)
@@ -400,7 +401,7 @@ QWaitCondition        GuideHelper::s_wait;
 QMap<GuideGrid*,uint> GuideHelper::s_loading;
 
 void GuideGrid::RunProgramGuide(uint chanid, const QString &channum,
-                                const QDateTime startTime,
+                                const QDateTime &startTime,
                                 TV *player, bool embedVideo,
                                 bool allowFinder, int changrpid)
 {
@@ -474,7 +475,7 @@ void GuideGrid::RunProgramGuide(uint chanid, const QString &channum,
 }
 
 GuideGrid::GuideGrid(MythScreenStack *parent,
-                     uint chanid, QString channum, const QDateTime startTime,
+                     uint chanid, const QString &channum, const QDateTime &startTime,
                      TV *player, bool embedVideo,
                      bool allowFinder, int changrpid)
          : ScheduleCommon(parent, "guidegrid"),
@@ -1050,7 +1051,7 @@ uint GuideGrid::GetAlternateChannelIndex(
         bool isAlt = true;
         for (uint j = 0; j < proglist.size(); ++j)
         {
-            isAlt &= proglist[j]->IsSameProgramTimeslot(*ch_proglist[j]);
+            isAlt &= proglist[j]->IsSameTitleTimeslotAndChannel(*ch_proglist[j]);
         }
 
         if (isAlt)
@@ -1133,7 +1134,7 @@ ChannelInfoList GuideGrid::GetSelection(void) const
         bool isAlt = true;
         for (uint j = 0; j < proglist.size(); ++j)
         {
-            isAlt &= proglist[j]->IsSameProgramTimeslot(*ch_proglist[j]);
+            isAlt &= proglist[j]->IsSameTitleTimeslotAndChannel(*ch_proglist[j]);
         }
 
         if (isAlt)

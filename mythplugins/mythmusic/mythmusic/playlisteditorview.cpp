@@ -90,17 +90,21 @@ MythUIButtonListItem *MusicGenericTree::CreateListButton(MythUIButtonList *list)
 #define LOC_WARN QString("PlaylistEditorView, Warning: ")
 #define LOC_ERR  QString("PlaylistEditorView, Error: ")
 
-PlaylistEditorView::PlaylistEditorView(MythScreenStack *parent, const QString &layout, bool restorePosition)
-         :MusicCommon(parent, "playlisteditorview"),
+PlaylistEditorView::PlaylistEditorView(MythScreenStack *parent, MythScreenType *parentScreen,
+                                       const QString &layout, bool restorePosition)
+         :MusicCommon(parent, parentScreen, "playlisteditorview"),
             m_layout(layout), m_restorePosition(restorePosition),
             m_rootNode(NULL), m_playlistTree(NULL), m_breadcrumbsText(NULL),
             m_positionText(NULL)
 {
+    gCoreContext->addListener(this);
     gCoreContext->SaveSetting("MusicPlaylistEditorView", layout);
 }
 
 PlaylistEditorView::~PlaylistEditorView()
 {
+    gCoreContext->removeListener(this);
+
     saveTreePosition();
 
     for (int x = 0; x < m_deleteList.count(); x++)
@@ -168,8 +172,10 @@ bool PlaylistEditorView::Create(void)
             this, SLOT(treeItemClicked(MythUIButtonListItem*)));
     connect(m_playlistTree, SIGNAL(nodeChanged(MythGenericTree*)),
             this, SLOT(treeNodeChanged(MythGenericTree*)));
-    connect(m_playlistTree, SIGNAL(itemVisible(MythUIButtonListItem*)),
-            this, SLOT(treeItemVisible(MythUIButtonListItem*)));
+
+    if (m_currentView == MV_PLAYLISTEDITORGALLERY)
+        connect(m_playlistTree, SIGNAL(itemVisible(MythUIButtonListItem*)),
+                this, SLOT(treeItemVisible(MythUIButtonListItem*)));
 
     BuildFocusList();
 
@@ -209,6 +215,28 @@ void PlaylistEditorView::customEvent(QEvent *event)
     {
         //TODO should just update the cd node
         reloadTree();
+    }
+    else if (event->type() == MythEvent::MythEventMessage)
+    {
+        MythEvent *me = dynamic_cast<MythEvent*>(event);
+
+        if (!me)
+            return;
+
+        if (me->Message().startsWith("MUSIC_RESYNC_FINISHED"))
+        {
+            QStringList list = me->Message().simplified().split(' ');
+            if (list.size() == 4)
+            {
+                int added = list[1].toInt();
+                int removed = list[2].toInt();
+                int changed = list[3].toInt();
+
+                // if something changed reload the tree
+                if (added || removed || changed)
+                    reloadTree();
+            }
+        }
     }
     else if (event->type() == DialogCompletionEvent::kEventType)
     {
@@ -290,13 +318,13 @@ void PlaylistEditorView::customEvent(QEvent *event)
             {
                 m_playlistOptions.playPLOption = PL_CURRENT;
                 m_playlistOptions.insertPLOption = PL_REPLACE;
-                doUpdatePlaylist(false);
+                doUpdatePlaylist();
             }
             else if (resulttext == tr("Add Tracks"))
             {
                 m_playlistOptions.playPLOption = PL_CURRENT;
                 m_playlistOptions.insertPLOption = PL_INSERTATEND;
-                doUpdatePlaylist(false);
+                doUpdatePlaylist();
             }
         }
         else if (resultid == "playlistmenu")
@@ -324,12 +352,12 @@ void PlaylistEditorView::customEvent(QEvent *event)
             {
                 m_playlistOptions.playPLOption = PL_CURRENT;
                 m_playlistOptions.insertPLOption = PL_REPLACE;
-                doUpdatePlaylist(false);
+                doUpdatePlaylist();
             }
             else if (resulttext == tr("Add Tracks"))
             {
                 m_playlistOptions.insertPLOption = PL_INSERTATEND;
-                doUpdatePlaylist(false);
+                doUpdatePlaylist();
             }
         }
     }
@@ -475,7 +503,7 @@ bool PlaylistEditorView::keyPressEvent(QKeyEvent *event)
                      {
                          m_playlistOptions.playPLOption = PL_FIRST;
                          m_playlistOptions.insertPLOption = PL_REPLACE;
-                         doUpdatePlaylist(true);
+                         doUpdatePlaylist();
                      }
                      else
                      {
@@ -542,7 +570,8 @@ void PlaylistEditorView::updateSonglist(MusicGenericTree *node)
         MusicGenericTree *allTracksNode = dynamic_cast<MusicGenericTree*>(node->getChildAt(0));
         if (allTracksNode)
         {
-            filterTracks(allTracksNode);
+            if (allTracksNode->childCount() == 0)
+                filterTracks(allTracksNode);
 
             for (int x = 0; x < allTracksNode->childCount(); x++)
             {
@@ -570,11 +599,11 @@ void PlaylistEditorView::updateSonglist(MusicGenericTree *node)
 
         if (playlist)
         {
-            SongList songlist = playlist->getSongs();
-
-            for (int x = 0; x < songlist.count(); x++)
+            for (int x = 0; x < playlist->getTrackCount(); x++)
             {
-                m_songList.append(songlist.at(x)->ID());
+                MusicMetadata *mdata = playlist->getSongAt(x);
+                if (mdata)
+                    m_songList.append((int) mdata->ID());
             }
         }
     }
@@ -600,12 +629,6 @@ void PlaylistEditorView::ShowMenu(void)
 
         MythMenu *menu = NULL;
         MusicGenericTree *mnode = dynamic_cast<MusicGenericTree*>(m_playlistTree->GetCurrentNode());
-
-        if (!mnode)
-        {
-            MusicCommon::ShowMenu();
-            return;
-        }
 
         if (mnode->getAction() == "smartplaylists" ||
             mnode->getAction() == "smartplaylistcategory" ||
@@ -780,12 +803,12 @@ void PlaylistEditorView::treeItemClicked(MythUIButtonListItem *item)
     MythGenericTree *node = qVariantValue<MythGenericTree*> (item->GetData());
     MusicGenericTree *mnode = dynamic_cast<MusicGenericTree*>(node);
 
-    if (!mnode)
+    if (!mnode || !gPlayer->getCurrentPlaylist())
         return;
 
     if (mnode->getAction() == "trackid")
     {
-        if (gPlayer->getPlaylist()->checkTrack(mnode->getInt()))
+        if (gPlayer->getCurrentPlaylist()->checkTrack(mnode->getInt()))
         {
             // remove track from the current playlist
             gPlayer->removeTrack(mnode->getInt());
@@ -811,8 +834,10 @@ void PlaylistEditorView::treeItemVisible(MythUIButtonListItem *item)
     if (!mnode)
         return;
 
-    if (item->GetImageFilename().isEmpty())
+    if (item->GetText("*").isEmpty())
     {
+        item->SetText(" ", "*");
+
         QString artFile;
 
         if (mnode->getAction() == "trackid")
@@ -840,6 +865,15 @@ void PlaylistEditorView::treeItemVisible(MythUIButtonListItem *item)
         {
             artFile = findIcon("artist", mnode->GetText().toLower());
         }
+        else if (mnode->getAction() == "all tracks" || mnode->getAction() == "genres" ||
+                 mnode->getAction() == "albums"     || mnode->getAction() == "artists" ||
+                 mnode->getAction() == "compartists"|| mnode->getAction() == "ratings" ||
+                 mnode->getAction() == "years"      || mnode->getAction() == "compilations" ||
+                 mnode->getAction() == "cd"         || mnode->getAction() == "directory" ||
+                 mnode->getAction() == "playlists"  || mnode->getAction() == "smartplaylists")
+        {
+            artFile = "blank.png";
+        }
         else
         {
             artFile = findIcon(mnode->getAction(), mnode->GetText().toLower());
@@ -848,65 +882,29 @@ void PlaylistEditorView::treeItemVisible(MythUIButtonListItem *item)
         QString state = "default";
 
         if (mnode->getAction() == "all tracks")
-        {
             state = "alltracks";
-            artFile="blank.png";
-        }
         else if (mnode->getAction() == "genres")
-        {
             state = "genres";
-            artFile="blank.png";
-        }
         else if (mnode->getAction() == "albums")
-        {
             state = "albums";
-            artFile="blank.png";
-        }
         else if (mnode->getAction() == "artists")
-        {
             state = "artists";
-            artFile="blank.png";
-        }
         else if (mnode->getAction() == "compartists")
-        {
             state = "compartists";
-            artFile="blank.png";
-        }
         else if (mnode->getAction() == "ratings")
-        {
             state = "ratings";
-            artFile="blank.png";
-        }
         else if (mnode->getAction() == "years")
-        {
             state = "years";
-            artFile="blank.png";
-        }
         else if (mnode->getAction() == "compilations")
-        {
             state = "compilations";
-            artFile="blank.png";
-        }
         else if (mnode->getAction() == "cd")
-        {
             state = "cd";
-            artFile="blank.png";
-        }
         else if (mnode->getAction() == "directory")
-        {
             state = "directory";
-            artFile="blank.png";
-        }
         else if (mnode->getAction() == "playlists")
-        {
             state = "playlists";
-            artFile="blank.png";
-        }
         else if (mnode->getAction() == "smartplaylists")
-        {
             state = "smartplaylists";
-            artFile="blank.png";
-        }
 
         item->DisplayState(state, "nodetype");
 
@@ -998,7 +996,6 @@ void PlaylistEditorView::filterTracks(MusicGenericTree *node)
                     if (mdata->Track() < 10)
                         key.prepend("0");
                 }
-
                 map.insertMulti(key, mdata->ID());
             }
         }
@@ -1009,7 +1006,7 @@ void PlaylistEditorView::filterTracks(MusicGenericTree *node)
             MusicGenericTree *newnode = new MusicGenericTree(node, i.key(), "trackid");
             newnode->setInt(i.value());
             newnode->setDrawArrow(false);
-            bool hasTrack = gPlayer->getPlaylist()->checkTrack(newnode->getInt());
+            bool hasTrack = gPlayer->getCurrentPlaylist() ? gPlayer->getCurrentPlaylist()->checkTrack(newnode->getInt()) : false;
             newnode->setCheck( hasTrack ? MythUIButtonListItem::FullChecked : MythUIButtonListItem::NotChecked);
             ++i;
         }
@@ -1288,7 +1285,7 @@ void PlaylistEditorView::filterTracks(MusicGenericTree *node)
                 MusicGenericTree *newnode = new MusicGenericTree(node, i.key().mid(7), "trackid");
                 newnode->setInt(i.value()->at(0)->ID());
                 newnode->setDrawArrow(false);
-                bool hasTrack = gPlayer->getPlaylist()->checkTrack(newnode->getInt());
+                bool hasTrack = gPlayer->getCurrentPlaylist() ? gPlayer->getCurrentPlaylist()->checkTrack(newnode->getInt()) : false;
                 newnode->setCheck( hasTrack ? MythUIButtonListItem::FullChecked : MythUIButtonListItem::NotChecked);
             }
             ++i;
@@ -1544,7 +1541,7 @@ void PlaylistEditorView::getSmartPlaylistTracks(MusicGenericTree *node, int play
                 new MusicGenericTree(node, query.value(1).toString(), "trackid");
         newnode->setInt(query.value(0).toInt());
         newnode->setDrawArrow(false);
-        bool hasTrack = gPlayer->getPlaylist()->checkTrack(newnode->getInt());
+        bool hasTrack = gPlayer->getCurrentPlaylist() ? gPlayer->getCurrentPlaylist()->checkTrack(newnode->getInt()) : false;
         newnode->setCheck( hasTrack ? MythUIButtonListItem::FullChecked : MythUIButtonListItem::NotChecked);
     }
 
@@ -1581,7 +1578,7 @@ void PlaylistEditorView::getCDTracks(MusicGenericTree *node)
         MusicGenericTree *newnode = new MusicGenericTree(node, title, "trackid");
         newnode->setInt(mdata->ID());
         newnode->setDrawArrow(false);
-        bool hasTrack = gPlayer->getPlaylist()->checkTrack(mdata->ID());
+        bool hasTrack = gPlayer->getCurrentPlaylist() ? gPlayer->getCurrentPlaylist()->checkTrack(mdata->ID()) : false;
         newnode->setCheck(hasTrack ? MythUIButtonListItem::FullChecked : MythUIButtonListItem::NotChecked);
     }
 }
@@ -1589,18 +1586,20 @@ void PlaylistEditorView::getCDTracks(MusicGenericTree *node)
 void PlaylistEditorView::getPlaylistTracks(MusicGenericTree *node, int playlistID)
 {
     Playlist *playlist = gMusicData->all_playlists->getPlaylist(playlistID);
-    QList<MusicMetadata*> songs = playlist->getSongs();
 
-    for (int x = 0; x < songs.count(); x++)
+    if (playlist)
     {
-        MusicMetadata *mdata = songs.at(x);
-        if (mdata)
+        for (int x = 0; x < playlist->getTrackCount(); x++)
         {
-            MusicGenericTree *newnode = new MusicGenericTree(node, mdata->Title(), "trackid");
-            newnode->setInt(mdata->ID());
-            newnode->setDrawArrow(false);
-            bool hasTrack = gPlayer->getPlaylist()->checkTrack(mdata->ID());
-            newnode->setCheck(hasTrack ? MythUIButtonListItem::FullChecked : MythUIButtonListItem::NotChecked);
+            MusicMetadata *mdata = playlist->getSongAt(x);
+            if (mdata)
+            {
+                MusicGenericTree *newnode = new MusicGenericTree(node, mdata->Title(), "trackid");
+                newnode->setInt(mdata->ID());
+                newnode->setDrawArrow(false);
+                bool hasTrack = gPlayer->getCurrentPlaylist() ? gPlayer->getCurrentPlaylist()->checkTrack(mdata->ID()) : false;
+                newnode->setCheck(hasTrack ? MythUIButtonListItem::FullChecked : MythUIButtonListItem::NotChecked);
+            }
         }
     }
 
@@ -1627,7 +1626,7 @@ void PlaylistEditorView::updateSelectedTracks(MusicGenericTree *node)
         {
             if (mnode->getAction() == "trackid")
             {
-                bool hasTrack = gPlayer->getPlaylist()->checkTrack(mnode->getInt());
+                bool hasTrack = gPlayer->getCurrentPlaylist() ? gPlayer->getCurrentPlaylist()->checkTrack(mnode->getInt()) : false;
                 mnode->setCheck(hasTrack ? MythUIButtonListItem::FullChecked : MythUIButtonListItem::NotChecked);
             }
             else

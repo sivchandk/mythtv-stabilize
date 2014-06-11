@@ -415,6 +415,7 @@ class HDHomeRunConfigurationGroup : public VerticalConfigurationGroup
 
 class CetonDeviceID;
 class CetonSetting;
+class InstanceCount;
 class CetonConfigurationGroup : public VerticalConfigurationGroup
 {
     Q_OBJECT
@@ -428,6 +429,7 @@ class CetonConfigurationGroup : public VerticalConfigurationGroup
     CetonDeviceID       *deviceid;
     CetonSetting        *ip;
     CetonSetting        *tuner;
+    InstanceCount       *instances;
 };
 
 
@@ -537,6 +539,24 @@ class DemoConfigurationGroup: public VerticalConfigurationGroup
     TransLabelSetting *info;
     TransLabelSetting *size;
 };
+
+#if !defined( USING_MINGW ) && !defined( _MSC_VER )
+class ExternalConfigurationGroup: public VerticalConfigurationGroup
+{
+   Q_OBJECT
+
+  public:
+    ExternalConfigurationGroup(CaptureCard &parent);
+
+  public slots:
+    void probeApp(const QString & path);
+
+  private:
+    CaptureCard       &parent;
+    TransLabelSetting *info;
+    InstanceCount     *instances;
+};
+#endif
 
 class DVBCardNum;
 class DVBCardName;

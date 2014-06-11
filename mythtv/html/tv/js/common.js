@@ -6,6 +6,12 @@ function jq(id) // F*%$ jQuery
 
 function toggleVisibility(layer, show)
 {
+    if (!isValidObject(layer))
+    {
+        setErrorMessage("toggleVisibility() called with invalid element");
+        return;
+    }
+
     // We can override the toggle behaviour with the show arg
     if (typeof show === 'boolean')
     {
@@ -17,6 +23,12 @@ function toggleVisibility(layer, show)
 
 function checkVisibility(layer)
 {
+    if (!isValidObject(layer))
+    {
+        setErrorMessage("toggleVisibility() called with invalid element");
+        return;
+    }
+
     return (layer.style.display == "block");
 }
 
@@ -59,6 +71,12 @@ function moveToPosition(layer, customer)
 
 function toggleClass(element, className)
 {
+    if (!isValidObject(element))
+    {
+        setErrorMessage("toggleClass() called with invalid element");
+        return;
+    }
+
     class_array = element.className.split(" ");
 
     var index = class_array.lastIndexOf(className);
@@ -76,6 +94,12 @@ function toggleClass(element, className)
 
 function isClassSet(element, className)
 {
+    if (!isValidObject(element))
+    {
+        setErrorMessage("isClassSet() called with invalid element");
+        return;
+    }
+
     class_array = element.className.split(" ");
 
     var index = class_array.lastIndexOf(className);
@@ -86,8 +110,10 @@ function isClassSet(element, className)
 }
 
 var selectedElement;
-var chanID = "";
-var startTime = "";
+// Need to move away from these global vars to the data- attributes or
+// something better
+var gChanID = 0;
+var gStartTime = "";
 function showMenu(parent, typeStr)
 {
     hideDetail(parent);
@@ -100,9 +126,21 @@ function showMenu(parent, typeStr)
     }
 
     var parentID = parent.id;
-    var values = parentID.split("_", 2);
-    chanID = values[0];
-    startTime = values[1];
+    // Old Way
+    // TODO: This is really ugly, it only gets a little better when we switch to
+    // recording ids. We need to rethink how this is done without increasing
+    // the LOC or HTML
+    // Old Way
+    gChanID = parent.getAttribute("data-chanid");
+    if (isValidVar(parent.getAttribute("data-recstarttime")))
+        gStartTime = parent.getAttribute("data-recstarttime");
+    else
+        gStartTime = parent.getAttribute("data-starttime");
+    console.log("gChanId " + gChanID + " StartTime " + gStartTime);
+
+    // New Way
+//     $('#optMenu').data('chanID', parent.getAttribute("data-chanid"));
+//     $('#optMenu').data('startTime', parentID.getAttribute("data-starttime"));
 
     var menu = document.getElementById("optMenu");
     var types = typeStr.split(' ');
@@ -133,6 +171,12 @@ function showMenu(parent, typeStr)
 function hideMenu(menuName)
 {
     var menu = document.getElementById(menuName);
+    if (!isValidObject(menu))
+    {
+        setErrorMessage("hideMenu() called with invalid menu ID");
+        return;
+    }
+
     var children = menu.getElementsByClassName("button");
     for (var i = 0; i < children.length; i++)
     {
@@ -152,6 +196,12 @@ function hideMenu(menuName)
 var timer;
 function startDetailTimer(parent, type)
 {
+    if (!isValidObject(parent))
+    {
+        setErrorMessage("startDetailTimer() called with invalid parent");
+        return;
+    }
+
     var parentID = parent.id;
     timer = setTimeout(function(){showDetail(parentID, type)}, 1200);
 }
@@ -163,12 +213,29 @@ function showDetail(parentID, type)
     // Check whether a context menu is being displayed and if so, then don't
     // display the detail popup
     var parent = document.getElementById(parentID);
+    if (!isValidObject(parent))
+    {
+        //setErrorMessage("showDetail() called with invalid parent ID: (" + parentID + ")");
+        return;
+    }
+
     if (isClassSet(parent, "itemSelected"))
         return;
 
-    var values = parentID.split("_", 2);
-    chanID = values[0];
-    startTime = values[1];
+    // TODO: This is really ugly, it only gets a little better when we switch to
+    // recording ids. We need to rethink how this is done without increasing
+    // the LOC or HTML
+    // Old Way
+    chanId = parent.getAttribute("data-chanid");
+    if (isValidVar(parent.getAttribute("data-recstarttime")))
+        startTime = parent.getAttribute("data-recstarttime");
+    else
+        startTime = parent.getAttribute("data-starttime");
+    console.log("Chan ID " + chanId + " StartTime " + startTime);
+
+    // New Way
+//     $('#optMenu').data('chanID', parent.getAttribute("data-chanid"));
+//     $('#optMenu').data('startTime', parentID.getAttribute("data-starttime"));
 
     // FIXME: We should be able to get a Program object back from
     // from the Services API that contains all the information available
@@ -177,7 +244,7 @@ function showDetail(parentID, type)
     if (type == "recording")
         method = "getRecordingDetailHTML";
 
-    var url = "/tv/ajax_backends/program_util.qsp?action=" + method + "&chanID=" + chanID + "&startTime=" + startTime;
+    var url = "/tv/ajax_backends/program_util.qsp?_action=" + method + "&chanID=" + chanId + "&startTime=" + startTime;
     var ajaxRequest = $.ajax( url )
                             .done(function()
                         {
@@ -197,6 +264,12 @@ function hideDetail(parent)
 {
     clearTimeout(timer);
 
+    if (!isValidObject(parent))
+    {
+        setErrorMessage("hideDetail() called with invalid parent ID: (" + parentID + ")");
+        return;
+    }
+
     var parentID = parent.id;
     var layer = document.getElementById('programDetails');
 
@@ -210,16 +283,25 @@ function loadScheduler(chanID, startTime)
 {
     hideMenu("optMenu");
     var layer = document.getElementById(chanID + "_" + startTime);
+    if (!isValidObject(layer))
+    {
+        setErrorMessage("loadScheduler() called with invalid program ID: (" + chanID + "_" + startTime + ")");
+        return;
+    }
     var recRuleID = layer.getAttribute("data-recordid");
-    loadContent('/tv/schedule.qsp?chanId=' + chanID + '&amp;startTime=' + startTime + '&amp;recRuleId' + recRuleID);
+    if (isValidVar(layer.getAttribute("data-chanid")))
+        chanID = layer.getAttribute("data-chanid");
+    if (isValidVar(layer.getAttribute("data-starttime")))
+        startTime = layer.getAttribute("data-starttime");
+    loadContent('/tv/schedule.qsp?chanId=' + chanID + '&amp;startTime=' + startTime + '&amp;recRuleId=' + recRuleID);
 }
 
 function checkRecordingStatus(chanID, startTime)
 {
-    var url = "/tv/ajax_backends/dvr_util.qsp?action=checkRecStatus&chanID=" + chanID + "&startTime=" + startTime;
+    var url = "/tv/ajax_backends/dvr_util.qsp?_action=checkRecStatus&chanID=" + chanID + "&startTime=" + startTime;
     var ajaxRequest = $.ajax( url ).done(function()
                             {
-                                var response = ajaxRequest.responseText.split("#");
+                                var response = ajaxRequest.responseText.trim().split("#");
                                 var id = response[0] + "_" + response[1];
                                 var layer = document.getElementById(id);
                                 toggleClass(layer, "programScheduling");
@@ -233,54 +315,84 @@ function checkRecordingStatus(chanID, startTime)
                             });
 }
 
-function recRuleChanged(chandID, startTime)
+function recRuleChanged(chanID, startTime)
 {
     var layer = document.getElementById(chanID + "_" + startTime);
+    if (!isValidObject(layer))
+    {
+        setErrorMessage("recRuleChanged called with invalid program ID: (" + chanID + "_" + startTime + ")");
+        return;
+    }
     toggleClass(layer, "programScheduling");
     var popup = document.getElementById(chanID + "_" + startTime + "_schedpopup");
+    if (!isValidObject(popup))
+    {
+        setErrorMessage("recRuleChanged() called with invalid popup ID: (" + chanID + "_" + startTime + "_schedpopup)");
+        return;
+    }
     toggleVisibility(popup);
 
     setTimeout(function(){checkRecordingStatus(chanID, startTime)}, 2500);
 }
 
-function deleteRecRule(chandID, startTime)
+function deleteRecRule(chanID, startTime)
 {
     var layer = document.getElementById(chanID + "_" + startTime);
-    var recRuleID = layer.getAttribute("data-recordid");
+    if (!isValidObject(layer))
+    {
+        setErrorMessage("deleteRecRule() called with invalid program ID: (" + chanID + "_" + startTime + ")");
+        return;
+    }
+    var recRuleID = Number(layer.getAttribute("data-recordid"));
+    if (recRuleID <= 0)
+    {
+        setErrorMessage("deleteRecRule() called with invalid Recording Rule ID: (" + recRuleID + ")");
+        return;
+    }
     hideMenu("optMenu");
-    var url = "/tv/ajax_backends/dvr_util.qsp?action=deleteRecRule&recRuleID=" + recRuleID + "&chanID=" + chanID + "&startTime=" + startTime;
+    var url = "/tv/ajax_backends/dvr_util.qsp?_action=deleteRecRule&recRuleID=" + recRuleID + "&chanID=" + chanID + "&startTime=" + startTime;
     var ajaxRequest = $.ajax( url )
                             .done(function()
                             {
-                                var response = ajaxRequest.responseText.split("#");
+                                var response = ajaxRequest.responseText.trim().split("#");
                                 recRuleChanged( response[0], response[1] );
                             });
 }
 
-function dontRecord(chandID, startTime)
+function dontRecord(chanID, startTime)
 {
     var layer = document.getElementById(chanID + "_" + startTime);
+    if (!isValidObject(layer))
+    {
+        setErrorMessage("dontRecord() called with invalid program ID: (" + chanID + "_" + startTime + ")");
+        return;
+    }
     var recRuleID = layer.getAttribute("data-recordid");
     hideMenu("optMenu");
-    var url = "/tv/ajax_backends/dvr_util.qsp?action=dontRecord&chanID=" + chanID + "&startTime=" + startTime;
+    var url = "/tv/ajax_backends/dvr_util.qsp?_action=dontRecord&chanID=" + chanID + "&startTime=" + startTime;
     var ajaxRequest = $.ajax( url )
                             .done(function()
                             {
-                                var response = ajaxRequest.responseText.split("#");
+                                var response = ajaxRequest.responseText.trim().split("#");
                                 recRuleChanged( response[0], response[1] );
                             });
 }
 
-function neverRecord(chandID, startTime)
+function neverRecord(chanID, startTime)
 {
     var layer = document.getElementById(chanID + "_" + startTime);
+    if (!isValidObject(layer))
+    {
+        setErrorMessage("neverRecord() called with invalid program ID: (" + chanID + "_" + startTime + ")");
+        return;
+    }
     var recRuleID = layer.getAttribute("data-recordid");
     hideMenu("optMenu");
-    var url = "/tv/ajax_backends/dvr_util.qsp?action=neverRecord&chanID=" + chanID + "&startTime=" + startTime;
+    var url = "/tv/ajax_backends/dvr_util.qsp?_action=neverRecord&chanID=" + chanID + "&startTime=" + startTime;
     var ajaxRequest = $.ajax( url )
                             .done(function()
                             {
-                                var response = ajaxRequest.responseText.split("#");
+                                var response = ajaxRequest.responseText.trim().split("#");
                                 recRuleChanged( response[0], response[1] );
                             });
 }
@@ -303,6 +415,11 @@ function loadTVContent(url, targetDivID, transition, args)
     $("#busyPopup").show();
 
     var targetDiv = document.getElementById(targetDivID);
+    if (!isValidObject(targetDiv))
+    {
+        setErrorMessage("loadTVContent() target DIV doesn't exist: (" + targetDivID + ")");
+        return;
+    }
     var newDiv = document.createElement('div');
     newDiv.style = "left: 100%";
     targetDiv.parentNode.insertBefore(newDiv, null);
@@ -369,15 +486,51 @@ function formOnLoad(form)
 
 function submitForm(formElement, target, transition)
 {
-    var url = formElement.action;
-    var queryString = new Array();
-    for (var i = 0; i < formElement.elements.length; i++)
+    if (!isValidObject(formElement))
     {
-        var input = formElement.elements[i];
-        queryString.push(input.name + "=" + input.value);
+        setErrorMessage("submitForm() invalid form element");
+        return;
     }
-    url += "?" + queryString.join('&');
+    var queryString = $(formElement).serialize();
+    var url = formElement.action + "?" + queryString;
+
     loadTVContent(url, target, transition);
+    return false;
+}
+
+function saveFormData(formElement, callback)
+{
+    if (!isValidObject(formElement))
+    {
+        setErrorMessage("submitForm() invalid form element");
+        return;
+    }
+
+    var url = formElement.action;
+    var postData = $(formElement).serializeArray();
+
+    $.ajax(
+    {
+        url : url,
+        type: "POST",
+        data : postData,
+        dataType: "text",
+        success:function(data, textStatus, jqXHR)
+        {
+            callback(data.trim());
+            $("#saveFormDataSuccess").show().delay(5000).fadeOut();
+        },
+        error: function(jqXHR, textStatus, errorThrown)
+        {
+            $("#saveFormDataError").show().delay(5000).fadeOut();
+        }
+    });
+    return false;
+}
+
+function scrollCallback()
+{
+    $("#NumPages").val(Number($("#NumPages").val())+1);
 }
 
 function loadJScroll()
@@ -433,4 +586,9 @@ function dissolveTransition(oldDivID, newDivID)
     $("#" + oldDivID).animate({opacity: "0.0"}, 800, function() {
                    $("#" + oldDivID).remove(); postLoad(); });
     $("#" + newDivID).animate({opacity: "1.0"}, 800);
+}
+
+function handleKeyboardShortcutsTV(key) {
+    if (key.keyCode == 27)
+        hideMenu("optMenu");
 }

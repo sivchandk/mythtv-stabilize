@@ -30,7 +30,7 @@ class ThemeChooser : public MythScreenType
 
   public:
     ThemeChooser(MythScreenStack *parent,
-               const QString name = "ThemeChooser");
+               const QString &name = "ThemeChooser");
    ~ThemeChooser();
 
     bool Create(void);
@@ -55,6 +55,8 @@ class ThemeChooser : public MythScreenType
     void themeChanged(void);
 
   private:
+    void LoadVersion(const QString &version, QStringList &themesSeen);
+
     enum DownloadState
     {
         dsIdle = 0,

@@ -238,7 +238,7 @@ static CardUtil::CARD_TYPES get_cardtype(uint sourceid)
             QObject::tr("Transport Editor"), 
             QObject::tr(
                 "The Video Sources to which this Transport is connected "
-                "are incompatible, please create seperate video sources "
+                "are incompatible, please create separate video sources "
                 "for these cards. "));
 
         return CardUtil::ERROR_PROBE;
@@ -470,6 +470,7 @@ class DVBSymbolRate : public ComboBoxSetting, public MuxDBStorage
                 "million symbols per second."));
         addSelection("3333000");
         addSelection("22000000");
+        addSelection("23000000");
         addSelection("27500000", "27500000", true);
         addSelection("28000000");
         addSelection("28500000");

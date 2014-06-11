@@ -22,6 +22,9 @@
 #include "dvbdescriptors.h"
 #include "channelinfo.h"
 
+// libmythmetadata headers
+#include "metadatadownload.h"
+
 // filldata headers
 #include "channeldata.h"
 #include "fillutil.h"
@@ -473,7 +476,7 @@ ProgInfo *XMLTVParser::parseProgram(QDomElement &element)
 
                     if (!totalepisodes.isEmpty())
                     {
-                        pginfo->totalepisodes = totalepisodes.toUInt() + 1;
+                        pginfo->totalepisodes = totalepisodes.toUInt();
                     }
 
                     uint partno = 0;
@@ -495,11 +498,33 @@ ProgInfo *XMLTVParser::parseProgram(QDomElement &element)
                         }
                     }
                 }
-                else if (info.attribute("system") == "onscreen" &&
-                        pginfo->subtitle.isEmpty())
+                else if (info.attribute("system") == "onscreen")
                 {
                     pginfo->categoryType = ProgramInfo::kCategorySeries;
-                    pginfo->subtitle = getFirstText(info);
+                    if (pginfo->subtitle.isEmpty())
+                    {
+                        pginfo->subtitle = getFirstText(info);
+                    }
+                }
+                else if ((info.attribute("system") == "themoviedb.org") &&
+                    (MetadataDownload::GetMovieGrabber().endsWith(QString("/tmdb3.py"))))
+                {
+                    /* text is movie/<inetref> */
+                    QString inetrefRaw(getFirstText(info));
+                    if (inetrefRaw.startsWith(QString("movie/"))) {
+                        QString inetref(inetrefRaw.section('/',1,1).trimmed());
+                        pginfo->inetref = inetref;
+                    }
+                }
+                else if ((info.attribute("system") == "thetvdb.com") &&
+                    (MetadataDownload::GetTelevisionGrabber().endsWith(QString("/ttvdb.py"))))
+                {
+                    /* text is series/<inetref> */
+                    QString inetrefRaw(getFirstText(info));
+                    if (inetrefRaw.startsWith(QString("series/"))) {
+                        QString inetref(inetrefRaw.section('/',1,1).trimmed());
+                        pginfo->inetref = inetref;
+                    }
                 }
             }
         }

@@ -330,8 +330,8 @@ void HttpStatus::FillStatusXML( QDomDocument *pDoc )
     {
         numbes++;
         QString masterhost = gCoreContext->GetMasterHostName();
-        QString masterip   = gCoreContext->GetSetting("MasterServerIP");
-        QString masterport = gCoreContext->GetSettingOnHost("BackendStatusPort", masterhost, "6544");
+        QString masterip   = gCoreContext->GetMasterServerIP();
+        int masterport = gCoreContext->GetMasterServerStatusPort();
 
         QDomElement mbe = pDoc->createElement("Backend");
         backends.appendChild(mbe);
@@ -1478,8 +1478,8 @@ int HttpStatus::PrintMiscellaneousInfo( QTextStream &os, QDomElement info )
 
             // Only include HTML line break if display value doesn't already
             // contain breaks.
-            if ((display.contains("<p>", Qt::CaseInsensitive) > 0) ||
-                (display.contains("<br", Qt::CaseInsensitive) > 0))
+            if (display.contains("<p>", Qt::CaseInsensitive) ||
+                display.contains("<br", Qt::CaseInsensitive))
             {
                 // matches <BR> or <br /
                 linebreak = "\r\n";

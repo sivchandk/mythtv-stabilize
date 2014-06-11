@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <cerrno>
+#include <stdlib.h>
 
 #include <iostream>
 using namespace std;
@@ -16,6 +17,9 @@ using namespace std;
 #include <QWidget>
 #include <QApplication>
 #include <QTimer>
+#ifdef Q_OS_MAC
+#include <QProcessEnvironment>
+#endif
 
 #include "previewgeneratorqueue.h"
 #include "referencecounter.h"
@@ -806,7 +810,7 @@ static void TVMenuCallback(void *data, QString &selection)
     (void)data;
     QString sel = selection.toLower();
 
-    if (sel.startsWith("settings "))
+    if (sel.startsWith("settings ") || sel == "video_settings_general")
     {
         GetMythUI()->AddCurrentLocation("Setup");
         gCoreContext->ActivateSettingsCache(false);
@@ -1204,7 +1208,7 @@ static void gotoMainMenu(void)
 
 // If the theme specified in the DB is somehow broken, try a standard one:
 //
-static bool resetTheme(QString themedir, const QString badtheme)
+static bool resetTheme(QString themedir, const QString &badtheme)
 {
     QString themename = DEFAULT_UI_THEME;
 
@@ -1374,8 +1378,6 @@ static void InitKeys(void)
          "Play selected item in alternate player"), "ALT+P");
      REG_KEY("Video","FILTER", QT_TRANSLATE_NOOP("MythControls",
          "Open video filter dialog"), "F");
-     REG_KEY("Video","BROWSE", QT_TRANSLATE_NOOP("MythControls",
-         "Change browsable in video manager"), "B");
      REG_KEY("Video","INCPARENT", QT_TRANSLATE_NOOP("MythControls",
          "Increase Parental Level"), "],},F11");
      REG_KEY("Video","DECPARENT", QT_TRANSLATE_NOOP("MythControls",
@@ -1386,10 +1388,6 @@ static void InitKeys(void)
          "Download metadata for current item"), "W");
      REG_KEY("Video","ITEMDETAIL", QT_TRANSLATE_NOOP("MythControls",
          "Display Item Detail Popup"), "");
-     REG_KEY("Video","HOME", QT_TRANSLATE_NOOP("MythControls",
-         "Go to the first video"), "Home");
-     REG_KEY("Video","END", QT_TRANSLATE_NOOP("MythControls",
-         "Go to the last video"), "End");
 
      // Gallery keybindings
      REG_KEY("Images", "PLAY", QT_TRANSLATE_NOOP("MythControls",
@@ -1398,10 +1396,6 @@ static void InitKeys(void)
          "Pause Slideshow"), "Ctrl+P");
      REG_KEY("Images", "STOP", QT_TRANSLATE_NOOP("MythControls",
          "Stop Slideshow"), "Alt+P");
-     REG_KEY("Images", "HOME", QT_TRANSLATE_NOOP("MythControls",
-         "Go to the first image in thumbnail view"), "Home");
-     REG_KEY("Images", "END", QT_TRANSLATE_NOOP("MythControls",
-         "Go to the last image in thumbnail view"), "End");
      REG_KEY("Images", "SLIDESHOW", QT_TRANSLATE_NOOP("MythControls",
          "Start Slideshow in thumbnail view"), "S");
      REG_KEY("Images", "RANDOMSHOW", QT_TRANSLATE_NOOP("MythControls",
@@ -1524,8 +1518,22 @@ int main(int argc, char **argv)
     // of the MythPushButton widgets, and they don't use the themed background.
     QApplication::setDesktopSettingsAware(false);
 #endif
+#ifdef Q_OS_LINUX
+    // This makes Xlib calls thread-safe which seems to be required for hardware
+    // accelerated Flash playback to work without causing mythfrontend to abort.
+    QApplication::setAttribute(Qt::AA_X11InitThreads);
+#endif
     new QApplication(argc, argv);
     QCoreApplication::setApplicationName(MYTH_APPNAME_MYTHFRONTEND);
+
+#ifdef Q_OS_MAC
+    QString path = QCoreApplication::applicationDirPath();
+    setenv("PYTHONPATH",
+           QString("%1/../Resources/lib/python2.6/site-packages:%2")
+           .arg(path)
+           .arg(QProcessEnvironment::systemEnvironment().value("PYTHONPATH"))
+           .toUtf8().constData(), 1);
+#endif
 
 #ifndef _WIN32
     QList<int> signallist;
@@ -1678,11 +1686,11 @@ int main(int argc, char **argv)
 #ifdef USING_AIRPLAY
     if (gCoreContext->GetNumSetting("AirPlayEnabled", true))
     {
+        MythRAOPDevice::Create();
         if (!gCoreContext->GetNumSetting("AirPlayAudioOnly", false))
         {
             MythAirplayServer::Create();
         }
-        MythRAOPDevice::Create();
     }
 #endif
 

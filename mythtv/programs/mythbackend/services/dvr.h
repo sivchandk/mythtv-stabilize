@@ -66,12 +66,19 @@ class Dvr : public DvrServices
         bool              UnDeleteRecording   ( int              ChanId,
                                                 const QDateTime &StartTime );
 
+        bool              UpdateRecordedWatchedStatus ( int   ChanId,
+                                                        const QDateTime &StartTime,
+                                                        bool  Watched);
+
         DTC::ProgramList* GetConflictList     ( int              StartIndex,
-                                                int              Count      );
+                                                int              Count,
+                                                int              RecordId );
 
         DTC::ProgramList* GetUpcomingList     ( int              StartIndex,
                                                 int              Count,
-                                                bool             ShowAll );
+                                                bool             ShowAll,
+                                                int              RecordId,
+                                                int              RecStatus );
 
         DTC::EncoderList* GetEncoderList      ( );
 
@@ -182,7 +189,9 @@ class Dvr : public DvrServices
                                                  bool             NeverRecord );
 
         DTC::RecRuleList* GetRecordScheduleList( int              StartIndex,
-                                                 int              Count      );
+                                                 int              Count,
+                                                 const            QString  &Sort,
+                                                 bool             Descending );
 
         DTC::RecRule*     GetRecordSchedule    ( uint             RecordId,
                                                  QString          Template,
@@ -291,16 +300,20 @@ class ScriptableDvr : public QObject
         }
 
         QObject* GetConflictList    ( int              StartIndex,
-                                      int              Count      )
+                                      int              Count,
+                                      int              RecordId )
         {
-            return m_obj.GetConflictList( StartIndex, Count );
+            return m_obj.GetConflictList( StartIndex, Count, RecordId );
         }
 
         QObject* GetUpcomingList    ( int              StartIndex,
                                       int              Count,
-                                      bool             ShowAll )
+                                      bool             ShowAll,
+                                      int              RecordId,
+                                      int              RecStatus )
         {
-            return m_obj.GetUpcomingList( StartIndex, Count, ShowAll );
+            return m_obj.GetUpcomingList( StartIndex, Count, ShowAll,
+                                          RecordId, RecStatus );
         }
 
         QObject* GetEncoderList     () { return m_obj.GetEncoderList(); }
@@ -390,9 +403,12 @@ class ScriptableDvr : public QObject
             return m_obj.AddDontRecordSchedule(ChanId, StartTime, NeverRecord);
         }
 
-        QObject* GetRecordScheduleList( int StartIndex, int Count )
+        QObject* GetRecordScheduleList( int             StartIndex,
+                                        int             Count,
+                                        const QString  &Sort,
+                                        bool            Descending  )
         {
-            return m_obj.GetRecordScheduleList(StartIndex, Count);
+            return m_obj.GetRecordScheduleList(StartIndex, Count, Sort, Descending);
         }
 
         QObject* GetRecordSchedule ( uint      RecordId,

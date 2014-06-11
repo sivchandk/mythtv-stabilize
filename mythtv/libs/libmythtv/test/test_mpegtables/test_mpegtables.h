@@ -195,7 +195,7 @@ class TestMPEGTables: public QObject
 
         /* FIXME hack to test the case of no hash in the CRID until we support more then one CRID per descriptor */
         const unsigned char cid_data[] = {
-            0x76, 0x73, 0x04, 0x2f, 0x65, 0x76, 0x65, 0x6e,  0x74, 0x69, 0x73, 0x2e, 0x6e, 0x6c, 0x2f, 0x30,  /* vs.@eventis.nl/0 */
+            0x76, 0x31, 0x04, 0x2f, 0x65, 0x76, 0x65, 0x6e,  0x74, 0x69, 0x73, 0x2e, 0x6e, 0x6c, 0x2f, 0x30,  /* vs.@eventis.nl/0 */
             0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x2d,  0x30, 0x30, 0x30, 0x30, 0x2d, 0x31, 0x30, 0x30,  /* 0000000-0000-100 */
             0x30, 0x2d, 0x30, 0x36, 0x30, 0x38, 0x2d, 0x30,  0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x33,  /* 0-0608-000000003 */
             0x46, 0x39, 0x43                                                                                  /* F9C              */
@@ -203,5 +203,29 @@ class TestMPEGTables: public QObject
         DVBContentIdentifierDescriptor descriptor2(cid_data);
         QCOMPARE (descriptor2.ContentId(), QString("eventis.nl/00000000-0000-1000-0608-000000003F9C"));
         QCOMPARE (descriptor.ContentId(1), QString("eventis.nl/00000000-0000-1000-0608-000000003F9C"));
+    }
+
+    /* test for coverity 1047220: Incorrect deallocator used:
+     * Calling "PSIPTable::~PSIPTable()" frees "(&psip)->_fullbuffer"
+     * using "free" but it should have been freed using "operator delete[]".
+     *
+     * _allocSize should be 0 thus we are not freeing something we didn't
+     * allocate in the first place (false positive)
+     */
+    void clone_test(void)
+    {
+        unsigned char *si_data = new unsigned char[8];
+        si_data[0] = 0x70; /* pp....37 */
+        si_data[1] = 0x70;
+        si_data[2] = 0x05;
+        si_data[3] = 0xdc;
+        si_data[4] = 0xa9;
+        si_data[5] = 0x12;
+        si_data[6] = 0x33;
+        si_data[7] = 0x37;
+
+        const PSIPTable si_table(si_data);
+
+        QVERIFY (!si_table.IsClone());
     }
 };

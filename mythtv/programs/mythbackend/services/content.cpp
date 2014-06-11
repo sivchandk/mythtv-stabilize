@@ -730,8 +730,8 @@ QFileInfo Content::GetMusic( int nId )
     // check to see if the file exists
     // ----------------------------------------------------------------------
 
-    if (QFile::exists( sFileName ))
-        return QFileInfo( sFileName );
+    if (!QFile::exists( sFileName ))
+        return GetFile( "Music", sFileName );
 
     return QFileInfo();
 }
@@ -986,7 +986,7 @@ DTC::LiveStreamInfo *Content::AddLiveStream( const QString   &sStorageGroup,
 
     HTTPLiveStream *hls = new
         HTTPLiveStream(sFullFileName, nWidth, nHeight, nBitrate, nAudioBitrate,
-                       nMaxSegments, 10, 32000, nSampleRate);
+                       nMaxSegments, 0, 0, nSampleRate);
 
     if (!hls)
     {

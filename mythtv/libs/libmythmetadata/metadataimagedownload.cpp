@@ -357,7 +357,7 @@ QString getDownloadFilename(QString title, QString url)
     if (!dir.exists())
         dir.mkdir(fileprefix);
 
-    fileprefix += "/thumbcache";
+    fileprefix += "/cache/metadata-thumbcache";
 
     dir = QDir(fileprefix);
     if (!dir.exists())
@@ -473,9 +473,8 @@ QString getLocalWritePath(MetadataType metadatatype, VideoArtworkType type)
 QString getStorageGroupURL(VideoArtworkType type, QString host)
 {
     QString sgroup;
-    QString ip = gCoreContext->GetSettingOnHost("BackendServerIP", host);
-    uint port = gCoreContext->GetSettingOnHost("BackendServerPort",
-                                               host).toUInt();
+    QString ip = gCoreContext->GetBackendServerIP(host);
+    uint port = gCoreContext->GetBackendServerPort(host);
 
     if (type == kArtworkCoverart)
         sgroup = "Coverart";
@@ -515,7 +514,7 @@ QString getLocalStorageGroupPath(VideoArtworkType type, QString host)
 
 void cleanThumbnailCacheDir()
 {
-    QString cache = QString("%1/thumbcache")
+    QString cache = QString("%1/cache/metadata-thumbcache")
                .arg(GetConfDir());
     QDir cacheDir(cache);
     QStringList thumbs = cacheDir.entryList(QDir::Files);

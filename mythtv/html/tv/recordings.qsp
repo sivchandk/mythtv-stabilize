@@ -3,13 +3,7 @@
 
 import "/js/utility.js"
 import "/tv/js/constants.js"
-
-    var args = arguments[1];
-    function getArg(name)
-    {
-        name = name.toLowerCase();
-        return args[name];
-    }
+import "/tv/js/tvutil.qjs"
 
     var listOnly = 0;
     if (getArg("ListOnly"))
@@ -35,8 +29,8 @@ import "/tv/js/constants.js"
         sortOrder = getArg("SortAsc");
 
     var startIndex = 0;
-    if (getArg("Start"))
-        startIndex = Number(getArg("Start"));
+    if (getIntegerArg("Start"))
+        startIndex = getIntegerArg("Start");
 
     var dvr = new Dvr();
 
@@ -56,7 +50,7 @@ import "/tv/js/constants.js"
     var recordingList = dvr.GetRecordedList( sortDescending, startIndex, PAGEINTERVAL, displayGroup, recGroup, "" );
 
     var nextStartIndex = (startIndex + PAGEINTERVAL);
-    if (nextStartIndex > recordingList.TotalAvailable)
+    if (nextStartIndex >= recordingList.TotalAvailable)
         nextStartIndex = 0;
 
     var programs = recordingList.Programs;
@@ -69,6 +63,7 @@ import "/tv/js/constants.js"
 <meta charset="UTF-8">
 <title><%=qsTr("Recordings")%></title>
 <link rel="stylesheet" type="text/css" href="/css/site.css">
+<link rel="stylesheet" type="text/css" href="/tv/css/icons.css">
 <link rel="stylesheet" type="text/css" href="/tv/css/recordings.css">
 <link rel="stylesheet" type="text/css" href="/tv/css/common.css">
 <link rel="stylesheet" type="text/css" href="/tv/css/category_colors.css">
@@ -87,24 +82,37 @@ import "/tv/js/constants.js"
      side (harder to maintain/template) or keeping in together inline with the
      other related html, with as little non-html markup as possible -->
 <div id="optMenu" class="contextMenu" style="display:none;">
-    <div class="button normalMenu" onClick="deleteRecording(chanID, startTime, false, false)">
+    <div class="button normalMenu" onClick="deleteRecording(gChanID, gStartTime, false, false)">
         <%=qsTr("Delete")%>
     </div>
-    <div class="button normalMenu" onClick="deleteRecording(chanID, startTime, true, false)">
+    <div class="button normalMenu" onClick="deleteRecording(gChanID, gStartTime, true, false)">
         <%=qsTr("Delete and Re-Record")%>
     </div>
-    <div class="button deletedMenu" onClick="unDeleteRecording(chanID, startTime)">
+    <div class="button deletedMenu" onClick="unDeleteRecording(gChanID, gStartTime)">
         <%=qsTr("Undelete")%>
     </div>
-    <div class="button deletedMenu" onClick="deleteRecording(chanID, startTime, false, true)">
+    <div class="button deletedMenu" onClick="deleteRecording(gChanID, gStartTime, false, true)">
         <%=qsTr("Delete Forever")%>
     </div>
-    <div class="button recordingMenu" onClick="stopRecording(chanID, startTime)">
+    <div class="button recordingMenu" onClick="stopRecording(gChanID, gStartTime)">
         <%=qsTr("Stop Recording")%>
     </div>
-    <div class="button normalMenu" onClick="loadScheduler(chanID, startTime)">
+    <div class="button normalMenu" onClick="loadScheduler(gChanID, gStartTime)">
         <%=qsTr("Edit recording rule")%>
     </div>
+    <div class="button playMenu" onClick="playInBrowser(gChanID, gStartTime)">
+        <%=qsTr("Play in Browser")%>
+    </div>
+<%
+    var myth = new Myth();
+    var frontendList = myth.GetFrontends(true).Frontends;
+    for (var nIdx = 0; nIdx < frontendList.length; nIdx++)
+    {
+%>
+    <div class="button playMenu" onClick="playOnFrontend(gChanID, gStartTime, '<%=frontendList[nIdx].IP%>')">
+        <%=qsTr("Play on Frontend")%> <%=frontendList[nIdx].Name%>
+    </div>
+<%  } %>
 </div>
 
 <!-- Popup Program Details Box -->
@@ -205,18 +213,21 @@ for (var progIdx = 0; progIdx < programs.length; progIdx++)
     // NOTE: DVR methods require recording start time, not scheduled start time
     var programIdentifier = channel.ChanId + "_" + program.Recording.StartTs.toISOString();
 
-    var statusStr = dvr.RecStatusToString(program.Recording.Status);
-    var statusClass = "program" + statusStr.replace(/ /g, '');
+    // RecStatusToClass() - /tv/js/tvutil.qjs
+    var statusClass = RecStatusToClass(program.Recording.Status);
 %>
     <div class="recordingRow" id="<%=programIdentifier%>_row">
         <div class="previewBox">
             <div class="previewImageBackground">
                 <img alt="Preview Image" height="67" class="previewImage" src="/Content/GetPreviewImage?ChanId=<%=program.Channel.ChanId%>&amp;StartTime=<%=program.Recording.StartTs.toISOString()%>&amp;height=67&amp;format=JPG" />
             </div>
-            <span class="watchRecordingLink"><%=qsTr("Watch")%></span>
+            <div class="watchButtons">
+                <div class="watchButton watchRecordingLink"><a onClick="showMenu(this, 'playMenu');" data-chanid="<%=program.Channel.ChanId%>" data-recstarttime="<%=program.Recording.StartTs.toISOString()%>"><%=qsTr("Watch")%></a></div>
+                <div class="watchButton playlistLink"><a onClick="showMenu(this, 'playlistMenu');" data-chanid="<%=program.Channel.ChanId%>" data-recstarttime="<%=program.Recording.StartTs.toISOString()%>">+</a></div>
+            </div>
         </div>
         <div class="programBox">
-            <div class="programInnerBox <%=statusClass%>" id="<%=programIdentifier%>" onMouseOver="startDetailTimer(this, 'recording');" onMouseOut="hideDetail(this);" onClick="showMenu(this, '<%=menu%>');">
+            <div class="programInnerBox <%=statusClass%>" id="<%=programIdentifier%>" data-chanid="<%=program.Channel.ChanId%>" data-recstarttime="<%=program.Recording.StartTs.toISOString()%>" data-starttime="<%=program.StartTime.toISOString()%>" onMouseOver="startDetailTimer(this, 'recording');" onMouseOut="hideDetail(this);" onClick="showMenu(this, '<%=menu%>');">
                 <div class="programHeader">
                     <span class="programTitle"><%=escapeHTML(program.Title)%> <% if (isValidObject(program.Airdate) && program.Airdate.getFullYear() && program.CatType == "movie") {%>(<%=program.Airdate.getFullYear()%>)<%}%></span>
                     <span class="programStartTime"><%=myth.GetFormatDate(program.StartTime)%>, <%=myth.GetFormatTime(program.StartTime)%></span>

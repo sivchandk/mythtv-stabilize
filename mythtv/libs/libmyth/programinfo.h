@@ -30,7 +30,7 @@
    mythtv/bindings/python/MythTV/static.py (version number)
    mythtv/bindings/python/MythTV/mythproto.py (layout)
 */
-#define NUMPROGRAMLINES 49
+#define NUMPROGRAMLINES 50
 
 class ProgramInfo;
 typedef AutoDeleteDeque<ProgramInfo*> ProgramList;
@@ -81,9 +81,12 @@ class MPUBLIC ProgramInfo
     /// Copy constructor
     ProgramInfo(const ProgramInfo &other);
     /// Constructs a ProgramInfo from data in 'recorded' table
+    ProgramInfo(uint recordedid);
+    /// Constructs a ProgramInfo from data in 'recorded' table
     ProgramInfo(uint chanid, const QDateTime &recstartts);
     /// Constructs a ProgramInfo from data in 'recorded' table
-    ProgramInfo(const QString &title,
+    ProgramInfo(uint recordedid,
+                const QString &title,
                 const QString &subtitle,
                 const QString &description,
                 uint season,
@@ -298,9 +301,11 @@ class MPUBLIC ProgramInfo
     virtual void SubstituteMatches(QString &str);
 
     // Used for scheduling recordings
-    bool IsSameProgram(const ProgramInfo &other) const;
-    bool IsSameTimeslot(const ProgramInfo &other) const;
-    bool IsSameProgramTimeslot(const ProgramInfo &other) const;//sched only
+    bool IsSameProgram(const ProgramInfo &other) const; // Exact same program
+    bool IsDuplicateProgram(const ProgramInfo &other) const; // Is this program considered a duplicate according to rule type and dup method (scheduler only)
+    bool IsSameProgramAndStartTime(const ProgramInfo &other) const; // Exact same program and same starttime, Any channel
+    bool IsSameTitleStartTimeAndChannel(const ProgramInfo &other) const; // Same title, starttime and channel
+    bool IsSameTitleTimeslotAndChannel(const ProgramInfo &other) const;//sched only - Same title, starttime, endtime and channel
     static bool UsingProgramIDAuthority(void)
     {
         return usingProgIDAuth;
@@ -311,6 +316,7 @@ class MPUBLIC ProgramInfo
     bool IsSameProgramWeakCheck(const ProgramInfo &other) const;
     bool IsSameRecording(const ProgramInfo &other) const
         { return chanid == other.chanid && recstartts == other.recstartts; }
+    bool IsSameChannel(const ProgramInfo &other) const;
 
     // Quick gets
     /// Creates a unique string that can be used to identify an
@@ -420,6 +426,7 @@ class MPUBLIC ProgramInfo
     uint    GetStars(uint range_max)      const
         { return (int)(stars * range_max + 0.5f); }
 
+    uint    GetRecordingID(void)              const { return recordedid; }
     RecStatusType GetRecordingStatus(void)    const
         { return (RecStatusType)recstatus; }
     RecStatusType GetOldRecordingStatus(void) const
@@ -527,6 +534,7 @@ class MPUBLIC ProgramInfo
         programflags &= ~FL_IGNOREBOOKMARK;
         programflags |= (ignore) ? FL_IGNOREBOOKMARK : 0;
     }
+    void SetRecordingID(uint _recordedid) { recordedid = _recordedid; }
     void SetRecordingStatus(RecStatusType status) { recstatus = status; }
     void SetRecordingRuleType(RecordingType type) { rectype   = type;   }
     void SetPositionMapDBReplacement(PMapDBReplacement *pmap)
@@ -742,6 +750,8 @@ class MPUBLIC ProgramInfo
     uint8_t dupin;
     uint8_t dupmethod;
 
+    uint    recordedid;
+
 // everything below this line is not serialized
     uint8_t availableStatus; // only used for playbackbox.cpp
   public:
@@ -763,12 +773,20 @@ class MPUBLIC ProgramInfo
     static bool usingProgIDAuth;
 };
 
-
 MPUBLIC bool LoadFromProgram(
     ProgramList        &destination,
     const QString      &sql,
     const MSqlBindings &bindings,
     const ProgramList  &schedList);
+
+MPUBLIC bool LoadFromProgram(
+    ProgramList        &destination,
+    const QString      &sql,
+    const MSqlBindings &bindings,
+    const ProgramList  &schedList,
+    const uint         &start,
+    const uint         &limit,
+    uint               &count);
 
 MPUBLIC ProgramInfo*  LoadProgramFromProgram(
         const uint chanid, const QDateTime &starttime);
@@ -794,6 +812,7 @@ bool LoadFromScheduler(
     int                 recordid = -1)
 {
     destination.clear();
+    QList<TYPE> tmpList;
     hasConflicts = false;
 
     QStringList slist = ProgramInfo::LoadFromScheduler(altTable, recordid);
@@ -803,18 +822,53 @@ bool LoadFromScheduler(
     hasConflicts = slist[0].toInt();
 
     QStringList::const_iterator sit = slist.begin()+2;
+    uint programCount = 0;
     while (sit != slist.end())
     {
         TYPE *p = new TYPE(sit, slist.end());
-        destination.push_back(p);
+
         if (!p->HasPathname() && !p->GetChanID())
         {
+            delete p;
             destination.clear();
             return false;
         }
+
+        tmpList.push_back(*p);
+        programCount++;
+
+        if (recordid > 0 && p->GetRecordingRuleID() != static_cast<uint>(recordid))
+        {
+            delete p;
+            continue;
+        }
+
+        destination.push_back(p);
     }
 
-    if (destination.size() != slist[1].toUInt())
+    typename AutoDeleteDeque<TYPE*>::const_iterator dit = destination.begin();
+    for (; dit != destination.end(); ++dit)
+    {
+        typename QList<TYPE>::const_iterator it = tmpList.begin();
+        for (; it != tmpList.end(); ++it)
+        {
+            const ProgramInfo &other = *it;
+            if (!(*dit)->IsSameProgramAndStartTime(other))
+                continue;
+
+            if ((*dit)->GetChannelSchedulingID() != other.GetChannelSchedulingID())
+            {
+                if (other.GetRecordingStatus() == rsWillRecord)
+                    (*dit)->SetRecordingStatus(rsOtherShowing);
+                else if (other.GetRecordingStatus() == rsRecording)
+                    (*dit)->SetRecordingStatus(rsOtherRecording);
+                else if (other.GetRecordingStatus() == rsTuning)
+                    (*dit)->SetRecordingStatus(rsOtherTuning);
+            }
+        }
+    }
+
+    if (programCount != slist[1].toUInt())
     {
         destination.clear();
         return false;

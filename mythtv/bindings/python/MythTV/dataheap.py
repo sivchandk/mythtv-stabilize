@@ -553,7 +553,7 @@ class RecordedProgram( CMPRecord, DBDataWrite ):
                  'programid':'', 'manualid':0,           'generic':0,
                  'first':0,      'listingsource':0,      'last':0,
                  'audioprop':u'','videoprop':u'',        
-                 'subtitletypes':u''}
+                 'subtitletypes':u'', 'inputname':u''}
 
     def __str__(self):
         if self._wheredat is None:
@@ -888,6 +888,7 @@ class Video( CMPVideo, VideoSchema, DBDataWrite ):
         self.cast.commit()
         self.genre.commit()
         self.country.commit()
+        self.markup.commit()
 
     def __repr__(self):
         if self._wheredat is None:

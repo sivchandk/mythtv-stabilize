@@ -29,6 +29,7 @@
 #include <QScriptEngine>
 
 #include "services/mythServices.h"
+#include <datacontracts/frontend.h>
 
 class Myth : public MythServices
 {
@@ -61,6 +62,8 @@ class Myth : public MythServices
 
         QString             GetFormatDate       ( const QDateTime Date,
                                                   bool            ShortDate );
+        QString             GetFormatDateTime   ( const QDateTime DateTime,
+                                                  bool            ShortDate );
         QString             GetFormatTime       ( const QDateTime Time );
         QDateTime           ParseISODateString  ( const QString   &DateTime );
 
@@ -77,6 +80,9 @@ class Myth : public MythServices
                                                   const QString   &Level,
                                                   const QString   &MsgContains
                                                 );
+
+
+        DTC::FrontendList*  GetFrontends        ( bool OnLine );
 
         DTC::SettingList*   GetSetting          ( const QString   &HostName,
                                                   const QString   &Key,
@@ -198,6 +204,12 @@ class ScriptableMyth : public QObject
             return m_obj.GetFormatDate( Date, ShortDate );
         }
 
+        QString   GetFormatDateTime( const QDateTime DateTime,
+                                     bool            ShortDate = false )
+        {
+            return m_obj.GetFormatDateTime( DateTime, ShortDate );
+        }
+
         QString   GetFormatTime( const QDateTime Time )
         {
             return m_obj.GetFormatTime( Time );
@@ -224,6 +236,11 @@ class ScriptableMyth : public QObject
             return m_obj.GetLogs( HostName, Application, PID, TID, Thread,
                                   Filename, Line, Function, FromTime, ToTime,
                                   Level, MsgContains );
+        }
+
+        QObject* GetFrontends( bool OnLine )
+        {
+            return m_obj.GetFrontends( OnLine );
         }
 
         QObject* GetSetting ( const QString   &HostName,
@@ -292,6 +309,8 @@ class ScriptableMyth : public QObject
         {
             return m_obj.ProfileText();
         }
+
+
 };
 
 

@@ -25,7 +25,6 @@ contains(INCLUDEPATH, /usr/local/include) {
 DEPENDPATH  += .
 DEPENDPATH  += ../libmyth ../libmyth/audio
 DEPENDPATH  += ../libmythbase
-DEPENDPATH  += ../libmythdvdnav/
 DEPENDPATH  += ./mpeg ./channelscan ./visualisations
 DEPENDPATH  += ./recorders
 DEPENDPATH  += ./recorders/dvbdev
@@ -51,7 +50,6 @@ INCLUDEPATH += $$POSTINC
 
 !win32-msvc* {
     QMAKE_CXXFLAGS += $${FREETYPE_CFLAGS}
-    QMAKE_LFLAGS_SHLIB += $${FREETYPE_LIBS}
 }
 
 macx {
@@ -108,7 +106,7 @@ QMAKE_CLEAN += $(TARGET) $(TARGETA) $(TARGETD) $(TARGET0) $(TARGET1) $(TARGET2)
 
 # Headers needed by frontend & backend
 HEADERS += filter.h                 format.h
-HEADERS += frame.h
+HEADERS += mythframe.h
 
 # LZO used by NuppelDecoder & NuppelVideoRecorder
 HEADERS += lzoconf.h
@@ -144,6 +142,7 @@ HEADERS += avfringbuffer.h
 HEADERS += ringbuffer.h             fileringbuffer.h
 HEADERS += streamingringbuffer.h    metadataimagehelper.h
 HEADERS += icringbuffer.h
+HEADERS += mythavutil.h
 
 SOURCES += recordinginfo.cpp
 SOURCES += dbcheck.cpp
@@ -250,16 +249,17 @@ SOURCES += srtwriter.cpp
 
 inc.path = $${PREFIX}/include/mythtv/
 inc.files  = playgroup.h
-inc.files += mythtvexp.h            metadataimagehelper.h
+inc.files += mythtvexp.h            metadataimagehelper.h mythavutil.h
 
 INSTALLS += inc
 
 #DVD stuff
-DEPENDPATH  += ../libmythdvdnav/
-DEPENDPATH  += ../libmythdvdnav/dvdread # for dvd_reader.h & dvd_input.h
-INCLUDEPATH += ../libmythdvdnav
+DEPENDPATH  += ../../external/libmythdvdnav/
+DEPENDPATH  += ../../external/libmythdvdnav/dvdread # for dvd_reader.h & dvd_input.h
+INCLUDEPATH += ../../external/libmythdvdnav/dvdnav
+INCLUDEPATH += ../../external/libmythdvdnav/dvdread
 
-!win32-msvc*:POST_TARGETDEPS += ../libmythdvdnav/libmythdvdnav-$${MYTH_LIB_EXT}
+!win32-msvc*:POST_TARGETDEPS += ../../external/libmythdvdnav/libmythdvdnav-$${MYTH_LIB_EXT}
 
 HEADERS += DVD/dvdringbuffer.h
 SOURCES += DVD/dvdringbuffer.cpp
@@ -269,7 +269,7 @@ using_frontend {
     HEADERS += DVD/avformatdecoderdvd.h
     SOURCES += DVD/avformatdecoderdvd.cpp
 }
-LIBS += -L../libmythdvdnav
+LIBS += -L../../external/libmythdvdnav
 LIBS += -lmythdvdnav-$$LIBVERSION
 
 #Bluray stuff
@@ -654,6 +654,7 @@ using_backend {
     HEADERS += recorders/rtp/rtppacketbuffer.h
     HEADERS += recorders/rtp/rtpdatapacket.h
     HEADERS += recorders/rtp/rtpfecpacket.h
+    HEADERS += recorders/rtp/rtcpdatapacket.h
 
     SOURCES += recorders/cetonrtsp.cpp
     SOURCES += recorders/iptvchannel.cpp
@@ -734,6 +735,16 @@ using_backend {
     using_hdpvr:HEADERS *= recorders/mpegrecorder.h
     using_hdpvr:SOURCES *= recorders/mpegrecorder.cpp
     using_hdpvr:DEFINES += USING_HDPVR
+
+    # External recorder
+    HEADERS += recorders/ExternalChannel.h
+    SOURCES += recorders/ExternalChannel.cpp
+    HEADERS += recorders/ExternalRecorder.h
+    SOURCES += recorders/ExternalRecorder.cpp
+    HEADERS += recorders/ExternalStreamHandler.h
+    SOURCES += recorders/ExternalStreamHandler.cpp
+    HEADERS += recorders/ExternalSignalMonitor.h
+    SOURCES += recorders/ExternalSignalMonitor.cpp
 
     # Support for Linux DVB drivers
     using_dvb {

@@ -84,6 +84,7 @@ TVRec::TVRec(int capturecardnum)
        // Various components TVRec coordinates
     : recorder(NULL), channel(NULL), signalMonitor(NULL),
       scanner(NULL),
+      signalMonitorCheckCnt(0),
       // Various threads
       eventThread(new MThread("TVRecEvent", this)),
       recorderThread(NULL),
@@ -398,14 +399,14 @@ void TVRec::CancelNextRecording(bool cancel)
         QString("CancelNextRecording(%1) -- end").arg(cancel));
 }
 
-/** \fn TVRec::StartRecording(const ProgramInfo*)
+/** \fn TVRec::StartRecording(ProgramInfo*)
  *  \brief Tells TVRec to Start recording the program "rcinfo"
  *         as soon as possible.
  *
- *  \sa EncoderLink::StartRecording(const ProgramInfo*)
+ *  \sa EncoderLink::StartRecording(ProgramInfo*)
  *      RecordPending(const ProgramInfo*, int, bool), StopRecording()
  */
-RecStatusType TVRec::StartRecording(const ProgramInfo *pginfo)
+RecStatusType TVRec::StartRecording(ProgramInfo *pginfo)
 {
     RecordingInfo ri(*pginfo);
     ri.SetDesiredStartTime(ri.GetRecordingStartTime());
@@ -485,14 +486,14 @@ RecStatusType TVRec::StartRecording(const ProgramInfo *pginfo)
             "Checking input group recorders - begin");
         vector<uint> &cardids = pendinfo.possibleConflicts;
 
-        uint mplexid = 0, sourceid = 0;
+        uint mplexid = 0, chanid = 0, sourceid = 0;
         vector<uint> cardids2;
         vector<TVState> states;
 
         // Stop remote recordings if needed
         for (uint i = 0; i < cardids.size(); i++)
         {
-            TunedInputInfo busy_input;
+            InputInfo busy_input;
             bool is_busy = RemoteIsBusy(cardids[i], busy_input);
 
             // if the other recorder is busy, but the input is
@@ -507,12 +508,15 @@ RecStatusType TVRec::StartRecording(const ProgramInfo *pginfo)
             if (is_busy && !sourceid)
             {
                 mplexid  = pendinfo.info->QueryMplexID();
+                chanid   = pendinfo.info->GetChanID();
                 sourceid = pendinfo.info->GetSourceID();
             }
 
             if (is_busy &&
                 ((sourceid != busy_input.sourceid) ||
-                 (mplexid  != busy_input.mplexid)))
+                 (mplexid  != busy_input.mplexid) ||
+                 ((mplexid == 0 || mplexid == 32767) &&
+                  chanid != busy_input.chanid)))
             {
                 states.push_back((TVState) RemoteGetState(cardids[i]));
                 cardids2.push_back(cardids[i]);
@@ -600,6 +604,8 @@ RecStatusType TVRec::StartRecording(const ProgramInfo *pginfo)
         curRecording = new RecordingInfo(*rcinfo);
         curRecording->MarkAsInUse(true, kRecorderInUseID);
         StartedRecording(curRecording);
+        pginfo->SetRecordingID(curRecording->GetRecordingID());
+        pginfo->SetRecordingStartTime(curRecording->GetRecordingStartTime());
 
         // Make sure scheduler is allowed to end this recording
         ClearFlags(kFlagCancelNextRecording);
@@ -694,7 +700,7 @@ void TVRec::SetRecordingStatus(
         pendingRecLock.unlock();
     }
 
-    LOG(VB_RECORD, LOG_DEBUG, LOC +
+    LOG(VB_RECORD, LOG_INFO, LOC +
         QString("SetRecordingStatus(%1->%2) on line %3")
         .arg(toString(old_status, kSingleRecord))
         .arg(toString(new_status, kSingleRecord))
@@ -802,7 +808,7 @@ void TVRec::StartedRecording(RecordingInfo *curRec)
     if (curRec->IsCommercialFree())
         curRec->SaveCommFlagged(COMM_FLAG_COMMFREE);
 
-    AutoRunInitType t = (curRec->QueryRecordingGroup() == "LiveTV") ?
+    AutoRunInitType t = (curRec->GetRecordingGroup() == "LiveTV") ?
         kAutoRunNone : kAutoRunProfile;
     InitAutoRunJobs(curRec, t, NULL, __LINE__);
 
@@ -2427,9 +2433,9 @@ bool TVRec::IsReallyRecording(void)
  *         the next time_buffer seconds.
  *  \sa EncoderLink::IsBusy(TunedInputInfo*, int time_buffer)
  */
-bool TVRec::IsBusy(TunedInputInfo *busy_input, int time_buffer) const
+bool TVRec::IsBusy(InputInfo *busy_input, int time_buffer) const
 {
-    TunedInputInfo dummy;
+    InputInfo dummy;
     if (!busy_input)
         busy_input = &dummy;
 
@@ -2616,7 +2622,7 @@ void TVRec::SpawnLiveTV(LiveTVChain *newchain, bool pip, QString startchan)
 
     QString hostprefix = gCoreContext->GenMythURL(
                     gCoreContext->GetBackendServerIP(),
-                    gCoreContext->GetSetting("BackendServerPort").toInt());
+                    gCoreContext->GetBackendServerPort());
 
     tvchain->SetHostPrefix(hostprefix);
     tvchain->SetCardType(genOpt.cardtype);
@@ -3518,7 +3524,7 @@ void TVRec::HandleTuning(void)
         request.input   = input;
 
         if (TuningOnSameMultiplex(request))
-            LOG(VB_PLAYBACK, LOG_INFO, LOC + "On same multiplex");
+            LOG(VB_CHANNEL, LOG_INFO, LOC + "On same multiplex");
 
         TuningShutdowns(request);
 
@@ -3743,6 +3749,8 @@ void TVRec::TuningFrequency(const TuningRequest &request)
         }
         else if (request.progNum >= 0)
         {
+            channel->SetChannelByString(request.channel);
+
             if (mpeg)
                 mpeg->SetDesiredProgram(request.progNum);
         }
@@ -3870,7 +3878,10 @@ void TVRec::TuningFrequency(const TuningRequest &request)
             {
                 SetFlags(kFlagWaitingForSignal);
                 if (curRecording)
-                    signalMonitorDeadline = curRecording->GetScheduledEndTime();
+                {
+                    signalMonitorDeadline =
+                        curRecording->GetRecordingEndTime();
+                }
                 else
                 {
                     QDateTime expire = MythDate::current();
@@ -4505,7 +4516,7 @@ bool TVRec::GetProgramRingBufferForLiveTV(RecordingInfo **pginfo,
     }
 
     if (!pseudoLiveTVRecording)
-        prog->ApplyRecordRecGroupChange(RecordingInfo::kLiveTVRecGroup);
+        prog->SetRecordingGroup("LiveTV");
 
     StartedRecording(prog);
 

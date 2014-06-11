@@ -20,19 +20,21 @@ class GeneralSettings : public MythScreenType
     bool Create(void);
 
   private:
-    MythUITextEdit     *m_musicLocation;
     MythUITextEdit     *m_musicAudioDevice;
     MythUICheckBox     *m_musicDefaultUpmix;
     MythUITextEdit     *m_musicCDDevice;
     MythUITextEdit     *m_nonID3FileNameFormat;
     MythUICheckBox     *m_ignoreID3Tags;
     MythUICheckBox     *m_allowTagWriting;
+    MythUIButton       *m_resetDBButton;
     MythUIButton       *m_saveButton;
     MythUIButton       *m_cancelButton;
 
   private slots:
     void slotSave(void);
 
+    void slotResetDB(void);
+    void slotDoResetDB(bool ok);
 };
 
 #endif // GENERALSETTINGS_H

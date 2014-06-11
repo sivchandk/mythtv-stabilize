@@ -35,6 +35,7 @@ using namespace std;
 
 // Mythmusic Headers
 #include "avfdecoder.h"
+#include "metaio.h"
 #include "metaioavfcomment.h"
 #include "metaioid3.h"
 #include "metaioflacvorbis.h"
@@ -188,7 +189,7 @@ avfDecoder::avfDecoder(const QString &file, DecoderFactory *d, AudioOutput *o) :
     setFilename(file);
 
     m_outputBuffer =
-        (uint8_t *)av_malloc(AVCODEC_MAX_AUDIO_FRAME_SIZE * sizeof(int32_t));
+        (uint8_t *)av_malloc(AudioOutput::MAX_SIZE_BUFFER);
 
     bool debug = VERBOSE_LEVEL_CHECK(VB_LIBAV, LOG_ANY);
     av_log_set_level((debug) ? AV_LOG_DEBUG : AV_LOG_ERROR);
@@ -551,9 +552,7 @@ bool avfDecoderFactory::supports(const QString &source) const
 
 const QString &avfDecoderFactory::extension() const
 {
-    static QString ext(".mp3|.mp2|.ogg|.oga|.flac|.wma|.wav|.ac3|.oma|.omg|"
-                       ".atp|.ra|.dts|.aac|.m4a|.aa3|.tta|.mka|.aiff|.swa|.wv");
-    return ext;
+    return MetaIO::ValidFileExtensions;
 }
 
 const QString &avfDecoderFactory::description() const
