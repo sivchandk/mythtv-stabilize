@@ -1,4 +1,4 @@
-mythtv (0.27-20140613-9a8a123) UNRELEASED; urgency=low
+mythtv (0.27-20140613-ec10b42) UNRELEASED; urgency=low
 
   * New checkout since last package origin/fixes/0.26 / b237aff
   * Upstream changes since last package 80fe2a9
@@ -378,8 +378,12 @@ mythtv (0.27-20140613-9a8a123) UNRELEASED; urgency=low
     read in a Transport Stream via a pipe from an external application.
     See http://www.mythtv.org/wiki/ExternalRecorder for documentation.
   * [5a46d43] Updated debian changelog
+  * Upstream changes since last package 9a8a123
+  * [ec10b42] Added mythfilerecorder binary to mythtv-backend package.
+    Changes to update-changelog.sh
+  * [b6e3430] Updated debian changelog after cli scanner fixes.
 
- -- Digital Nirvana <sysadmin@digital-nirvana.com>  Fri, 13 Jun 2014 15:22:06 +0000
+ -- Digital Nirvana <sysadmin@digital-nirvana.com>  Fri, 13 Jun 2014 16:16:53 +0000
 
 mythtv (0.27-20131029-80fe2a9) UNRELEASED; urgency=low
 
