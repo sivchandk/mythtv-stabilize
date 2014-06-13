@@ -39,7 +39,7 @@ GIT_LAST_BRANCH=$(git branch -r --contains ${GIT_LAST_HASH} | sed -e "s/^[ \t]*/
 
 if [ ${GIT_CURRENT_HASH} != ${GIT_LAST_HASH} ]
 then
-	if [ $(git branch -r --contains ${GIT_CURRENT_HASH}) == ${GIT_LAST_BRANCH} ] 
+	if [ $(git branch -r --contains ${GIT_CURRENT_HASH} | sed -e "s/^[ \t]*//" | sed -e "s/[ \t]*$//") == ${GIT_LAST_BRANCH} ] 
 	then
 		dch -v "${GIT_BRANCH}-${TODAY}-${GIT_CURRENT_HASH}" "Upstream changes since last package ${GIT_LAST_HASH}"
 		git log --pretty=tformat:"%h %s" $GIT_LAST_HASH...$GIT_CURRENT_HASH | sed 's,^,[,; s, ,] ,; s,Version,version,' > .gitout
