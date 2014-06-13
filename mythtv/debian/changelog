@@ -1,4 +1,4 @@
-mythtv (0.27-20140604-7cdec9a) UNRELEASED; urgency=low
+mythtv (0.27-20140613-9a8a123) UNRELEASED; urgency=low
 
   * New checkout since last package origin/fixes/0.26 / b237aff
   * Upstream changes since last package 80fe2a9
@@ -367,8 +367,19 @@ mythtv (0.27-20140604-7cdec9a) UNRELEASED; urgency=low
     from an IPTV source.
   * [b02b5b5] Updated changelog and few minor fixes to packaging
     scripts.
+  * Upstream changes since last package 7cdec9a
+  * [9a8a123] Channel scanning: unbreak the cli.  Teardown() frees and
+    NULLs sigmonScanner, so testing it to be non-zero is always going to
+    fail. Further, if sigmonScanner is invalid, then transports will be
+    empty, so that is all the test we need.
+  * [4dadb71] Allow user to force a specific HLS bitrate to record.
+    Right now there is no
+  * [38628e4] Add an "External" recorder to Myth.  This allows myth to
+    read in a Transport Stream via a pipe from an external application.
+    See http://www.mythtv.org/wiki/ExternalRecorder for documentation.
+  * [5a46d43] Updated debian changelog
 
- -- Digital Nirvana <sysadmin@digital-nirvana.com>  Wed, 04 Jun 2014 16:31:45 +0000
+ -- Digital Nirvana <sysadmin@digital-nirvana.com>  Fri, 13 Jun 2014 15:22:06 +0000
 
 mythtv (0.27-20131029-80fe2a9) UNRELEASED; urgency=low
 
