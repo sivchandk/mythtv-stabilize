@@ -275,6 +275,7 @@ MPEG2fixup::MPEG2fixup(const QString &inf, const QString &outf,
         filesize = finfo.size();
     }
     zigzag_init = false;
+    allaudio = false;
 }
 
 MPEG2fixup::~MPEG2fixup()
@@ -761,6 +762,24 @@ bool MPEG2fixup::InitAV(QString inputfile, const char *type, int64_t offset)
         return false;
     }
 
+    if (inputFC->iformat && !strcmp(inputFC->iformat->name, "mpegts") &&
+        gCoreContext->GetNumSetting("FFMPEGTS", false))
+    {
+        fmt = av_find_input_format("mpegts-ffmpeg");
+        if (fmt)
+        {
+            LOG(VB_PLAYBACK, LOG_INFO, "Using FFmpeg MPEG-TS demuxer (forced)");
+            avformat_close_input(&inputFC);
+            ret = avformat_open_input(&inputFC, ifname, fmt, NULL);
+            if (ret)
+            {
+                LOG(VB_GENERAL, LOG_ERR,
+                    QString("Couldn't open input file, error #%1").arg(ret));
+                return false;
+            }
+        }
+    }
+
     mkvfile = !strcmp(inputFC->iformat->name, "mkv") ? 1 : 0;
 
     if (offset)
@@ -791,7 +810,7 @@ bool MPEG2fixup::InitAV(QString inputfile, const char *type, int64_t offset)
                 break;
 
             case AVMEDIA_TYPE_AUDIO:
-                if (inputFC->streams[i]->codec->channels == 0)
+                if (!allaudio && inputFC->streams[i]->codec->channels == 0)
                 {
                     LOG(VB_GENERAL, LOG_ERR,
                         QString("Skipping invalid audio stream: %1").arg(i));
@@ -1368,7 +1387,15 @@ int MPEG2fixup::GetFrame(AVPacket *pkt)
                 break;
 
             case AVMEDIA_TYPE_AUDIO:
-                aFrame[pkt->stream_index]->append(tmpFrame);
+                if (aFrame.contains(pkt->stream_index))
+                {
+                    aFrame[pkt->stream_index]->append(tmpFrame);
+                }
+                else
+                {
+                    LOG(VB_GENERAL, LOG_DEBUG,
+                        QString("Invalid stream ID %1, ignoring").arg(pkt->stream_index));
+                }
                 av_free_packet(pkt);
                 return 0;
 

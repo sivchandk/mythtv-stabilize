@@ -33,6 +33,7 @@ using namespace std;
 #include "vbitext/cc.h"
 #include "vbitext/vbi.h"
 #include "mythavutil.h"
+#include "fourcc.h"
 
 #if HAVE_BIGENDIAN
 extern "C" {
@@ -3272,4 +3273,3 @@ void NuppelVideoRecorder::WriteText(unsigned char *buf, int len, int timecode,
 }
 
 /* vim: set expandtab tabstop=4 shiftwidth=4: */
-

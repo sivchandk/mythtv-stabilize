@@ -1796,8 +1796,17 @@ void MainServer::HandleAnnounce(QStringList &slist, QStringList commands,
             ft = new FileTransfer(filename, socket, usereadahead, timeout_ms);
         }
 
+        if (!ft->isOpen())
+        {
+            LOG(VB_GENERAL, LOG_ERR, LOC +
+                QString("Can't open %1").arg(filename));
+            errlist << "filetransfer_unable_to_open_file";
+            socket->WriteStringList(errlist);
+            socket->IncrRef(); // FileTransfer took ownership of the socket, take it back
+            ft->DecrRef();
+            return;
+        }
         ft->IncrRef();
-
         sockListLock.lockForWrite();
         controlSocketList.remove(socket);
         fileTransferList.push_back(ft);
@@ -1989,7 +1998,7 @@ void MainServer::HandleQueryRecordings(QString type, PlaybackSock *pbs)
                         gCoreContext->GetBackendServerPort(hostname);
                 p->SetPathname(gCoreContext->GenMythURL(backendIpMap[hostname],
                                                         backendPortMap[hostname],
-                                                        hostname));
+                                                        p->GetBasename()));
             }
         }
 
@@ -2595,7 +2604,8 @@ void MainServer::HandleStopRecording(QStringList &slist, PlaybackSock *pbs)
             {
                 ProgramInfo *pInfo = schedList[n];
                 if ((pInfo->GetRecordingStatus() == rsTuning ||
-                    pInfo->GetRecordingStatus() == rsRecording)
+                     pInfo->GetRecordingStatus() == rsFailing ||
+                     pInfo->GetRecordingStatus() == rsRecording)
                     && recinfo.IsSameProgram(*pInfo))
                     recinfo.SetChanID(pInfo->GetChanID());
             }

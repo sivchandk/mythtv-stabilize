@@ -511,7 +511,8 @@ QStringList Guide::GetCategoryList( ) //int nStartIndex, int nCount)
     QStringList catList;
     MSqlQuery query(MSqlQuery::InitCon());
 
-    query.prepare("SELECT DISTINCT category FROM program ORDER BY category");
+    query.prepare("SELECT DISTINCT category FROM program WHERE category != '' "
+                  "ORDER BY category");
 
     if (!query.exec())
         return catList;
@@ -534,6 +535,12 @@ QStringList Guide::GetStoredSearches( const QString& sType )
     MSqlQuery query(MSqlQuery::InitCon());
 
     RecSearchType iType = searchTypeFromString(sType);
+
+    if (iType == kNoSearch)
+    {
+        //throw( "Invalid Type" );
+        return keywordList;
+    }
 
     query.prepare("SELECT DISTINCT phrase FROM keyword "
                   "WHERE searchtype = :TYPE "

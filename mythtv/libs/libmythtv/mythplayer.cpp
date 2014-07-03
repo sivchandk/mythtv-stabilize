@@ -54,7 +54,6 @@ using namespace std;
 #include "NuppelVideoRecorder.h"
 #include "tv_play.h"
 #include "interactivetv.h"
-#include "myth_imgconvert.h"
 #include "mythsystemevent.h"
 #include "mythpainter.h"
 #include "mythimage.h"
@@ -64,6 +63,7 @@ using namespace std;
 #include "icringbuffer.h"
 #include "audiooutput.h"
 #include "cardutil.h"
+#include "mythavutil.h"
 
 extern "C" {
 #include "vbitext/vbi.h"
@@ -4373,6 +4373,7 @@ char *MythPlayer::GetScreenGrabAtFrame(uint64_t frameNum, bool absolute,
     VideoFrame    *frame     = NULL;
     AVPicture      orig;
     AVPicture      retbuf;
+    MythAVCopy     copyCtx;
     memset(&orig,   0, sizeof(AVPicture));
     memset(&retbuf, 0, sizeof(AVPicture));
 
@@ -4437,21 +4438,13 @@ char *MythPlayer::GetScreenGrabAtFrame(uint64_t frameNum, bool absolute,
         return NULL;
     }
 
-    avpicture_fill(&orig, data, PIX_FMT_YUV420P,
-                   video_dim.width(), video_dim.height());
-
+    AVPictureFill(&orig, frame);
     avpicture_deinterlace(&orig, &orig, PIX_FMT_YUV420P,
                           video_dim.width(), video_dim.height());
 
     bufflen = video_dim.width() * video_dim.height() * 4;
     outputbuf = new unsigned char[bufflen];
-
-    avpicture_fill(&retbuf, outputbuf, PIX_FMT_RGB32,
-                   video_dim.width(), video_dim.height());
-
-    myth_sws_img_convert(
-        &retbuf, PIX_FMT_RGB32, &orig, PIX_FMT_YUV420P,
-                video_dim.width(), video_dim.height());
+    copyCtx.Copy(&retbuf, frame, outputbuf, AV_PIX_FMT_RGB32);
 
     vw = video_disp_dim.width();
     vh = video_disp_dim.height();

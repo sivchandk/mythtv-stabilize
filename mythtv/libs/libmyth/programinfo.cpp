@@ -752,12 +752,7 @@ ProgramInfo::ProgramInfo(
             break;
         }
 
-        if (s.recstatus == rsWillRecord)
-            recstatus = rsOtherShowing;
-        else if (s.recstatus == rsRecording)
-            recstatus = rsOtherRecording;
-        else if (s.recstatus == rsTuning)
-            recstatus = rsOtherTuning;
+        recstatus = s.recstatus;
     }
 }
 
@@ -1821,7 +1816,7 @@ uint ProgramInfo::GetSecondsInRecording(void) const
 /// \brief Returns catType as a string
 QString ProgramInfo::GetCategoryTypeString(void) const
 {
-    return myth_category_type_to_string(catType); 
+    return myth_category_type_to_string(catType);
 }
 
 /// \brief Returns last frame in position map or 0
