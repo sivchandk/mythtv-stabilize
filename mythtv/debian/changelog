@@ -1,4 +1,4 @@
-mythtv (0.27-20140613-ec10b42) UNRELEASED; urgency=low
+mythtv (0.27-20140709-9f628ec) UNRELEASED; urgency=low
 
   * New checkout since last package origin/fixes/0.26 / b237aff
   * Upstream changes since last package 80fe2a9
@@ -382,8 +382,17 @@ mythtv (0.27-20140613-ec10b42) UNRELEASED; urgency=low
   * [ec10b42] Added mythfilerecorder binary to mythtv-backend package.
     Changes to update-changelog.sh
   * [b6e3430] Updated debian changelog after cli scanner fixes.
+  * Upstream changes since last package ec10b42
+  * [9f628ec] Make the naming of the 'raw' TS file(s) more predictable.
+    Make raw TS capture a noop under windows and mingw.
+  * [f3c2d85] Attempt to fix compilation of [b0aa4e50c] on non-linux
+    machines.
+  * [1c04d9d] Allow capture of the unprocessed (raw) MPTS from
+    appropriate input devices.
+  * [74b6c9c] Updated changelog after adding mythfilerecorder to mythtv-
+    backend
 
- -- Digital Nirvana <sysadmin@digital-nirvana.com>  Fri, 13 Jun 2014 16:16:53 +0000
+ -- Digital Nirvana <sysadmin@digital-nirvana.com>  Wed, 09 Jul 2014 08:18:20 +0000
 
 mythtv (0.27-20131029-80fe2a9) UNRELEASED; urgency=low
 
