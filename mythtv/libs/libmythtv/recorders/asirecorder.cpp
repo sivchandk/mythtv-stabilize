@@ -50,6 +50,7 @@ void ASIRecorder::SetOptionsFromProfile(RecordingProfile *profile,
     // we do not have a "recordingtype" in our profile.
     DTVRecorder::SetOption("videodevice", videodev);
     DTVRecorder::SetOption("tvformat", gCoreContext->GetSetting("TVFormat"));
+    DTVRecorder::SetIntOption(profile, "recordmpts");
 }
 
 void ASIRecorder::StartNewFile(void)
