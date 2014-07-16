@@ -1,4 +1,4 @@
-mythtv (0.27-20140709-9f628ec) UNRELEASED; urgency=low
+mythtv (0.27-20140716-6ff9fd1) UNRELEASED; urgency=low
 
   * New checkout since last package origin/fixes/0.26 / b237aff
   * Upstream changes since last package 80fe2a9
@@ -391,8 +391,11 @@ mythtv (0.27-20140709-9f628ec) UNRELEASED; urgency=low
     appropriate input devices.
   * [74b6c9c] Updated changelog after adding mythfilerecorder to mythtv-
     backend
+  * Upstream changes since last package 9f628ec
+  * [6ff9fd1] Fix MPTS recording from ASI
+  * [c4cece8] Updated debian/changelog
 
- -- Digital Nirvana <sysadmin@digital-nirvana.com>  Wed, 09 Jul 2014 08:18:20 +0000
+ -- Digital Nirvana <sysadmin@digital-nirvana.com>  Wed, 16 Jul 2014 07:52:45 +0000
 
 mythtv (0.27-20131029-80fe2a9) UNRELEASED; urgency=low
 
