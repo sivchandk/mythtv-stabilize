@@ -1,5 +1,6 @@
 mythtv (0.27-20140716-6ff9fd1) UNRELEASED; urgency=low
-
+  
+  * New checout after fixing RAW MPEG-TS recording of ASI
   * New checkout since last package origin/fixes/0.26 / b237aff
   * Upstream changes since last package 80fe2a9
   * [bea0129] Merge pull request #15 from MythTV/fixes/0.27
