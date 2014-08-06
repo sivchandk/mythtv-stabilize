@@ -858,6 +858,10 @@ bool LoadFromScheduler(
 
             if ((*dit)->GetChannelSchedulingID() != other.GetChannelSchedulingID())
             {
+                if (other.GetRecordingStatus() == rsWillRecord ||
+                    other.GetRecordingStatus() == rsRecording ||
+                    other.GetRecordingStatus() == rsTuning ||
+                    other.GetRecordingStatus() == rsFailing)
                 (*dit)->SetRecordingStatus(other.GetRecordingStatus());
             }
         }
@@ -883,7 +887,7 @@ bool LoadFromScheduler(AutoDeleteDeque<T> &destination)
 // could be factored out
 MPUBLIC bool GetNextRecordingList(QDateTime &nextRecordingStart,
                                   bool *hasConflicts = NULL,
-                                  vector<ProgramInfo> *list = NULL);
+                                  std::vector<ProgramInfo> *list = NULL);
 
 class QMutex;
 class MPUBLIC PMapDBReplacement

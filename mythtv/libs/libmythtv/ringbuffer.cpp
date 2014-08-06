@@ -324,6 +324,12 @@ void RingBuffer::UpdateRawBitrate(uint raw_bitrate)
             QString("Bitrate too low - setting to 64Kb"));
         raw_bitrate = 64;
     }
+    else if (raw_bitrate > 100000)
+    {
+        LOG(VB_FILE, LOG_INFO, LOC +
+            QString("Bitrate too high - setting to 100Mb"));
+        raw_bitrate = 100000;
+    }
 
     rwlock.lockForWrite();
     rawbitrate = raw_bitrate;
@@ -356,6 +362,12 @@ void RingBuffer::SetBufferSizeFactors(bool estbitrate, bool matroska)
     fileismatroska = matroska;
     rwlock.unlock();
     CreateReadAheadBuffer();
+}
+
+bool RingBuffer::IsReadyToRead() const
+{
+    QReadLocker lock(&rwlock);
+    return readsallowed;
 }
 
 /** \fn RingBuffer::CalcReadAheadThresh(void)
@@ -419,6 +431,7 @@ void RingBuffer::CalcReadAheadThresh(void)
         }
         low_buffers = false;
         fill_min = ((fill_min / CHUNK) + 1) * CHUNK;
+        fill_min = min((uint)fill_min, bufferSize / 2);
     }
     else
     {
@@ -452,6 +465,8 @@ bool RingBuffer::IsNearEnd(double fps, uint vvf) const
     // telecom kilobytes (i.e. 1000 per k not 1024)
     uint   tmp = (uint) max(abs(rawbitrate * playspeed), 0.5f * rawbitrate);
     uint   kbits_per_sec = min(rawbitrate * 3, tmp);
+    if (kbits_per_sec == 0)
+        return false;
 
     double readahead_time   = sz / (kbits_per_sec * (1000.0/8.0));
 
@@ -543,6 +558,8 @@ long long RingBuffer::Seek(long long pos, int whence, bool has_lock)
     {
         ret = SeekInternal(pos, whence);
     }
+
+    generalWait.wakeAll();
 
     if (!has_lock)
     {
@@ -953,7 +970,7 @@ void RingBuffer::run(void)
 
         // These are conditions where we want to sleep to allow
         // other threads to do stuff.
-        if (setswitchtonext || (ateof && readsallowed))
+        if (setswitchtonext || (ateof && readsdesired))
         {
             ignore_for_read_timing = true;
             generalWait.wait(&rwlock, 1000);
@@ -1262,7 +1279,7 @@ bool RingBuffer::WaitForReadsAllowed(void)
            !request_pause && !commserror && readaheadrunning)
     {
         generalWait.wait(&rwlock, clamp(timeout_ms - t.elapsed(), 10, 100));
-        if (!readsallowed && t.elapsed() > 1000 && (count % 10) == 0)
+        if (!check && t.elapsed() > 1000 && (count % 10) == 0)
         {
             LOG(VB_GENERAL, LOG_WARNING, LOC +
                 "Taking too long to be allowed to read..");
@@ -1498,6 +1515,7 @@ int RingBuffer::ReadPriv(void *buf, int count, bool peek)
         rwlock.lockForWrite();
         ateof = true;
         wanttoread = 0;
+        generalWait.wakeAll();
         rwlock.unlock();
         return count;
     }

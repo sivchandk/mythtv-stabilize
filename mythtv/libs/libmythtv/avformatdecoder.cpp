@@ -10,6 +10,7 @@
 using namespace std;
 
 #include <QTextCodec>
+#include <QFileInfo>
 
 // MythTV headers
 #include "mythtvexp.h"
@@ -667,6 +668,7 @@ bool AvFormatDecoder::DoFastForward(long long desiredFrame, bool discardFrames)
     {
         SeekReset(framesPlayed, seekDelta, false, true);
         m_parent->SetFramesPlayed(framesPlayed + 1);
+        getrawframes = oldrawstate;
         return true;
     }
 
@@ -687,6 +689,7 @@ bool AvFormatDecoder::DoFastForward(long long desiredFrame, bool discardFrames)
     {
         LOG(VB_GENERAL, LOG_ERR, LOC +
             QString("av_seek_frame(ic, -1, %1, 0) -- error").arg(ts));
+        getrawframes = oldrawstate;
         return false;
     }
 
@@ -831,13 +834,45 @@ void AvFormatDecoder::SeekReset(long long newKey, uint skipFrames,
     }
 
     // Skip all the desired number of skipFrames
-    for (;skipFrames > 0 && !ateof; skipFrames--)
+
+    // Some seeks can be very slow.  The most common example comes
+    // from HD-PVR recordings, where keyframes are 128 frames apart
+    // and decoding (even hardware decoding) may not be much faster
+    // than realtime, causing some exact seeks to take 2-4 seconds.
+    // If exact seeking is not required, we take some shortcuts.
+    // First, we impose an absolute maximum time we are willing to
+    // spend (maxSeekTimeMs) on the forward frame-by-frame skip.
+    // After that much time has elapsed, we give up and stop the
+    // frame-by-frame seeking.  Second, after skipping a few frames,
+    // we predict whether the situation is hopeless, i.e. the total
+    // skipping would take longer than giveUpPredictionMs, and if so,
+    // stop skipping right away.
+    bool exactSeeks = !GetSeekSnap();
+    const int maxSeekTimeMs = 200;
+    int profileFrames = 0;
+    MythTimer begin(MythTimer::kStartRunning);
+    for (; (skipFrames > 0 && !ateof &&
+            (exactSeeks || begin.elapsed() < maxSeekTimeMs));
+         --skipFrames, ++profileFrames)
     {
         GetFrame(kDecodeVideo);
         if (decoded_video_frame)
         {
             m_parent->DiscardVideoFrame(decoded_video_frame);
             decoded_video_frame = NULL;
+        }
+        if (!exactSeeks && profileFrames >= 5 && profileFrames < 10)
+        {
+            const int giveUpPredictionMs = 400;
+            int remainingTimeMs =
+                skipFrames * (float)begin.elapsed() / profileFrames;
+            if (remainingTimeMs > giveUpPredictionMs)
+            {
+              LOG(VB_PLAYBACK, LOG_DEBUG,
+                  QString("Frame-by-frame seeking would take "
+                          "%1 ms to finish, skipping.").arg(remainingTimeMs));
+              break;
+            }
         }
     }
 
@@ -1198,6 +1233,17 @@ int AvFormatDecoder::OpenFile(RingBuffer *rbuffer, bool novideo,
         // generate timings based on the video stream to avoid bogus ffmpeg
         // values for duration and bitrate
         av_update_stream_timings_video(ic);
+    }
+
+    // FLAC, MP3 or M4A file may contains an artwork image, a single frame MJPEG,
+    // we need to ignore it as we don't handle single frames or images in place of video
+    // TODO: display single frame
+    QString extension = QFileInfo(fnames).suffix();
+    if (!strcmp(fmt->name, "mp3") || !strcmp(fmt->name, "flac") ||
+        !strcmp(fmt->name, "ogg") ||
+        !extension.compare("m4a", Qt::CaseInsensitive))
+    {
+        novideo = true;
     }
 
     // Scan for the initial A/V streams
@@ -3372,6 +3418,8 @@ int AvFormatDecoder::H264PreProcessPkt(AVStream *stream, AVPacket *pkt)
                     (enc->codec) && (enc->thread_count>1))
                 {
                     QMutexLocker locker(avcodeclock);
+                    // flush all buffers
+                    avcodec_flush_buffers(enc);
                     const AVCodec *codec = enc->codec;
                     avcodec_close(enc);
                     int open_val = avcodec_open2(enc, codec, NULL);
@@ -4789,9 +4837,9 @@ bool AvFormatDecoder::GetFrame(DecodeType decodetype)
                 // NB but allow for data only (MHEG) streams
                 allowedquit = true;
             }
-            else if (lowbuffers && ((decodetype & kDecodeAV) == kDecodeAV) &&
+            else if ((decodetype & kDecodeAV) == kDecodeAV &&
                      (storedPackets.count() < max_video_queue_size) &&
-                     (lastapts < lastvpts + 100) &&
+                     lastapts < (lowbuffers ? lastvpts + 100 : lastvpts) &&
                      !ringBuffer->IsInStillFrame())
             {
                 storevideoframes = true;

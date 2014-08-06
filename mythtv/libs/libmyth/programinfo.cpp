@@ -1,16 +1,16 @@
 // -*- Mode: c++ -*-
 
 // POSIX headers
-#include <sys/types.h>
-#include <unistd.h>
-
-// C headers
-#include <cstdlib>
+// FIXME What are these used for?
+// #include <sys/types.h>
+// #include <unistd.h>
 
 // C++ headers
-#include <iostream>
 #include <algorithm>
-using namespace std;
+using std::max;
+using std::min;
+#include <deque>
+using std::deque;
 
 // Qt headers
 #include <QRegExp>
@@ -283,6 +283,8 @@ ProgramInfo::ProgramInfo(const ProgramInfo &other) :
  */
 ProgramInfo::ProgramInfo(uint _recordedid)
 {
+    clear();
+
     MSqlQuery query(MSqlQuery::InitCon());
     query.prepare(
         "SELECT chanid, starttime "
@@ -309,9 +311,10 @@ ProgramInfo::ProgramInfo(uint _recordedid)
  *  \brief Constructs a ProgramInfo from data in 'recorded' table
  */
 ProgramInfo::ProgramInfo(uint _chanid, const QDateTime &_recstartts) :
-    chanid(0),
     positionMapDBReplacement(NULL)
 {
+    clear();
+
     LoadProgramFromRecorded(_chanid, _recstartts);
 }
 
@@ -744,14 +747,13 @@ ProgramInfo::ProgramInfo(
         if (IsSameChannel(s))
         {
             recstatus   = s.recstatus;
-            // We can stop looking at the scheduler list
-            // Aside from being more efficient, this avoids us accidentally
-            // overwriting values in the case where we have an override
-            // or channel specific rule for the same showing on a
-            // different channel
             break;
         }
 
+        if (s.recstatus == rsWillRecord ||
+            s.recstatus == rsRecording ||
+            s.recstatus == rsTuning ||
+            s.recstatus == rsFailing)
         recstatus = s.recstatus;
     }
 }
@@ -869,12 +871,11 @@ ProgramInfo::ProgramInfo(
  *  \brief Constructs a ProgramInfo for a pathname.
  */
 ProgramInfo::ProgramInfo(const QString &_pathname) :
-    chanid(0),
     positionMapDBReplacement(NULL)
 {
+    clear();
     if (_pathname.isEmpty())
     {
-        clear();
         return;
     }
 

@@ -14,22 +14,25 @@
 
 #include <tvremoteutil.h>
 
-#define UPDATE_STATUS_INTERVAL   30000
+#define UPDATE_INTERVAL   15000
 
 IdleScreen::IdleScreen(MythScreenStack *parent)
               :MythScreenType(parent, "standbymode"),
-              m_updateStatusTimer(new QTimer(this)), m_statusState(NULL),
-              m_scheduledText(NULL), m_warningText(NULL),
-              m_secondsToShutdown(0), m_backendRecording(false),
-              m_pendingSchedUpdate(false), m_hasConflicts(false)
-
+              m_updateScreenTimer(new QTimer(this)), m_statusState(NULL),
+              m_currentRecordings(NULL),
+              m_nextRecordings(NULL),
+              m_conflictingRecordings(NULL),
+              m_conflictWarning(NULL),
+              m_secondsToShutdown(-1),
+              m_pendingSchedUpdate(false),
+              m_hasConflicts(false)
 {
     gCoreContext->addListener(this);
     GetMythMainWindow()->EnterStandby();
 
-    connect(m_updateStatusTimer, SIGNAL(timeout()),
-            this, SLOT(UpdateStatus()));
-    m_updateStatusTimer->start(UPDATE_STATUS_INTERVAL);
+    connect(m_updateScreenTimer, SIGNAL(timeout()),
+            this, SLOT(UpdateScreen()));
+    m_updateScreenTimer->start(UPDATE_INTERVAL);
 }
 
 IdleScreen::~IdleScreen()
@@ -37,8 +40,8 @@ IdleScreen::~IdleScreen()
     GetMythMainWindow()->ExitStandby();
     gCoreContext->removeListener(this);
 
-    if (m_updateStatusTimer)
-        m_updateStatusTimer->disconnect();
+    if (m_updateScreenTimer)
+        m_updateScreenTimer->disconnect();
 }
 
 bool IdleScreen::Create(void)
@@ -54,18 +57,17 @@ bool IdleScreen::Create(void)
     bool err = false;
     UIUtilE::Assign(this, m_statusState, "backendstatus", &err);
 
-    /* nextrecording and conflicts are optional */
-    UIUtilW::Assign(this, m_scheduledText, "nextrecording");
-    UIUtilW::Assign(this, m_warningText, "conflicts");
+    /* currentrecording, nextrecording, conflicts and conflictwarning are optional */
+    UIUtilW::Assign(this, m_currentRecordings, "currentrecording");
+    UIUtilW::Assign(this, m_nextRecordings, "nextrecording");
+    UIUtilW::Assign(this, m_conflictingRecordings, "conflicts");
+    UIUtilW::Assign(this, m_conflictWarning, "conflictwarning");
 
     if (err)
     {
         LOG(VB_GENERAL, LOG_ERR, "Cannot load screen 'standbymode'");
         return false;
     }
-
-    if (m_warningText)
-        m_warningText->SetVisible(false);
 
     UpdateScheduledList();
 
@@ -84,7 +86,7 @@ void IdleScreen::Init(void)
 
 bool IdleScreen::CheckConnectionToServer(void)
 {
-    m_updateStatusTimer->stop();
+    m_updateScreenTimer->stop();
 
     bool bRes = false;
 
@@ -97,9 +99,9 @@ bool IdleScreen::CheckConnectionToServer(void)
     }
 
     if (bRes)
-        m_updateStatusTimer->start(UPDATE_STATUS_INTERVAL);
+        m_updateScreenTimer->start(UPDATE_INTERVAL);
     else
-        m_updateStatusTimer->start(5000);
+        m_updateScreenTimer->start(5000);
 
     return bRes;
 }
@@ -110,7 +112,7 @@ void IdleScreen::UpdateStatus(void)
 
     if (CheckConnectionToServer())
     {
-        if (m_secondsToShutdown)
+        if (m_secondsToShutdown >= 0)
             state = "shuttingdown";
         else if (RemoteGetRecordingStatus())
             state = "recording";
@@ -130,7 +132,7 @@ void IdleScreen::UpdateStatus(void)
 
         if (statusText)
         {
-            if (m_secondsToShutdown)
+            if (m_secondsToShutdown >= 0)
             {
                 QString status = tr("Backend will shutdown in %n "
                                     "second(s).", "", m_secondsToShutdown);
@@ -141,35 +143,78 @@ void IdleScreen::UpdateStatus(void)
                 statusText->Reset();
         }
     }
-
-    if (m_warningText)
-        m_warningText->SetVisible(m_hasConflicts);
 }
 
 void IdleScreen::UpdateScreen(void)
 {
-    QString scheduled;
+    if (m_currentRecordings)
+    {
+        m_currentRecordings->Reset();
+        m_currentRecordings->SetCanTakeFocus(false);
+    }
+
+    if (m_nextRecordings)
+    {
+        m_nextRecordings->Reset();
+        m_nextRecordings->SetCanTakeFocus(false);
+    }
+
+    if (m_conflictingRecordings)
+    {
+        m_conflictingRecordings->Reset();
+        m_conflictingRecordings->SetCanTakeFocus(false);
+    }
+
+    if (m_conflictWarning)
+        m_conflictWarning->SetVisible(m_hasConflicts);
 
     // update scheduled
     if (!m_scheduledList.empty())
     {
-        ProgramInfo progInfo = m_scheduledList[0];
+        ProgramList::iterator pit = m_scheduledList.begin();
+        MythUIButtonListItem *item;
 
-        InfoMap infomap;
-        progInfo.ToMap(infomap);
+        while (pit != m_scheduledList.end())
+        {
+            ProgramInfo *progInfo = *pit;
+            if (progInfo)
+            {
+                MythUIButtonList *list = NULL;
+                const RecStatusType recstatus = progInfo->GetRecordingStatus();
 
-        scheduled = infomap["channame"] + "\n";
-        scheduled += infomap["title"];
-        if (!infomap["subtitle"].isEmpty())
-            scheduled += "\n(" + infomap["subtitle"] + ")";
+                switch(recstatus)
+                {
+                    case rsRecording:
+                    case rsTuning:
+                        list = m_currentRecordings;
+                        break;
 
-        scheduled += "\n" + infomap["timedate"];
+                    case rsWillRecord:
+                        list = m_nextRecordings;
+                        break;
+
+                    case rsConflict:
+                        list = m_conflictingRecordings;
+                        break;
+
+                    default:
+                        list = NULL;
+                        break;
+                }
+
+                if (list != NULL)
+                {
+                    item = new MythUIButtonListItem(list,"",
+                                                    qVariantFromValue(progInfo));
+
+                    InfoMap infoMap;
+                    progInfo->ToMap(infoMap);
+                    item->SetTextFromMap(infoMap, "");
+                }
+            }
+            ++pit;
+        }
     }
-    else
-        scheduled = tr("There are no scheduled recordings");
-
-    if (m_scheduledText)
-        m_scheduledText->SetText(scheduled);
 
     UpdateStatus();
 }
@@ -184,15 +229,14 @@ bool IdleScreen::UpdateScheduledList()
     }
 
     m_scheduledList.clear();
-    m_hasConflicts = false;
 
     if (!gCoreContext->IsConnectedToMaster())
     {
         return false;
     }
 
-    GetNextRecordingList(m_nextRecordingStart, &m_hasConflicts,
-                         &m_scheduledList);
+    if (!LoadFromScheduler(m_scheduledList, m_hasConflicts))
+        return false;
 
     UpdateScreen();
 
@@ -210,7 +254,12 @@ void IdleScreen::customEvent(QEvent* event)
     {
         MythEvent *me = static_cast<MythEvent *>(event);
 
-        if (me->Message().startsWith("SHUTDOWN_COUNTDOWN"))
+        if (me->Message().startsWith("RECONNECT_"))
+        {
+            m_secondsToShutdown = -1;
+            UpdateStatus();
+        }
+        else if (me->Message().startsWith("SHUTDOWN_COUNTDOWN"))
         {
             QString secs = me->Message().mid(19);
             m_secondsToShutdown = secs.toInt();
@@ -233,13 +282,15 @@ void IdleScreen::customEvent(QEvent* event)
                 }
             }
         }
-        else if (me->Message().startsWith("SCHEDULE_CHANGE"))
+        else if (me->Message().startsWith("SCHEDULE_CHANGE") ||
+                 me->Message().startsWith("RECORDING_LIST_CHANGE") ||
+                 me->Message() == "UPDATE_PROG_INFO")
         {
             QMutexLocker lock(&m_schedUpdateMutex);
 
             if (!PendingSchedUpdate())
             {
-                QTimer::singleShot(500, this, SLOT(UpdateScheduledList()));
+                QTimer::singleShot(50, this, SLOT(UpdateScheduledList()));
                 SetPendingSchedUpdate(true);
             }
         }

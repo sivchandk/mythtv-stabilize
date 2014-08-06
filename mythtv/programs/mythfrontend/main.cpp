@@ -1030,6 +1030,10 @@ static void TVMenuCallback(void *data, QString &selection)
         handleExit(false);
     else if (sel == "standby_mode")
         standbyScreen();
+    else if (sel == "exiting_menu")
+    {
+        //ignore
+    }
     else
         LOG(VB_GENERAL, LOG_ERR, "Unknown menu action: " + selection);
 
@@ -1038,7 +1042,11 @@ static void TVMenuCallback(void *data, QString &selection)
         GetMythUI()->RemoveCurrentLocation();
 
         gCoreContext->ActivateSettingsCache(true);
+
+        // tell the backend the settings may have changed
         gCoreContext->SendMessage("CLEAR_SETTINGS_CACHE");
+        // tell the frontend the settings may have changed
+        gCoreContext->dispatch(MythEvent(QString("CLEAR_SETTINGS_CACHE")));
 
         if (sel == "settings general" ||
             sel == "settings generalrecpriorities")
@@ -1690,7 +1698,7 @@ int main(int argc, char **argv)
     if (!cmdline.toBool("noupnp"))
     {
         g_pUPnp  = new MediaRenderer();
-        if (!g_pUPnp->initialized())
+        if (!g_pUPnp->isInitialized())
         {
             delete g_pUPnp;
             g_pUPnp = NULL;

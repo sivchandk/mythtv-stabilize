@@ -154,6 +154,14 @@ bool MythThemedMenu::foundTheme(void)
     return m_foundtheme;
 }
 
+/// \brief Get the themed menus callback function and data for that function
+void MythThemedMenu::getCallback(void (**lcallback)(void *, QString &),
+                                 void **data)
+{
+    *lcallback = m_state->m_callback;
+    *data = m_state->m_callbackdata;
+}
+
 /// \brief Set the themed menus callback function and data for that function
 void MythThemedMenu::setCallback(void (*lcallback)(void *, QString &),
                                  void *data)
@@ -312,7 +320,9 @@ void MythThemedMenu::ShowMenu()
     if (QCoreApplication::applicationName() == MYTH_APPNAME_MYTHFRONTEND)
         m_menuPopup->AddButton(tr("Enter standby mode"), QVariant("standby"));
 
-    m_menuPopup->AddButton(tr("Exit application"), QVariant("exit"));
+    // don't show the exit application option if standby option is enabled
+    if (override_menu != 7)
+        m_menuPopup->AddButton(tr("Exit application"), QVariant("exit"));
 
     switch (override_menu)
     {
@@ -332,6 +342,7 @@ void MythThemedMenu::ShowMenu()
             m_menuPopup->AddButton(tr("Reboot"), QVariant("reboot"));
             break;
         case 0:
+        case 7:
         default:
             break;
     }

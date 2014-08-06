@@ -510,7 +510,10 @@ void NetSearch::customEvent(QEvent *event)
 
         MythUIButtonListItem *item = m_searchResultList->GetItemAt(pos);
 
-        if (item && item->GetText() == title)
+        if (!item)
+            return;
+
+        if (item->GetText() == title)
             item->SetImage(file);
 
         if (m_searchResultList->GetItemCurrent() == item)

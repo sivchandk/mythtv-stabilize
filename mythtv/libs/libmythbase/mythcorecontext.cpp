@@ -15,6 +15,7 @@
 #include <QLocale>
 #include <QPair>
 #include <QDateTime>
+#include <QRunnable>
 
 #include <cmath>
 #include <cstdarg>
@@ -630,6 +631,11 @@ bool MythCoreContext::BackendIsRunning(void)
     return (res == GENERIC_EXIT_OK);
 }
 
+bool MythCoreContext::IsThisBackend(const QString &addr)
+{
+    return IsBackend() && IsThisHost(addr);
+}
+
 bool MythCoreContext::IsThisHost(const QString &addr)
 {
     return IsThisHost(addr, GetHostName());
@@ -637,13 +643,22 @@ bool MythCoreContext::IsThisHost(const QString &addr)
 
 bool MythCoreContext::IsThisHost(const QString &addr, const QString &host)
 {
+    if (addr.toLower() == host.toLower())
+        return true;
+
     QHostAddress addrfix(addr);
     addrfix.setScopeId(QString());
     QString addrstr = addrfix.toString();
+
+    if (addrfix.isNull())
+    {
+        addrstr = resolveAddress(addr);
+    }
+
     QString thisip  = GetBackendServerIP4(host);
     QString thisip6 = GetBackendServerIP6(host);
 
-    return ((addrstr == thisip) || (addrstr == thisip6));
+    return !addrstr.isEmpty() && ((addrstr == thisip) || (addrstr == thisip6));
 }
 
 bool MythCoreContext::IsFrontendOnly(void)
@@ -1008,7 +1023,7 @@ int MythCoreContext::GetBackendServerPort(const QString &host)
  */
 int MythCoreContext::GetBackendStatusPort(void)
 {
-    return GetBackendServerPort(d->m_localHostname);
+    return GetBackendStatusPort(d->m_localHostname);
 }
 
 /**
@@ -1296,6 +1311,14 @@ bool MythCoreContext::SendReceiveStringList(
                 LOG(VB_GENERAL, LOG_INFO,
                     QString("Protocol query '%1' responded with an error, but "
                             "no error message.") .arg(query_type));
+
+            ok = false;
+        }
+        else if (strlist[0] == "UNKNOWN_COMMAND")
+        {
+            LOG(VB_GENERAL, LOG_ERR,
+                QString("Protocol query '%1' responded with the error 'UNKNOWN_COMMAND'")
+                        .arg(query_type));
 
             ok = false;
         }

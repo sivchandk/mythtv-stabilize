@@ -1025,6 +1025,22 @@ QString HTTPRequest::GetMimeType( const QString &sFileExtension )
 //
 /////////////////////////////////////////////////////////////////////////////
 
+QStringList HTTPRequest::GetSupportedMimeTypes()
+{
+    QStringList mimeTypes;
+
+    for (int i = 0; i < g_nMIMELength; i++)
+    {
+        mimeTypes.append( g_MIMETypes[i].pszType );
+    }
+
+    return mimeTypes;
+}
+
+/////////////////////////////////////////////////////////////////////////////
+//
+/////////////////////////////////////////////////////////////////////////////
+
 QString HTTPRequest::TestMimeType( const QString &sFileName )
 {
     QFileInfo info( sFileName );
@@ -1703,6 +1719,22 @@ QString HTTPRequest::Encode(const QString &sIn)
     LOG(VB_UPNP, LOG_DEBUG,
         QString("HTTPRequest::Encode Output : %1").arg(sStr));
 #endif
+    return sStr;
+}
+
+/////////////////////////////////////////////////////////////////////////////
+//
+/////////////////////////////////////////////////////////////////////////////
+
+QString HTTPRequest::Decode(const QString& sIn)
+{
+    QString sStr = sIn;
+    sStr.replace("&amp;", "&");
+    sStr.replace("&lt;", "<");
+    sStr.replace("&gt;", ">");
+    sStr.replace("&quot;", "\"");
+    sStr.replace("&apos;", "'");
+
     return sStr;
 }
 

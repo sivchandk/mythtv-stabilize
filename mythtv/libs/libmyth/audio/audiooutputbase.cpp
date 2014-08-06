@@ -2,6 +2,11 @@
 #include <cmath>
 #include <limits>
 
+// C++ headers
+#include <algorithm>
+
+using namespace std;
+
 // POSIX headers
 #include <unistd.h>
 #include <sys/time.h>
@@ -367,8 +372,13 @@ void AudioOutputBase::SetStretchFactorLocked(float lstretchfactor)
             m_previousbpf = bytes_per_frame;
             bytes_per_frame = source_channels *
                               AudioOutputSettings::SampleSize(FORMAT_FLT);
+            audbuf_timecode = audiotime = frames_buffered = 0;
             waud = raud = 0;
             reset_active.Ref();
+            was_paused = pauseaudio;
+            pauseaudio = true;
+            actually_paused = false;
+            unpause_when_ready = true;
         }
     }
 }
@@ -914,12 +924,13 @@ void AudioOutputBase::KillAudio()
 
 void AudioOutputBase::Pause(bool paused)
 {
-    if (unpause_when_ready)
+    if (!paused && unpause_when_ready)
         return;
     VBAUDIO(QString("Pause %1").arg(paused));
     if (pauseaudio != paused)
         was_paused = pauseaudio;
     pauseaudio = paused;
+    unpause_when_ready = false;
     actually_paused = false;
 }
 
