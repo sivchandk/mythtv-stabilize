@@ -364,12 +364,6 @@ void RingBuffer::SetBufferSizeFactors(bool estbitrate, bool matroska)
     CreateReadAheadBuffer();
 }
 
-bool RingBuffer::IsReadyToRead() const
-{
-    QReadLocker lock(&rwlock);
-    return readsallowed;
-}
-
 /** \fn RingBuffer::CalcReadAheadThresh(void)
  *  \brief Calculates fill_min, fill_threshold, and readblocksize
  *         from the estimated effective bitrate of the stream.
@@ -1361,10 +1355,16 @@ int RingBuffer::ReadDirect(void *buf, int count, bool peek)
         if (peek)
         {
             // seek should always succeed since we were at this position
+            long long cur_pos;
             if (remotefile)
-                remotefile->Seek(old_pos, SEEK_SET);
+                cur_pos = remotefile->Seek(old_pos, SEEK_SET);
             else if (fd2 >= 0)
-                lseek64(fd2, old_pos, SEEK_SET);
+                cur_pos = lseek64(fd2, old_pos, SEEK_SET);
+            if (cur_pos < 0)
+            {
+                LOG(VB_FILE, LOG_ERR, LOC +
+                    "Seek failed repositioning to previous position");
+            }
         }
         else
         {
